@@ -105,8 +105,20 @@ function createBusIcon(vehicle) {
     });
 }
 
+// Calculate distance in meters between two lat/lon points (Haversine)
+function haversineDistance(lat1, lon1, lat2, lon2) {
+    const R = 6371000;
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a = Math.sin(dLat / 2) ** 2 +
+        Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+        Math.sin(dLon / 2) ** 2;
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
 function updateVehicles(vehicles) {
     const currentIds = new Set();
+    const now = Date.now() / 1000;
 
     vehicles.forEach((v) => {
         const id = v.vehicle_id || v.id;
@@ -122,11 +134,22 @@ function updateVehicles(vehicles) {
 
         const latlng = [v.lat, v.lon];
 
+        // Calculate speed from position delta if feed doesn't provide it
+        if (v.speed == null && vehicleMarkers[id] && vehicleMarkers[id]._vehicleData) {
+            const prev = vehicleMarkers[id]._vehicleData;
+            const dt = (v.timestamp || now) - (prev.timestamp || prev._localTime || 0);
+            if (dt > 0 && dt < 120) {
+                const dist = haversineDistance(prev.lat, prev.lon, v.lat, v.lon);
+                if (dist > 2) { // Ignore GPS jitter under 2m
+                    v._calculatedSpeed = dist / dt; // m/s
+                }
+            }
+        }
+        v._localTime = now;
+
         if (vehicleMarkers[id]) {
-            // Only update position — don't recreate icon (causes flicker)
             vehicleMarkers[id].setLatLng(latlng);
 
-            // Only rebuild icon if route info changed
             const prev = vehicleMarkers[id]._vehicleData;
             if (!prev || prev.route_short_name !== v.route_short_name ||
                 prev.route_color !== v.route_color) {
@@ -137,7 +160,6 @@ function updateVehicles(vehicles) {
                 icon: createBusIcon(v),
                 zIndexOffset: 1000,
             });
-            // Use click handler that reads current _vehicleData (not stale closure)
             marker.on("click", () => {
                 const current = marker._vehicleData || v;
                 showVehiclePopup(current, marker);
@@ -182,6 +204,10 @@ function showVehiclePopup(vehicle, marker) {
         title = `Buss ${lineName}`;
     }
 
+    const speedMs = vehicle.speed != null ? vehicle.speed : vehicle._calculatedSpeed;
+    const speed = speedMs != null
+        ? `${(speedMs * 3.6).toFixed(0)} km/h`
+        : null;
     const status = vehicle.current_status || "I trafik";
     const updatedAt = vehicle.timestamp
         ? new Date(vehicle.timestamp * 1000).toLocaleTimeString("sv-SE")
@@ -193,6 +219,7 @@ function showVehiclePopup(vehicle, marker) {
                 ${title}
             </div>
             <div class="popup-details">
+                ${speed ? `Hastighet: ${speed}<br/>` : ""}
                 Status: ${status}<br/>
                 Uppdaterad: ${updatedAt}
             </div>
