@@ -31,6 +31,28 @@ _data = {
 _lock = threading.Lock()
 
 
+def _gtfs_data_valid():
+    """Check if GTFS data directory has valid extracted data."""
+    gtfs_dir = config.GTFS_DATA_DIR
+    routes_file = os.path.join(gtfs_dir, "routes.txt")
+    if not os.path.exists(routes_file):
+        return False
+    # Check that routes.txt is non-empty (not a corrupt extract)
+    return os.path.getsize(routes_file) > 10
+
+
+def _clean_gtfs_dir():
+    """Remove all files in GTFS data directory for a clean re-download."""
+    import glob
+    gtfs_dir = config.GTFS_DATA_DIR
+    for f in glob.glob(os.path.join(gtfs_dir, "*")):
+        try:
+            os.remove(f)
+        except OSError:
+            pass
+    print("Cleaned GTFS data directory for fresh download")
+
+
 def init_gtfs_static():
     """Download and load GTFS static data."""
     try:
@@ -40,15 +62,8 @@ def init_gtfs_static():
                 "Set TRAFIKLAB_GTFS_STATIC_KEY or TRAFIKLAB_API_KEY."
             )
 
-        gtfs_dir = config.GTFS_DATA_DIR
-        routes_file = os.path.join(gtfs_dir, "routes.txt")
-
-        # Clean up corrupt zip from previous failed attempt
-        stale_zip = os.path.join(gtfs_dir, "gtfs.zip")
-        if not os.path.exists(routes_file) and os.path.exists(stale_zip):
-            os.remove(stale_zip)
-
-        if not os.path.exists(routes_file):
+        if not _gtfs_data_valid():
+            _clean_gtfs_dir()
             gtfs_loader.download_gtfs_static()
 
         routes = gtfs_loader.load_routes()
@@ -57,8 +72,8 @@ def init_gtfs_static():
         shapes = gtfs_loader.load_shapes()
 
         if not routes:
-            # Data downloaded but empty — try re-downloading
-            print("GTFS routes.txt is empty, re-downloading...")
+            print("GTFS routes empty after load, forcing re-download...")
+            _clean_gtfs_dir()
             gtfs_loader.download_gtfs_static()
             routes = gtfs_loader.load_routes()
             stops = gtfs_loader.load_stops()
@@ -86,6 +101,7 @@ def init_gtfs_static():
 def refresh_gtfs_static():
     """Re-download GTFS static data (scheduled daily)."""
     try:
+        _clean_gtfs_dir()
         gtfs_loader.download_gtfs_static()
         routes = gtfs_loader.load_routes()
         stops = gtfs_loader.load_stops()
