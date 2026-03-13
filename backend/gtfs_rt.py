@@ -28,6 +28,14 @@ def fetch_vehicle_positions():
         if not pos.latitude or not pos.longitude:
             continue
 
+        # Map GTFS-RT VehicleStopStatus to Swedish labels
+        status_map = {
+            0: "Ankommande",    # INCOMING_AT
+            1: "Vid hållplats", # STOPPED_AT
+            2: "I trafik",      # IN_TRANSIT_TO
+        }
+        current_status = status_map.get(v.current_status, "I trafik")
+
         vehicle = {
             "id": entity.id,
             "vehicle_id": v.vehicle.id if v.vehicle.id else entity.id,
@@ -36,6 +44,7 @@ def fetch_vehicle_positions():
             "lon": pos.longitude,
             "bearing": pos.bearing if pos.bearing else None,
             "speed": pos.speed if pos.speed else None,
+            "current_status": current_status,
             "trip_id": v.trip.trip_id if v.HasField("trip") else "",
             "route_id": v.trip.route_id if v.HasField("trip") else "",
             "direction_id": v.trip.direction_id if v.HasField("trip") else None,

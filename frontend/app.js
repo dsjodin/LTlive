@@ -149,27 +149,33 @@ function showVehiclePopup(vehicle, marker) {
         ? `#${vehicle.route_text_color}`
         : "#fff";
 
+    const lineName = vehicle.route_short_name || "?";
+    const headsign = vehicle.trip_headsign || "";
+    const title = headsign
+        ? `Buss ${lineName} mot ${headsign}`
+        : `Buss ${lineName}`;
+
     const speed = vehicle.speed
         ? `${(vehicle.speed * 3.6).toFixed(0)} km/h`
-        : "Okänd";
-    const bearing = vehicle.bearing !== null
-        ? `${vehicle.bearing.toFixed(0)}°`
-        : "Okänd";
+        : "—";
+    const status = vehicle.current_status || "I trafik";
+    const updatedAt = vehicle.timestamp
+        ? new Date(vehicle.timestamp * 1000).toLocaleTimeString("sv-SE")
+        : new Date().toLocaleTimeString("sv-SE");
 
     const html = `
-        <div>
-            <span class="popup-line-badge" style="background:${color}; color:${textColor}">
-                ${vehicle.route_short_name || "?"}
-            </span>
-            <strong>${vehicle.route_long_name || ""}</strong>
-            <br/>
-            <small>Mot: ${vehicle.trip_headsign || "Okänt"}</small>
-            <hr style="border-color:rgba(255,255,255,0.1); margin:6px 0"/>
-            <small>
-                Fordon: ${vehicle.label || vehicle.vehicle_id}<br/>
+        <div class="popup-vehicle">
+            <div class="popup-header">
+                <span class="popup-line-badge" style="background:${color}; color:${textColor}">
+                    ${lineName}
+                </span>
+                <strong>${title}</strong>
+            </div>
+            <div class="popup-details">
                 Hastighet: ${speed}<br/>
-                Riktning: ${bearing}
-            </small>
+                Status: ${status}<br/>
+                Uppdaterad: ${updatedAt}
+            </div>
         </div>
     `;
     marker.bindPopup(html, { maxWidth: 250 }).openPopup();

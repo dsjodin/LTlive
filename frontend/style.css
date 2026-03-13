@@ -264,15 +264,41 @@ body {
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     font-size: 13px;
     line-height: 1.5;
+    margin: 10px 14px;
+}
+
+.popup-vehicle .popup-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
 }
 
 .popup-line-badge {
-    display: inline-block;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 28px;
+    height: 28px;
     padding: 2px 8px;
-    border-radius: 4px;
+    border-radius: 6px;
     font-weight: 700;
     font-size: 14px;
-    margin-bottom: 4px;
+    flex-shrink: 0;
+}
+
+.popup-header strong {
+    font-size: 14px;
+    font-weight: 600;
+    color: #fff;
+}
+
+.popup-details {
+    color: #b0b0b5;
+    font-size: 13px;
+    line-height: 1.7;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    padding-top: 8px;
 }
 
 /* Scrollbar styling */
