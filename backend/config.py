@@ -1,0 +1,22 @@
+import os
+
+TRAFIKLAB_GTFS_RT_KEY = os.environ.get("TRAFIKLAB_GTFS_RT_KEY", "")
+TRAFIKLAB_GTFS_STATIC_KEY = os.environ.get("TRAFIKLAB_GTFS_STATIC_KEY", "")
+
+OPERATOR = os.environ.get("OPERATOR", "orebro")
+
+GTFS_STATIC_URL = (
+    f"https://opendata.samtrafiken.se/gtfs/{OPERATOR}/{OPERATOR}.zip"
+    f"?key={TRAFIKLAB_GTFS_STATIC_KEY}"
+)
+
+GTFS_RT_BASE = f"https://opendata.samtrafiken.se/gtfs-rt/{OPERATOR}"
+
+VEHICLE_POSITIONS_URL = f"{GTFS_RT_BASE}/VehiclePositions.pb?key={TRAFIKLAB_GTFS_RT_KEY}"
+TRIP_UPDATES_URL = f"{GTFS_RT_BASE}/TripUpdates.pb?key={TRAFIKLAB_GTFS_RT_KEY}"
+SERVICE_ALERTS_URL = f"{GTFS_RT_BASE}/ServiceAlerts.pb?key={TRAFIKLAB_GTFS_RT_KEY}"
+
+GTFS_DATA_DIR = os.environ.get("GTFS_DATA_DIR", "/app/data/gtfs")
+GTFS_REFRESH_HOURS = int(os.environ.get("GTFS_REFRESH_HOURS", "24"))
+
+RT_POLL_SECONDS = int(os.environ.get("RT_POLL_SECONDS", "5"))

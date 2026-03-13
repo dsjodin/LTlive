@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LTlive - Bussar i Örebro</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+    <div id="map"></div>
+
+    <div id="sidebar">
+        <div class="sidebar-header">
+            <h1>LTlive</h1>
+            <p class="subtitle">Bussar i Örebro - Live</p>
+        </div>
+
+        <div class="controls">
+            <div class="control-group">
+                <label>
+                    <input type="checkbox" id="toggle-stops" />
+                    Visa hållplatser
+                </label>
+            </div>
+            <div class="control-group">
+                <label>
+                    <input type="checkbox" id="toggle-routes" />
+                    Visa linjesträckningar
+                </label>
+            </div>
+            <div class="control-group">
+                <label>
+                    <input type="checkbox" id="toggle-labels" checked />
+                    Visa linjenummer
+                </label>
+            </div>
+        </div>
+
+        <div class="stats">
+            <div class="stat">
+                <span class="stat-value" id="vehicle-count">0</span>
+                <span class="stat-label">aktiva fordon</span>
+            </div>
+            <div class="stat">
+                <span class="stat-value" id="route-count">0</span>
+                <span class="stat-label">linjer</span>
+            </div>
+            <div class="stat">
+                <span class="stat-value" id="last-update">--:--:--</span>
+                <span class="stat-label">senast uppdaterad</span>
+            </div>
+        </div>
+
+        <div id="line-filter">
+            <h3>Filtrera linjer</h3>
+            <div id="line-buttons"></div>
+        </div>
+
+        <div id="alerts-panel">
+            <h3>Störningar</h3>
+            <div id="alerts-list"></div>
+        </div>
+
+        <div id="vehicle-info" class="hidden">
+            <h3>Fordonsinformation</h3>
+            <div id="vehicle-detail"></div>
+        </div>
+    </div>
+
+    <button id="sidebar-toggle" title="Visa/dölj sidopanel">&#9776;</button>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>

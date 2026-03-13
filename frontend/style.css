@@ -1,0 +1,314 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    overflow: hidden;
+}
+
+#map {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 1;
+}
+
+#sidebar {
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 320px;
+    height: 100vh;
+    background: rgba(28, 28, 30, 0.92);
+    color: #f0f0f0;
+    z-index: 1000;
+    overflow-y: auto;
+    padding: 20px;
+    transition: transform 0.3s ease;
+    backdrop-filter: blur(10px);
+}
+
+#sidebar.hidden {
+    transform: translateX(100%);
+}
+
+.sidebar-header h1 {
+    font-size: 1.8em;
+    font-weight: 700;
+    color: #fff;
+    margin-bottom: 2px;
+}
+
+.subtitle {
+    color: #8e8e93;
+    font-size: 0.9em;
+    margin-bottom: 16px;
+}
+
+.controls {
+    margin-bottom: 16px;
+    padding: 12px;
+    background: rgba(255, 255, 255, 0.08);
+    border-radius: 10px;
+}
+
+.control-group {
+    margin-bottom: 8px;
+}
+
+.control-group:last-child {
+    margin-bottom: 0;
+}
+
+.control-group label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    font-size: 0.9em;
+}
+
+.stats {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-bottom: 16px;
+}
+
+.stat {
+    background: rgba(255, 255, 255, 0.08);
+    border-radius: 10px;
+    padding: 12px;
+    text-align: center;
+}
+
+.stat:last-child {
+    grid-column: span 2;
+}
+
+.stat-value {
+    display: block;
+    font-size: 1.4em;
+    font-weight: 700;
+    color: #fff;
+}
+
+.stat-label {
+    font-size: 0.75em;
+    color: #8e8e93;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+#line-filter h3,
+#alerts-panel h3,
+#vehicle-info h3 {
+    font-size: 0.95em;
+    color: #8e8e93;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 10px;
+}
+
+#line-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 16px;
+    max-height: 200px;
+    overflow-y: auto;
+}
+
+.line-btn {
+    border: none;
+    border-radius: 6px;
+    padding: 4px 10px;
+    font-size: 0.85em;
+    font-weight: 600;
+    cursor: pointer;
+    transition: opacity 0.2s, transform 0.1s;
+    min-width: 36px;
+    text-align: center;
+}
+
+.line-btn:hover {
+    transform: scale(1.05);
+}
+
+.line-btn.inactive {
+    opacity: 0.3;
+}
+
+#alerts-panel {
+    margin-bottom: 16px;
+}
+
+.alert-item {
+    background: rgba(255, 59, 48, 0.15);
+    border-left: 3px solid #ff3b30;
+    border-radius: 6px;
+    padding: 10px;
+    margin-bottom: 8px;
+    font-size: 0.85em;
+}
+
+.alert-item h4 {
+    color: #ff6961;
+    font-size: 0.9em;
+    margin-bottom: 4px;
+}
+
+.alert-item p {
+    color: #ccc;
+    font-size: 0.85em;
+    line-height: 1.4;
+}
+
+#vehicle-detail {
+    background: rgba(255, 255, 255, 0.08);
+    border-radius: 10px;
+    padding: 12px;
+    font-size: 0.85em;
+    line-height: 1.6;
+}
+
+.hidden {
+    display: none !important;
+}
+
+#sidebar-toggle {
+    position: absolute;
+    top: 12px;
+    right: 332px;
+    z-index: 1001;
+    background: rgba(28, 28, 30, 0.85);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    width: 40px;
+    height: 40px;
+    font-size: 1.2em;
+    cursor: pointer;
+    backdrop-filter: blur(10px);
+    transition: right 0.3s ease;
+}
+
+#sidebar-toggle.shifted {
+    right: 12px;
+}
+
+/* Bus marker styling */
+.bus-marker {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    border: 2px solid rgba(255, 255, 255, 0.9);
+    font-size: 10px;
+    font-weight: 700;
+    color: white;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+    transition: transform 0.3s ease;
+    cursor: pointer;
+}
+
+.bus-marker:hover {
+    transform: scale(1.3);
+    z-index: 10000 !important;
+}
+
+.bus-marker.no-label {
+    width: 14px;
+    height: 14px;
+    font-size: 0;
+}
+
+/* Stop marker */
+.stop-marker {
+    width: 8px;
+    height: 8px;
+    background: #fff;
+    border: 2px solid #555;
+    border-radius: 50%;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+.station-marker {
+    width: 12px;
+    height: 12px;
+    background: #fff;
+    border: 3px solid #333;
+    border-radius: 50%;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+}
+
+/* Leaflet popup styling */
+.leaflet-popup-content-wrapper {
+    background: rgba(28, 28, 30, 0.95);
+    color: #f0f0f0;
+    border-radius: 10px;
+    backdrop-filter: blur(10px);
+}
+
+.leaflet-popup-tip {
+    background: rgba(28, 28, 30, 0.95);
+}
+
+.leaflet-popup-content {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-size: 13px;
+    line-height: 1.5;
+}
+
+.popup-line-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-weight: 700;
+    font-size: 14px;
+    margin-bottom: 4px;
+}
+
+/* Scrollbar styling */
+#sidebar::-webkit-scrollbar {
+    width: 6px;
+}
+
+#sidebar::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+#sidebar::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.2);
+    border-radius: 3px;
+}
+
+@media (max-width: 768px) {
+    #sidebar {
+        width: 100%;
+        height: 50vh;
+        top: auto;
+        bottom: 0;
+        border-radius: 16px 16px 0 0;
+    }
+
+    #sidebar.hidden {
+        transform: translateY(100%);
+    }
+
+    #sidebar-toggle {
+        right: 12px;
+        bottom: 52vh;
+        top: auto;
+    }
+
+    #sidebar-toggle.shifted {
+        bottom: 12px;
+    }
+}
