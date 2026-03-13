@@ -102,24 +102,33 @@ function updateVehicles(vehicles) {
         const latlng = [v.lat, v.lon];
 
         if (vehicleMarkers[id]) {
+            // Only update position — don't recreate icon (causes flicker)
             vehicleMarkers[id].setLatLng(latlng);
-            vehicleMarkers[id].setIcon(createBusIcon(v));
+
+            // Only rebuild icon if route info changed
+            const prev = vehicleMarkers[id]._vehicleData;
+            if (!prev || prev.route_short_name !== v.route_short_name ||
+                prev.route_color !== v.route_color) {
+                vehicleMarkers[id].setIcon(createBusIcon(v));
+            }
         } else {
             const marker = L.marker(latlng, {
                 icon: createBusIcon(v),
                 zIndexOffset: 1000,
             });
-            marker.on("click", () => showVehiclePopup(v, marker));
+            // Use click handler that reads current _vehicleData (not stale closure)
+            marker.on("click", () => {
+                const current = marker._vehicleData || v;
+                showVehiclePopup(current, marker);
+            });
             marker.addTo(map);
             vehicleMarkers[id] = marker;
         }
 
-        if (vehicleMarkers[id]) {
-            vehicleMarkers[id]._vehicleData = v;
-        }
+        vehicleMarkers[id]._vehicleData = v;
     });
 
-    // Remove stale markers
+    // Remove markers for vehicles no longer in the feed
     Object.keys(vehicleMarkers).forEach((id) => {
         if (!currentIds.has(id)) {
             map.removeLayer(vehicleMarkers[id]);
