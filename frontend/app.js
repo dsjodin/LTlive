@@ -17,9 +17,16 @@ let activeFilters = new Set();
 let showStops = false;
 let showRoutes = false;
 let showLabels = true;
+let darkMode = true;
+let tileLayer = null;
 let stopsLayer = null;
 let stopsLoaded = false;
 let routesLoaded = false;
+
+const TILES = {
+    dark: "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
+    light: "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png",
+};
 
 // --- Default line colors (fallback if GTFS has no color) ---
 const LINE_COLORS = [
@@ -49,14 +56,19 @@ function initMap() {
         zoomControl: true,
     });
 
-    L.tileLayer(
-        "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
-        {
-            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/">CARTO</a> | Data: <a href="https://trafiklab.se">Trafiklab</a>',
-            subdomains: "abcd",
-            maxZoom: 19,
-        }
-    ).addTo(map);
+    setTileLayer(darkMode);
+}
+
+function setTileLayer(isDark) {
+    if (tileLayer) {
+        map.removeLayer(tileLayer);
+    }
+    tileLayer = L.tileLayer(isDark ? TILES.dark : TILES.light, {
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/">CARTO</a> | Data: <a href="https://trafiklab.se">Trafiklab</a>',
+        subdomains: "abcd",
+        maxZoom: 19,
+    });
+    tileLayer.addTo(map);
 }
 
 // --- Bus markers ---
@@ -146,9 +158,6 @@ function showVehiclePopup(vehicle, marker) {
         route_short_name: vehicle.route_short_name,
         route_id: vehicle.route_id,
     });
-    const textColor = vehicle.route_text_color
-        ? `#${vehicle.route_text_color}`
-        : "#fff";
 
     const lineName = vehicle.route_short_name || "?";
     const headsign = vehicle.trip_headsign || "";
@@ -156,9 +165,6 @@ function showVehiclePopup(vehicle, marker) {
         ? `Buss ${lineName} mot ${headsign}`
         : `Buss ${lineName}`;
 
-    const speed = vehicle.speed
-        ? `${(vehicle.speed * 3.6).toFixed(0)} km/h`
-        : "\u2014";
     const status = vehicle.current_status || "I trafik";
     const updatedAt = vehicle.timestamp
         ? new Date(vehicle.timestamp * 1000).toLocaleTimeString("sv-SE")
@@ -166,14 +172,10 @@ function showVehiclePopup(vehicle, marker) {
 
     const html = `
         <div class="popup-vehicle">
-            <div class="popup-header">
-                <span class="popup-line-badge" style="background:${color}; color:${textColor}">
-                    ${lineName}
-                </span>
-                <strong>${title}</strong>
+            <div class="popup-title" style="color:${color}">
+                ${title}
             </div>
             <div class="popup-details">
-                Hastighet: ${speed}<br/>
                 Status: ${status}<br/>
                 Uppdaterad: ${updatedAt}
             </div>
@@ -475,6 +477,12 @@ function initControls() {
                 marker.setIcon(createBusIcon(marker._vehicleData));
             }
         });
+    });
+
+    document.getElementById("toggle-darkmode").addEventListener("change", (e) => {
+        darkMode = e.target.checked;
+        setTileLayer(darkMode);
+        document.body.classList.toggle("light-mode", !darkMode);
     });
 
     const sidebar = document.getElementById("sidebar");

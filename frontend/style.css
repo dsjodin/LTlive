@@ -266,12 +266,13 @@ body {
     box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
 }
 
-/* Leaflet popup styling */
+/* Leaflet popup styling — dark mode (default) */
 .leaflet-popup-content-wrapper {
     background: rgba(28, 28, 30, 0.95);
     color: #f0f0f0;
     border-radius: 10px;
     backdrop-filter: blur(10px);
+    box-shadow: 0 3px 14px rgba(0,0,0,0.4);
 }
 
 .leaflet-popup-tip {
@@ -285,30 +286,10 @@ body {
     margin: 10px 14px;
 }
 
-.popup-vehicle .popup-header {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin-bottom: 8px;
-}
-
-.popup-line-badge {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    min-width: 28px;
-    height: 28px;
-    padding: 2px 8px;
-    border-radius: 6px;
+.popup-title {
+    font-size: 15px;
     font-weight: 700;
-    font-size: 14px;
-    flex-shrink: 0;
-}
-
-.popup-header strong {
-    font-size: 14px;
-    font-weight: 600;
-    color: #fff;
+    margin-bottom: 8px;
 }
 
 .popup-details {
@@ -317,6 +298,23 @@ body {
     line-height: 1.7;
     border-top: 1px solid rgba(255, 255, 255, 0.1);
     padding-top: 8px;
+}
+
+/* Leaflet popup — light mode */
+.light-mode .leaflet-popup-content-wrapper {
+    background: #fff;
+    color: #333;
+    backdrop-filter: none;
+    box-shadow: 0 3px 14px rgba(0,0,0,0.15);
+}
+
+.light-mode .leaflet-popup-tip {
+    background: #fff;
+}
+
+.light-mode .popup-details {
+    color: #666;
+    border-top-color: #e0e0e0;
 }
 
 /* Scrollbar styling */
@@ -355,4 +353,74 @@ body {
     #sidebar-toggle.shifted {
         bottom: 12px;
     }
+}
+
+/* ===== Light mode overrides ===== */
+.light-mode #sidebar {
+    background: rgba(255, 255, 255, 0.92);
+    color: #333;
+}
+
+.light-mode .sidebar-header h1 {
+    color: #1a1a1a;
+}
+
+.light-mode .subtitle {
+    color: #888;
+}
+
+.light-mode .controls {
+    background: rgba(0, 0, 0, 0.05);
+}
+
+.light-mode .stat {
+    background: rgba(0, 0, 0, 0.05);
+}
+
+.light-mode .stat-value {
+    color: #1a1a1a;
+}
+
+.light-mode .stat-label {
+    color: #888;
+}
+
+.light-mode #line-filter h3,
+.light-mode #alerts-panel h3,
+.light-mode #vehicle-info h3 {
+    color: #888;
+}
+
+.light-mode #sidebar-toggle {
+    background: rgba(255, 255, 255, 0.85);
+    color: #333;
+}
+
+.light-mode .alert-item {
+    background: rgba(255, 59, 48, 0.08);
+}
+
+.light-mode .alert-item h4 {
+    color: #d32f2f;
+}
+
+.light-mode .alert-item p {
+    color: #666;
+}
+
+.light-mode #sidebar::-webkit-scrollbar-thumb {
+    background: rgba(0, 0, 0, 0.2);
+}
+
+.light-mode .bus-marker {
+    border-color: rgba(255, 255, 255, 1);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+}
+
+.light-mode .stop-marker {
+    border-color: #999;
+}
+
+.light-mode .station-marker {
+    border-color: #555;
 }
