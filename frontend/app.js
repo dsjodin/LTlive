@@ -19,7 +19,6 @@ let showStops = false;
 let showRoutes = false;
 let showLabels = true;
 let stopsLayer = null;
-let shapesLoaded = false;
 
 // --- Default line colors (fallback if GTFS has no color) ---
 const LINE_COLORS = [
@@ -183,7 +182,7 @@ function showVehiclePopup(vehicle, marker) {
 
 // --- Stops ---
 function loadStops() {
-    fetch(`${API_BASE}/stops/stations`)
+    fetch(`${API_BASE}/stops`)
         .then((r) => r.json())
         .then((data) => {
             stopsLayer = L.layerGroup();
@@ -207,6 +206,8 @@ function loadStops() {
                 stopsLayer.addLayer(marker);
             });
 
+            console.log(`Loaded ${data.stops.length} stops`);
+
             if (showStops) {
                 stopsLayer.addTo(map);
             }
@@ -214,10 +215,8 @@ function loadStops() {
         .catch((err) => console.error("Error loading stops:", err));
 }
 
-// --- Route shapes ---
-function loadShapes() {
-    if (shapesLoaded) return;
-
+// --- Route data ---
+function loadRoutes() {
     fetch(`${API_BASE}/routes/all`)
         .then((r) => r.json())
         .then((data) => {
@@ -226,21 +225,21 @@ function loadShapes() {
             });
             document.getElementById("route-count").textContent = data.count;
             buildLineButtons(data.routes);
-            return fetch(`${API_BASE}/shapes`);
+            console.log(`Loaded ${data.count} routes`);
         })
-        .then((r) => r.json())
-        .then((data) => {
-            // We need to map shapes to routes via trips
-            // For now, store all shapes for later route-specific loading
-            shapesLoaded = true;
-        })
-        .catch((err) => console.error("Error loading shapes:", err));
+        .catch((err) => console.error("Error loading routes:", err));
 }
 
 function loadRouteShapes(routeId) {
-    if (routeLayers[routeId]) return; // Already loaded
+    if (routeLayers[routeId]) {
+        // Already loaded — just add to map if routes are visible
+        if (showRoutes && !map.hasLayer(routeLayers[routeId])) {
+            routeLayers[routeId].addTo(map);
+        }
+        return Promise.resolve();
+    }
 
-    fetch(`${API_BASE}/shapes/${routeId}`)
+    return fetch(`${API_BASE}/shapes/${routeId}`)
         .then((r) => r.json())
         .then((data) => {
             const route = routeData[routeId] || {};
@@ -266,16 +265,13 @@ function loadRouteShapes(routeId) {
 
 function toggleRouteShapes(visible) {
     if (visible) {
-        // Load shapes for active routes
+        // Load shapes for active routes (each loadRouteShapes adds to map when done)
         const routeIds = activeFilters.size > 0
             ? [...activeFilters]
             : Object.keys(routeData);
 
         routeIds.forEach((rid) => {
             loadRouteShapes(rid);
-            if (routeLayers[rid]) {
-                routeLayers[rid].addTo(map);
-            }
         });
     } else {
         Object.values(routeLayers).forEach((layer) => {
@@ -437,7 +433,7 @@ async function init() {
     initMap();
     initControls();
     loadStops();
-    loadShapes();
+    loadRoutes();
 
     await pollVehicles();
     await pollAlerts();
