@@ -23,6 +23,7 @@ _data = {
     "trips": {},
     "shapes": {},
     "vehicles": [],
+    "vehicle_trips": {},
     "alerts": [],
     "last_vehicle_update": 0,
     "gtfs_loaded": False,
@@ -124,11 +125,26 @@ def refresh_gtfs_static():
 
 
 def poll_realtime():
-    """Poll GTFS-RT vehicle positions."""
+    """Poll GTFS-RT vehicle positions + trip updates."""
     vehicles = gtfs_rt.fetch_vehicle_positions()
+    vehicle_trips = gtfs_rt.fetch_trip_updates()
     alerts = gtfs_rt.fetch_service_alerts()
+
+    # Merge TripUpdates data into vehicles that lack trip info
+    if vehicle_trips:
+        for v in vehicles:
+            if not v.get("trip_id") and not v.get("route_id"):
+                vid = v.get("vehicle_id", "")
+                trip_info = vehicle_trips.get(vid, {})
+                if trip_info:
+                    v["trip_id"] = trip_info.get("trip_id", "")
+                    v["route_id"] = trip_info.get("route_id", "")
+                    v["direction_id"] = trip_info.get("direction_id")
+                    v["start_date"] = trip_info.get("start_date", "")
+
     with _lock:
         _data["vehicles"] = vehicles
+        _data["vehicle_trips"] = vehicle_trips
         _data["alerts"] = alerts
         _data["last_vehicle_update"] = int(time.time())
 
@@ -167,29 +183,26 @@ def debug_vehicle(vehicle_id):
         vehicle_list = list(_data["vehicles"])
         routes = _data["routes"]
         trips = _data["trips"]
+        vehicle_trips = _data.get("vehicle_trips", {})
 
     for v in vehicle_list:
         vid = v.get("vehicle_id") or v.get("id")
         if vid == vehicle_id:
             trip_id = v.get("trip_id", "")
             trip_info = trips.get(trip_id, {})
-            # Try partial match if exact match fails
-            partial_matches = []
-            if not trip_info and trip_id:
-                partial_matches = [
-                    {"key": k, "trip": t}
-                    for k, t in list(trips.items())[:5]
-                ]
             route_id = v.get("route_id") or trip_info.get("route_id", "")
             route_info = routes.get(route_id, {})
+            trip_update_info = vehicle_trips.get(vid, {})
             return jsonify({
                 "raw_vehicle": v,
                 "trip_id_from_rt": trip_id,
                 "trip_found_in_static": bool(trip_info),
                 "trip_info": trip_info,
                 "route_info": route_info,
+                "trip_update_mapping": trip_update_info,
                 "sample_trip_keys": list(trips.keys())[:5],
-                "partial_matches": partial_matches,
+                "sample_vehicle_trip_keys": list(vehicle_trips.keys())[:5],
+                "total_vehicle_trip_mappings": len(vehicle_trips),
             })
     return jsonify({"error": f"Vehicle {vehicle_id} not found"}), 404
 

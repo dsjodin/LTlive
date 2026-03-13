@@ -1,4 +1,4 @@
-"""Fetch and parse GTFS-RT realtime feeds (VehiclePositions)."""
+"""Fetch and parse GTFS-RT realtime feeds."""
 
 import time
 from google.transit import gtfs_realtime_pb2
@@ -28,7 +28,6 @@ def fetch_vehicle_positions():
         if not pos.latitude or not pos.longitude:
             continue
 
-        # Map GTFS-RT VehicleStopStatus to Swedish labels
         status_map = {
             0: "Ankommande",    # INCOMING_AT
             1: "Vid hållplats", # STOPPED_AT
@@ -54,6 +53,46 @@ def fetch_vehicle_positions():
         vehicles.append(vehicle)
 
     return vehicles
+
+
+def fetch_trip_updates():
+    """Fetch GTFS-RT TripUpdates and build vehicle_id -> trip mapping.
+
+    TripUpdates often contains the vehicle descriptor linked to trip info,
+    which VehiclePositions may lack for some operators.
+    """
+    try:
+        resp = requests.get(config.TRIP_UPDATES_URL, timeout=10)
+        resp.raise_for_status()
+    except requests.RequestException as e:
+        print(f"Error fetching trip updates: {e}")
+        return {}
+
+    feed = gtfs_realtime_pb2.FeedMessage()
+    feed.ParseFromString(resp.content)
+
+    vehicle_trips = {}
+    for entity in feed.entity:
+        if not entity.HasField("trip_update"):
+            continue
+        tu = entity.trip_update
+        vehicle_id = tu.vehicle.id if tu.HasField("vehicle") and tu.vehicle.id else ""
+        if not vehicle_id:
+            continue
+
+        trip_id = tu.trip.trip_id if tu.trip.trip_id else ""
+        route_id = tu.trip.route_id if tu.trip.route_id else ""
+        direction_id = tu.trip.direction_id if tu.trip.direction_id else None
+        start_date = tu.trip.start_date if tu.trip.start_date else ""
+
+        vehicle_trips[vehicle_id] = {
+            "trip_id": trip_id,
+            "route_id": route_id,
+            "direction_id": direction_id,
+            "start_date": start_date,
+        }
+
+    return vehicle_trips
 
 
 def fetch_service_alerts():
