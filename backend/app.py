@@ -25,6 +25,7 @@ _data = {
     "vehicles": [],
     "vehicle_trips": {},
     "alerts": [],
+    "trip_headsigns": {},
     "last_vehicle_update": 0,
     "gtfs_loaded": False,
     "gtfs_error": None,
@@ -81,16 +82,22 @@ def init_gtfs_static():
             trips = gtfs_loader.load_trips()
             shapes = gtfs_loader.load_shapes()
 
+        # Build headsigns from last stop name (when trips.txt lacks headsign)
+        print("Building trip headsigns from stop_times...")
+        trip_headsigns = gtfs_loader.load_trip_headsigns(stops)
+
         with _lock:
             _data["routes"] = routes
             _data["stops"] = stops
             _data["trips"] = trips
             _data["shapes"] = shapes
+            _data["trip_headsigns"] = trip_headsigns
             _data["gtfs_loaded"] = True
             _data["gtfs_error"] = None
 
         print(f"GTFS loaded: {len(routes)} routes, {len(stops)} stops, "
-              f"{len(trips)} trips, {len(shapes)} shapes")
+              f"{len(trips)} trips, {len(shapes)} shapes, "
+              f"{len(trip_headsigns)} trip headsigns")
     except Exception as e:
         error_msg = f"{type(e).__name__}: {e}"
         print(f"Error loading GTFS static data: {error_msg}")
@@ -130,17 +137,29 @@ def poll_realtime():
     vehicle_trips = gtfs_rt.fetch_trip_updates()
     alerts = gtfs_rt.fetch_service_alerts()
 
-    # Merge TripUpdates data into vehicles that lack trip info
+    # Merge TripUpdates into vehicles that lack trip info,
+    # then resolve route_id via static trips if TripUpdates didn't provide it
+    with _lock:
+        static_trips = _data["trips"]
+
     if vehicle_trips:
         for v in vehicles:
             if not v.get("trip_id") and not v.get("route_id"):
                 vid = v.get("vehicle_id", "")
-                trip_info = vehicle_trips.get(vid, {})
-                if trip_info:
-                    v["trip_id"] = trip_info.get("trip_id", "")
-                    v["route_id"] = trip_info.get("route_id", "")
-                    v["direction_id"] = trip_info.get("direction_id")
-                    v["start_date"] = trip_info.get("start_date", "")
+                tu = vehicle_trips.get(vid, {})
+                if tu:
+                    v["trip_id"] = tu.get("trip_id", "")
+                    v["route_id"] = tu.get("route_id", "")
+                    v["direction_id"] = tu.get("direction_id")
+                    v["start_date"] = tu.get("start_date", "")
+
+            # If we have trip_id but no route_id, look up in static trips
+            trip_id = v.get("trip_id", "")
+            if trip_id and not v.get("route_id"):
+                static_trip = static_trips.get(trip_id, {})
+                if static_trip:
+                    v["route_id"] = static_trip.get("route_id", "")
+                    v["direction_id"] = v.get("direction_id") or static_trip.get("direction_id")
 
     with _lock:
         _data["vehicles"] = vehicles
@@ -252,20 +271,22 @@ def vehicles():
         vehicle_list = list(_data["vehicles"])
         routes = _data["routes"]
         trips = _data["trips"]
-        stops = _data["stops"]
+        trip_headsigns = _data["trip_headsigns"]
 
     enriched = []
     for v in vehicle_list:
         route_info = {}
-        trip_info = trips.get(v.get("trip_id", ""), {})
+        trip_id = v.get("trip_id", "")
+        trip_info = trips.get(trip_id, {})
         route_id = v.get("route_id") or trip_info.get("route_id", "")
         if route_id:
             route_info = routes.get(route_id, {})
 
-        # Build headsign with fallbacks
+        # Build headsign: trips.txt -> last stop name -> route_long_name
         headsign = trip_info.get("trip_headsign", "")
+        if not headsign and trip_id:
+            headsign = trip_headsigns.get(trip_id, "")
         if not headsign:
-            # Fallback: use route_long_name (often "A - B" format)
             headsign = route_info.get("route_long_name", "")
 
         enriched.append({

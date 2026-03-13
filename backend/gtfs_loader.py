@@ -147,3 +147,29 @@ def load_stop_times_for_trips(trip_ids):
     for tid in trip_stops:
         trip_stops[tid].sort(key=lambda x: x["stop_sequence"])
     return dict(trip_stops)
+
+
+def load_trip_headsigns(stops):
+    """Build trip_id -> headsign by finding last stop name for each trip.
+
+    Used when trips.txt has no trip_headsign (common in Swedish GTFS).
+    Reads stop_times.txt and finds the last stop for each trip.
+    """
+    # First pass: find last stop_id per trip (highest stop_sequence)
+    trip_last_stop = {}  # trip_id -> (max_sequence, stop_id)
+    for row in _read_csv("stop_times.txt"):
+        tid = row["trip_id"]
+        seq = int(row.get("stop_sequence", 0))
+        stop_id = row["stop_id"]
+        if tid not in trip_last_stop or seq > trip_last_stop[tid][0]:
+            trip_last_stop[tid] = (seq, stop_id)
+
+    # Map to stop names
+    headsigns = {}
+    for tid, (_, stop_id) in trip_last_stop.items():
+        stop = stops.get(stop_id, {})
+        name = stop.get("stop_name", "")
+        if name:
+            headsigns[tid] = name
+
+    return headsigns
