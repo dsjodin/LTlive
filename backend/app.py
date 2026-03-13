@@ -134,6 +134,12 @@ def refresh_gtfs_static():
 def poll_realtime():
     """Poll GTFS-RT vehicle positions + trip updates."""
     vehicles = gtfs_rt.fetch_vehicle_positions()
+
+    # Don't overwrite with empty data on fetch failure
+    if not vehicles:
+        return
+
+    # Fetch trip updates and alerts (non-critical — use cached on failure)
     vehicle_trips = gtfs_rt.fetch_trip_updates()
     alerts = gtfs_rt.fetch_service_alerts()
 
@@ -141,30 +147,33 @@ def poll_realtime():
     # then resolve route_id via static trips if TripUpdates didn't provide it
     with _lock:
         static_trips = _data["trips"]
+        # Keep previous trip mappings if new fetch failed
+        if not vehicle_trips:
+            vehicle_trips = _data.get("vehicle_trips", {})
 
-    if vehicle_trips:
-        for v in vehicles:
-            if not v.get("trip_id") and not v.get("route_id"):
-                vid = v.get("vehicle_id", "")
-                tu = vehicle_trips.get(vid, {})
-                if tu:
-                    v["trip_id"] = tu.get("trip_id", "")
-                    v["route_id"] = tu.get("route_id", "")
-                    v["direction_id"] = tu.get("direction_id")
-                    v["start_date"] = tu.get("start_date", "")
+    for v in vehicles:
+        if not v.get("trip_id") and not v.get("route_id"):
+            vid = v.get("vehicle_id", "")
+            tu = vehicle_trips.get(vid, {})
+            if tu:
+                v["trip_id"] = tu.get("trip_id", "")
+                v["route_id"] = tu.get("route_id", "")
+                v["direction_id"] = tu.get("direction_id")
+                v["start_date"] = tu.get("start_date", "")
 
-            # If we have trip_id but no route_id, look up in static trips
-            trip_id = v.get("trip_id", "")
-            if trip_id and not v.get("route_id"):
-                static_trip = static_trips.get(trip_id, {})
-                if static_trip:
-                    v["route_id"] = static_trip.get("route_id", "")
-                    v["direction_id"] = v.get("direction_id") or static_trip.get("direction_id")
+        # If we have trip_id but no route_id, look up in static trips
+        trip_id = v.get("trip_id", "")
+        if trip_id and not v.get("route_id"):
+            static_trip = static_trips.get(trip_id, {})
+            if static_trip:
+                v["route_id"] = static_trip.get("route_id", "")
+                v["direction_id"] = v.get("direction_id") or static_trip.get("direction_id")
 
     with _lock:
         _data["vehicles"] = vehicles
         _data["vehicle_trips"] = vehicle_trips
-        _data["alerts"] = alerts
+        if alerts:
+            _data["alerts"] = alerts
         _data["last_vehicle_update"] = int(time.time())
 
 
