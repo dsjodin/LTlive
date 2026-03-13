@@ -176,35 +176,73 @@ def status():
         })
 
 
-@app.route("/api/debug/vehicle/<vehicle_id>")
-def debug_vehicle(vehicle_id):
-    """Debug: show raw data for a specific vehicle."""
+@app.route("/api/debug/matching")
+def debug_matching():
+    """Debug: show how well vehicle->trip->route matching works."""
     with _lock:
         vehicle_list = list(_data["vehicles"])
-        routes = _data["routes"]
+        all_routes = _data["routes"]
         trips = _data["trips"]
         vehicle_trips = _data.get("vehicle_trips", {})
 
+    with_route = []
+    without_route = []
+    trip_match_ok = 0
+    trip_match_fail = 0
+
     for v in vehicle_list:
-        vid = v.get("vehicle_id") or v.get("id")
-        if vid == vehicle_id:
-            trip_id = v.get("trip_id", "")
-            trip_info = trips.get(trip_id, {})
-            route_id = v.get("route_id") or trip_info.get("route_id", "")
-            route_info = routes.get(route_id, {})
-            trip_update_info = vehicle_trips.get(vid, {})
-            return jsonify({
-                "raw_vehicle": v,
-                "trip_id_from_rt": trip_id,
-                "trip_found_in_static": bool(trip_info),
-                "trip_info": trip_info,
-                "route_info": route_info,
-                "trip_update_mapping": trip_update_info,
-                "sample_trip_keys": list(trips.keys())[:5],
-                "sample_vehicle_trip_keys": list(vehicle_trips.keys())[:5],
-                "total_vehicle_trip_mappings": len(vehicle_trips),
+        vid = v.get("vehicle_id", "")
+        trip_id = v.get("trip_id", "")
+        route_id = v.get("route_id", "")
+
+        trip_info = trips.get(trip_id, {}) if trip_id else {}
+        if trip_info:
+            trip_match_ok += 1
+        elif trip_id:
+            trip_match_fail += 1
+
+        if route_id:
+            route_info = all_routes.get(route_id, {})
+            with_route.append({
+                "vehicle_id": vid,
+                "route_id": route_id,
+                "route_short_name": route_info.get("route_short_name", ""),
+                "trip_id": trip_id,
+                "trip_headsign": trip_info.get("trip_headsign", ""),
+                "route_long_name": route_info.get("route_long_name", ""),
             })
-    return jsonify({"error": f"Vehicle {vehicle_id} not found"}), 404
+        else:
+            without_route.append(vid)
+
+    # Show a sample TripUpdate mapping with static trip lookup
+    sample_mappings = []
+    for vid, tu in list(vehicle_trips.items())[:5]:
+        tid = tu.get("trip_id", "")
+        static_trip = trips.get(tid, {})
+        rid = tu.get("route_id", "")
+        route = all_routes.get(rid, {})
+        sample_mappings.append({
+            "vehicle_id": vid,
+            "trip_update_trip_id": tid,
+            "trip_update_route_id": rid,
+            "static_trip_found": bool(static_trip),
+            "static_trip_headsign": static_trip.get("trip_headsign", ""),
+            "route_short_name": route.get("route_short_name", ""),
+            "route_long_name": route.get("route_long_name", ""),
+        })
+
+    return jsonify({
+        "total_vehicles": len(vehicle_list),
+        "with_route": len(with_route),
+        "without_route": len(without_route),
+        "trip_id_match_ok": trip_match_ok,
+        "trip_id_match_fail": trip_match_fail,
+        "total_trip_update_mappings": len(vehicle_trips),
+        "sample_with_route": with_route[:5],
+        "sample_without_route": without_route[:5],
+        "sample_trip_update_mappings": sample_mappings,
+        "sample_static_trip_keys": list(trips.keys())[:3],
+    })
 
 
 @app.route("/api/vehicles")
