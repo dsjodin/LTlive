@@ -43,6 +43,11 @@ def init_gtfs_static():
         gtfs_dir = config.GTFS_DATA_DIR
         routes_file = os.path.join(gtfs_dir, "routes.txt")
 
+        # Clean up corrupt zip from previous failed attempt
+        stale_zip = os.path.join(gtfs_dir, "gtfs.zip")
+        if not os.path.exists(routes_file) and os.path.exists(stale_zip):
+            os.remove(stale_zip)
+
         if not os.path.exists(routes_file):
             gtfs_loader.download_gtfs_static()
 

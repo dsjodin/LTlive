@@ -16,9 +16,37 @@ def download_gtfs_static():
     os.makedirs(config.GTFS_DATA_DIR, exist_ok=True)
     zip_path = os.path.join(config.GTFS_DATA_DIR, "gtfs.zip")
 
-    print(f"Downloading GTFS static data from {config.OPERATOR}...")
+    # Mask key in log output
+    safe_url = config.GTFS_STATIC_URL.split("?")[0]
+    print(f"Downloading GTFS static data: {safe_url}")
+    print(f"  Using static key: {'***' + config.TRAFIKLAB_GTFS_STATIC_KEY[-4:] if len(config.TRAFIKLAB_GTFS_STATIC_KEY) > 4 else '(empty or too short)'}")
+
     resp = requests.get(config.GTFS_STATIC_URL, timeout=120)
+
+    # Check for HTTP errors with details
+    if resp.status_code == 403:
+        raise ValueError(
+            f"403 Forbidden — API-nyckeln för GTFS Static är ogiltig eller saknas. "
+            f"Kontrollera TRAFIKLAB_GTFS_STATIC_KEY i .env"
+        )
+    if resp.status_code == 429:
+        raise ValueError("429 Too Many Requests — API-kvoten är överskriden")
     resp.raise_for_status()
+
+    # Verify we got a zip file (not an HTML error page)
+    content_type = resp.headers.get("content-type", "")
+    if "html" in content_type or "text" in content_type:
+        preview = resp.text[:300]
+        raise ValueError(
+            f"Fick HTML/text istället för zip-fil (content-type: {content_type}). "
+            f"Svar: {preview}"
+        )
+
+    if len(resp.content) < 1000:
+        raise ValueError(
+            f"Svaret är för litet ({len(resp.content)} bytes) — "
+            f"troligen inte en giltig GTFS-zip"
+        )
 
     with open(zip_path, "wb") as f:
         f.write(resp.content)
