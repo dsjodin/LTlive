@@ -160,6 +160,40 @@ def status():
         })
 
 
+@app.route("/api/debug/vehicle/<vehicle_id>")
+def debug_vehicle(vehicle_id):
+    """Debug: show raw data for a specific vehicle."""
+    with _lock:
+        vehicle_list = list(_data["vehicles"])
+        routes = _data["routes"]
+        trips = _data["trips"]
+
+    for v in vehicle_list:
+        vid = v.get("vehicle_id") or v.get("id")
+        if vid == vehicle_id:
+            trip_id = v.get("trip_id", "")
+            trip_info = trips.get(trip_id, {})
+            # Try partial match if exact match fails
+            partial_matches = []
+            if not trip_info and trip_id:
+                partial_matches = [
+                    {"key": k, "trip": t}
+                    for k, t in list(trips.items())[:5]
+                ]
+            route_id = v.get("route_id") or trip_info.get("route_id", "")
+            route_info = routes.get(route_id, {})
+            return jsonify({
+                "raw_vehicle": v,
+                "trip_id_from_rt": trip_id,
+                "trip_found_in_static": bool(trip_info),
+                "trip_info": trip_info,
+                "route_info": route_info,
+                "sample_trip_keys": list(trips.keys())[:5],
+                "partial_matches": partial_matches,
+            })
+    return jsonify({"error": f"Vehicle {vehicle_id} not found"}), 404
+
+
 @app.route("/api/vehicles")
 def vehicles():
     """Return current vehicle positions with route info."""
@@ -167,6 +201,7 @@ def vehicles():
         vehicle_list = list(_data["vehicles"])
         routes = _data["routes"]
         trips = _data["trips"]
+        stops = _data["stops"]
 
     enriched = []
     for v in vehicle_list:
@@ -176,6 +211,12 @@ def vehicles():
         if route_id:
             route_info = routes.get(route_id, {})
 
+        # Build headsign with fallbacks
+        headsign = trip_info.get("trip_headsign", "")
+        if not headsign:
+            # Fallback: use route_long_name (often "A - B" format)
+            headsign = route_info.get("route_long_name", "")
+
         enriched.append({
             **v,
             "route_id": route_id,
@@ -183,7 +224,7 @@ def vehicles():
             "route_long_name": route_info.get("route_long_name", ""),
             "route_color": route_info.get("route_color", "0074D9"),
             "route_text_color": route_info.get("route_text_color", "FFFFFF"),
-            "trip_headsign": trip_info.get("trip_headsign", ""),
+            "trip_headsign": headsign,
         })
 
     return jsonify({

@@ -160,10 +160,18 @@ function showVehiclePopup(vehicle, marker) {
     });
 
     const lineName = vehicle.route_short_name || "?";
-    const headsign = vehicle.trip_headsign || "";
-    const title = headsign
-        ? `Buss ${lineName} mot ${headsign}`
-        : `Buss ${lineName}`;
+    let headsign = vehicle.trip_headsign || "";
+
+    // If headsign is a "A - B" route name, show it as-is after "Buss X"
+    const isRouteName = headsign.includes(" - ");
+    let title;
+    if (headsign && !isRouteName) {
+        title = `Buss ${lineName} mot ${headsign}`;
+    } else if (headsign && isRouteName) {
+        title = `Buss ${lineName} ${headsign}`;
+    } else {
+        title = `Buss ${lineName}`;
+    }
 
     const status = vehicle.current_status || "I trafik";
     const updatedAt = vehicle.timestamp
