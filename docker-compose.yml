@@ -4,8 +4,9 @@ services:
       context: ./backend
     container_name: ltlive-backend
     environment:
-      - TRAFIKLAB_GTFS_RT_KEY=${TRAFIKLAB_GTFS_RT_KEY}
-      - TRAFIKLAB_GTFS_STATIC_KEY=${TRAFIKLAB_GTFS_STATIC_KEY}
+      - TRAFIKLAB_API_KEY=${TRAFIKLAB_API_KEY:-}
+      - TRAFIKLAB_GTFS_RT_KEY=${TRAFIKLAB_GTFS_RT_KEY:-}
+      - TRAFIKLAB_GTFS_STATIC_KEY=${TRAFIKLAB_GTFS_STATIC_KEY:-}
       - OPERATOR=orebro
       - RT_POLL_SECONDS=5
       - GTFS_REFRESH_HOURS=24

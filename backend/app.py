@@ -3,6 +3,7 @@
 import os
 import threading
 import time
+import traceback
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from flask import Flask, jsonify
@@ -25,6 +26,7 @@ _data = {
     "alerts": [],
     "last_vehicle_update": 0,
     "gtfs_loaded": False,
+    "gtfs_error": None,
 }
 _lock = threading.Lock()
 
@@ -32,7 +34,16 @@ _lock = threading.Lock()
 def init_gtfs_static():
     """Download and load GTFS static data."""
     try:
-        if not os.path.exists(os.path.join(config.GTFS_DATA_DIR, "routes.txt")):
+        if not config.TRAFIKLAB_GTFS_STATIC_KEY:
+            raise ValueError(
+                "No GTFS static API key configured. "
+                "Set TRAFIKLAB_GTFS_STATIC_KEY or TRAFIKLAB_API_KEY."
+            )
+
+        gtfs_dir = config.GTFS_DATA_DIR
+        routes_file = os.path.join(gtfs_dir, "routes.txt")
+
+        if not os.path.exists(routes_file):
             gtfs_loader.download_gtfs_static()
 
         routes = gtfs_loader.load_routes()
@@ -40,20 +51,31 @@ def init_gtfs_static():
         trips = gtfs_loader.load_trips()
         shapes = gtfs_loader.load_shapes()
 
+        if not routes:
+            # Data downloaded but empty — try re-downloading
+            print("GTFS routes.txt is empty, re-downloading...")
+            gtfs_loader.download_gtfs_static()
+            routes = gtfs_loader.load_routes()
+            stops = gtfs_loader.load_stops()
+            trips = gtfs_loader.load_trips()
+            shapes = gtfs_loader.load_shapes()
+
         with _lock:
             _data["routes"] = routes
             _data["stops"] = stops
             _data["trips"] = trips
             _data["shapes"] = shapes
             _data["gtfs_loaded"] = True
+            _data["gtfs_error"] = None
 
         print(f"GTFS loaded: {len(routes)} routes, {len(stops)} stops, "
               f"{len(trips)} trips, {len(shapes)} shapes")
     except Exception as e:
-        print(f"Error loading GTFS static data: {e}")
-        # Mark as loaded so the app still serves RT data
+        error_msg = f"{type(e).__name__}: {e}"
+        print(f"Error loading GTFS static data: {error_msg}")
+        traceback.print_exc()
         with _lock:
-            _data["gtfs_loaded"] = True
+            _data["gtfs_error"] = error_msg
 
 
 def refresh_gtfs_static():
@@ -70,10 +92,14 @@ def refresh_gtfs_static():
             _data["stops"] = stops
             _data["trips"] = trips
             _data["shapes"] = shapes
+            _data["gtfs_error"] = None
 
         print("GTFS static data refreshed.")
     except Exception as e:
-        print(f"Error refreshing GTFS static data: {e}")
+        error_msg = f"{type(e).__name__}: {e}"
+        print(f"Error refreshing GTFS static data: {error_msg}")
+        with _lock:
+            _data["gtfs_error"] = error_msg
 
 
 def poll_realtime():
@@ -93,16 +119,36 @@ def health():
     return jsonify({"status": "ok", "gtfs_loaded": _data["gtfs_loaded"]})
 
 
+@app.route("/api/status")
+def status():
+    """Debug endpoint showing data loading status."""
+    with _lock:
+        return jsonify({
+            "gtfs_loaded": _data["gtfs_loaded"],
+            "gtfs_error": _data["gtfs_error"],
+            "routes_count": len(_data["routes"]),
+            "stops_count": len(_data["stops"]),
+            "trips_count": len(_data["trips"]),
+            "shapes_count": len(_data["shapes"]),
+            "vehicles_count": len(_data["vehicles"]),
+            "alerts_count": len(_data["alerts"]),
+            "last_vehicle_update": _data["last_vehicle_update"],
+            "operator": config.OPERATOR,
+            "has_static_key": bool(config.TRAFIKLAB_GTFS_STATIC_KEY),
+            "has_rt_key": bool(config.TRAFIKLAB_GTFS_RT_KEY),
+        })
+
+
 @app.route("/api/vehicles")
 def vehicles():
     """Return current vehicle positions with route info."""
     with _lock:
-        vehicles = _data["vehicles"]
+        vehicle_list = list(_data["vehicles"])
         routes = _data["routes"]
         trips = _data["trips"]
 
     enriched = []
-    for v in vehicles:
+    for v in vehicle_list:
         route_info = {}
         trip_info = trips.get(v.get("trip_id", ""), {})
         route_id = v.get("route_id") or trip_info.get("route_id", "")
@@ -127,11 +173,10 @@ def vehicles():
 
 
 @app.route("/api/routes")
-def routes():
-    """Return all routes."""
+def routes_bus():
+    """Return bus routes only."""
     with _lock:
         route_list = list(_data["routes"].values())
-    # Filter to bus types (route_type 3 = bus, 700-799 = bus in extended types)
     bus_routes = [r for r in route_list
                   if r["route_type"] == 3 or 700 <= r["route_type"] <= 799]
     return jsonify({"routes": bus_routes, "count": len(bus_routes)})
@@ -150,9 +195,7 @@ def stops():
     """Return all stops (location_type 0 = stop, 1 = station)."""
     with _lock:
         stop_list = list(_data["stops"].values())
-    # Return parent stations (location_type=1) and stops without parent
-    stations = [s for s in stop_list if s["location_type"] in (0, 1)]
-    return jsonify({"stops": stations, "count": len(stations)})
+    return jsonify({"stops": stop_list, "count": len(stop_list)})
 
 
 @app.route("/api/stops/stations")
@@ -160,8 +203,8 @@ def stations():
     """Return only parent stations (location_type=1)."""
     with _lock:
         stop_list = list(_data["stops"].values())
-    stations = [s for s in stop_list if s["location_type"] == 1]
-    return jsonify({"stops": stations, "count": len(stations)})
+    result = [s for s in stop_list if s["location_type"] == 1]
+    return jsonify({"stops": result, "count": len(result)})
 
 
 @app.route("/api/shapes")
@@ -179,7 +222,6 @@ def shapes_for_route(route_id):
         trips = _data["trips"]
         all_shapes = _data["shapes"]
 
-    # Find all shape_ids used by trips on this route
     shape_ids = set()
     for trip in trips.values():
         if trip["route_id"] == route_id and trip["shape_id"]:
@@ -201,30 +243,26 @@ def alerts():
 def line_detail(route_id):
     """Return detailed info for a specific route/line."""
     with _lock:
-        routes = _data["routes"]
+        all_routes = _data["routes"]
         trips = _data["trips"]
         all_shapes = _data["shapes"]
-        vehicles = _data["vehicles"]
+        vehicle_list = _data["vehicles"]
 
-    route = routes.get(route_id)
+    route = all_routes.get(route_id)
     if not route:
         return jsonify({"error": "Route not found"}), 404
 
-    # Get trips for this route
     route_trips = {tid: t for tid, t in trips.items() if t["route_id"] == route_id}
-
-    # Get shapes
     shape_ids = set(t["shape_id"] for t in route_trips.values() if t["shape_id"])
-    shapes = {sid: all_shapes[sid] for sid in shape_ids if sid in all_shapes}
+    route_shapes = {sid: all_shapes[sid] for sid in shape_ids if sid in all_shapes}
 
-    # Get active vehicles
-    active = [v for v in vehicles
+    active = [v for v in vehicle_list
               if v.get("route_id") == route_id
               or trips.get(v.get("trip_id", ""), {}).get("route_id") == route_id]
 
     return jsonify({
         "route": route,
-        "shapes": shapes,
+        "shapes": route_shapes,
         "active_vehicles": active,
         "trip_count": len(route_trips),
     })
@@ -234,19 +272,27 @@ def line_detail(route_id):
 
 def start_background_tasks():
     """Initialize GTFS data and start polling."""
-    # Load GTFS static in background thread
     threading.Thread(target=init_gtfs_static, daemon=True).start()
 
-    # Schedule GTFS-RT polling
     scheduler = BackgroundScheduler()
     scheduler.add_job(poll_realtime, "interval", seconds=config.RT_POLL_SECONDS,
                       max_instances=1)
     scheduler.add_job(refresh_gtfs_static, "interval",
                       hours=config.GTFS_REFRESH_HOURS, max_instances=1)
+    # Retry GTFS static loading every 60s if it failed
+    scheduler.add_job(_retry_gtfs_if_needed, "interval", seconds=60, max_instances=1)
     scheduler.start()
 
-    # Initial RT poll
     threading.Thread(target=poll_realtime, daemon=True).start()
+
+
+def _retry_gtfs_if_needed():
+    """Retry loading GTFS static if it previously failed."""
+    with _lock:
+        if _data["gtfs_loaded"] and _data["routes"]:
+            return  # Already loaded successfully
+    print("GTFS static data not loaded yet, retrying...")
+    init_gtfs_static()
 
 
 start_background_tasks()

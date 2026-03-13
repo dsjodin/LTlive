@@ -10,15 +10,16 @@ const DEFAULT_ZOOM = 13;
 
 // --- State ---
 let map;
-let vehicleMarkers = {};    // keyed by vehicle_id
-let stopMarkers = [];
-let routeLayers = {};        // keyed by route_id
-let routeData = {};          // route info keyed by route_id
-let activeFilters = new Set(); // route_ids to show (empty = show all)
+let vehicleMarkers = {};
+let routeLayers = {};
+let routeData = {};
+let activeFilters = new Set();
 let showStops = false;
 let showRoutes = false;
 let showLabels = true;
 let stopsLayer = null;
+let stopsLoaded = false;
+let routesLoaded = false;
 
 // --- Default line colors (fallback if GTFS has no color) ---
 const LINE_COLORS = [
@@ -32,7 +33,6 @@ function getRouteColor(route) {
     if (route.route_color && route.route_color !== "000000") {
         return `#${route.route_color}`;
     }
-    // Generate deterministic color from route name
     const name = route.route_short_name || route.route_id;
     let hash = 0;
     for (let i = 0; i < name.length; i++) {
@@ -49,7 +49,6 @@ function initMap() {
         zoomControl: true,
     });
 
-    // CartoDB dark matter basemap
     L.tileLayer(
         "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
         {
@@ -92,7 +91,6 @@ function updateVehicles(vehicles) {
         const id = v.vehicle_id || v.id;
         currentIds.add(id);
 
-        // Filter check
         if (activeFilters.size > 0 && !activeFilters.has(v.route_id)) {
             if (vehicleMarkers[id]) {
                 map.removeLayer(vehicleMarkers[id]);
@@ -104,22 +102,18 @@ function updateVehicles(vehicles) {
         const latlng = [v.lat, v.lon];
 
         if (vehicleMarkers[id]) {
-            // Update existing marker position smoothly
             vehicleMarkers[id].setLatLng(latlng);
             vehicleMarkers[id].setIcon(createBusIcon(v));
         } else {
-            // Create new marker
             const marker = L.marker(latlng, {
                 icon: createBusIcon(v),
                 zIndexOffset: 1000,
             });
-
             marker.on("click", () => showVehiclePopup(v, marker));
             marker.addTo(map);
             vehicleMarkers[id] = marker;
         }
 
-        // Update stored data
         if (vehicleMarkers[id]) {
             vehicleMarkers[id]._vehicleData = v;
         }
@@ -133,7 +127,6 @@ function updateVehicles(vehicles) {
         }
     });
 
-    // Update stats
     document.getElementById("vehicle-count").textContent = vehicles.length;
     document.getElementById("last-update").textContent = new Date().toLocaleTimeString("sv-SE");
 }
@@ -156,7 +149,7 @@ function showVehiclePopup(vehicle, marker) {
 
     const speed = vehicle.speed
         ? `${(vehicle.speed * 3.6).toFixed(0)} km/h`
-        : "—";
+        : "\u2014";
     const status = vehicle.current_status || "I trafik";
     const updatedAt = vehicle.timestamp
         ? new Date(vehicle.timestamp * 1000).toLocaleTimeString("sv-SE")
@@ -182,9 +175,16 @@ function showVehiclePopup(vehicle, marker) {
 
 // --- Stops ---
 function loadStops() {
+    if (stopsLoaded) return;
+
     fetch(`${API_BASE}/stops`)
         .then((r) => r.json())
         .then((data) => {
+            if (data.count === 0) {
+                console.log("No stops returned (GTFS static may not be loaded yet)");
+                return;
+            }
+
             stopsLayer = L.layerGroup();
 
             data.stops.forEach((stop) => {
@@ -206,7 +206,8 @@ function loadStops() {
                 stopsLayer.addLayer(marker);
             });
 
-            console.log(`Loaded ${data.stops.length} stops`);
+            stopsLoaded = true;
+            console.log(`Loaded ${data.count} stops`);
 
             if (showStops) {
                 stopsLayer.addTo(map);
@@ -217,14 +218,23 @@ function loadStops() {
 
 // --- Route data ---
 function loadRoutes() {
+    if (routesLoaded) return;
+
     fetch(`${API_BASE}/routes/all`)
         .then((r) => r.json())
         .then((data) => {
+            if (data.count === 0) {
+                console.log("No routes returned (GTFS static may not be loaded yet)");
+                return;
+            }
+
+            routeData = {};
             data.routes.forEach((r) => {
                 routeData[r.route_id] = r;
             });
             document.getElementById("route-count").textContent = data.count;
             buildLineButtons(data.routes);
+            routesLoaded = true;
             console.log(`Loaded ${data.count} routes`);
         })
         .catch((err) => console.error("Error loading routes:", err));
@@ -232,7 +242,6 @@ function loadRoutes() {
 
 function loadRouteShapes(routeId) {
     if (routeLayers[routeId]) {
-        // Already loaded — just add to map if routes are visible
         if (showRoutes && !map.hasLayer(routeLayers[routeId])) {
             routeLayers[routeId].addTo(map);
         }
@@ -265,7 +274,6 @@ function loadRouteShapes(routeId) {
 
 function toggleRouteShapes(visible) {
     if (visible) {
-        // Load shapes for active routes (each loadRouteShapes adds to map when done)
         const routeIds = activeFilters.size > 0
             ? [...activeFilters]
             : Object.keys(routeData);
@@ -285,7 +293,6 @@ function buildLineButtons(routes) {
     const container = document.getElementById("line-buttons");
     container.innerHTML = "";
 
-    // Sort by route_short_name numerically where possible
     const sorted = [...routes].sort((a, b) => {
         const na = parseInt(a.route_short_name);
         const nb = parseInt(b.route_short_name);
@@ -311,16 +318,6 @@ function buildLineButtons(routes) {
                 activeFilters.delete(route.route_id);
                 btn.classList.remove("inactive");
             } else if (activeFilters.size === 0) {
-                // First filter: deactivate all, activate clicked
-                document.querySelectorAll(".line-btn").forEach((b) =>
-                    b.classList.add("inactive")
-                );
-                activeFilters.clear();
-                sorted.forEach((r) => activeFilters.add(r.route_id));
-                activeFilters.delete(route.route_id);
-                // Now only show non-filtered (i.e., remove clicked from filter set)
-                // Actually, let's use a simpler approach:
-                // activeFilters = set of routes TO SHOW
                 activeFilters.clear();
                 activeFilters.add(route.route_id);
                 document.querySelectorAll(".line-btn").forEach((b) =>
@@ -332,7 +329,6 @@ function buildLineButtons(routes) {
                 btn.classList.remove("inactive");
             }
 
-            // If all are active again, clear filter
             if (activeFilters.size >= sorted.length) {
                 activeFilters.clear();
                 document.querySelectorAll(".line-btn").forEach((b) =>
@@ -340,7 +336,6 @@ function buildLineButtons(routes) {
                 );
             }
 
-            // Reload route shapes if visible
             if (showRoutes) {
                 Object.values(routeLayers).forEach((l) => map.removeLayer(l));
                 toggleRouteShapes(true);
@@ -355,7 +350,7 @@ function buildLineButtons(routes) {
 function updateAlerts(alerts) {
     const container = document.getElementById("alerts-list");
     if (alerts.length === 0) {
-        container.innerHTML = '<p style="color:#8e8e93; font-size:0.85em;">Inga aktiva störningar</p>';
+        container.innerHTML = '<p style="color:#8e8e93; font-size:0.85em;">Inga aktiva st\u00f6rningar</p>';
         return;
     }
 
@@ -371,13 +366,61 @@ function updateAlerts(alerts) {
         .join("");
 }
 
+// --- Status banner ---
+function showStatusBanner(message) {
+    let banner = document.getElementById("status-banner");
+    if (!banner) {
+        banner = document.createElement("div");
+        banner.id = "status-banner";
+        document.body.appendChild(banner);
+    }
+    banner.textContent = message;
+    banner.style.display = "block";
+}
+
+function hideStatusBanner() {
+    const banner = document.getElementById("status-banner");
+    if (banner) {
+        banner.style.display = "none";
+    }
+}
+
+// --- Check backend status and retry loading data ---
+async function checkStatus() {
+    try {
+        const resp = await fetch(`${API_BASE}/status`);
+        const data = await resp.json();
+
+        if (data.gtfs_error) {
+            showStatusBanner(`GTFS-data kunde inte laddas: ${data.gtfs_error}`);
+            return;
+        }
+
+        if (data.routes_count === 0) {
+            showStatusBanner("Laddar GTFS-data (linjer, h\u00e5llplatser)...");
+            return;
+        }
+
+        // GTFS loaded — load stops/routes if not done yet
+        hideStatusBanner();
+
+        if (!routesLoaded) {
+            loadRoutes();
+        }
+        if (!stopsLoaded) {
+            loadStops();
+        }
+    } catch (err) {
+        console.error("Error checking status:", err);
+    }
+}
+
 // --- Polling ---
 async function pollVehicles() {
     try {
         const resp = await fetch(`${API_BASE}/vehicles`);
         const data = await resp.json();
         updateVehicles(data.vehicles);
-        updateAlerts([]); // Alerts are fetched separately
     } catch (err) {
         console.error("Error polling vehicles:", err);
     }
@@ -397,8 +440,12 @@ async function pollAlerts() {
 function initControls() {
     document.getElementById("toggle-stops").addEventListener("change", (e) => {
         showStops = e.target.checked;
-        if (showStops && stopsLayer) {
-            stopsLayer.addTo(map);
+        if (showStops) {
+            if (!stopsLoaded) {
+                loadStops();
+            } else if (stopsLayer) {
+                stopsLayer.addTo(map);
+            }
         } else if (stopsLayer) {
             map.removeLayer(stopsLayer);
         }
@@ -406,12 +453,14 @@ function initControls() {
 
     document.getElementById("toggle-routes").addEventListener("change", (e) => {
         showRoutes = e.target.checked;
+        if (showRoutes && !routesLoaded) {
+            loadRoutes();
+        }
         toggleRouteShapes(showRoutes);
     });
 
     document.getElementById("toggle-labels").addEventListener("change", (e) => {
         showLabels = e.target.checked;
-        // Refresh all markers
         Object.values(vehicleMarkers).forEach((marker) => {
             if (marker._vehicleData) {
                 marker.setIcon(createBusIcon(marker._vehicleData));
@@ -419,7 +468,6 @@ function initControls() {
         });
     });
 
-    // Sidebar toggle
     const sidebar = document.getElementById("sidebar");
     const toggleBtn = document.getElementById("sidebar-toggle");
     toggleBtn.addEventListener("click", () => {
@@ -432,15 +480,23 @@ function initControls() {
 async function init() {
     initMap();
     initControls();
-    loadStops();
-    loadRoutes();
+
+    // Check status first — loads stops/routes when GTFS is ready
+    await checkStatus();
 
     await pollVehicles();
     await pollAlerts();
 
     // Start polling
     setInterval(pollVehicles, POLL_INTERVAL);
-    setInterval(pollAlerts, 30000); // Alerts every 30s
+    setInterval(pollAlerts, 30000);
+    // Keep checking if GTFS data has loaded (retry every 10s until loaded)
+    const statusInterval = setInterval(async () => {
+        await checkStatus();
+        if (routesLoaded && stopsLoaded) {
+            clearInterval(statusInterval);
+        }
+    }, 10000);
 }
 
 document.addEventListener("DOMContentLoaded", init);

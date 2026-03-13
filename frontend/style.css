@@ -9,6 +9,24 @@ body {
     overflow: hidden;
 }
 
+#status-banner {
+    position: fixed;
+    top: 12px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 2000;
+    background: rgba(255, 165, 0, 0.9);
+    color: #1c1c1e;
+    padding: 8px 20px;
+    border-radius: 8px;
+    font-size: 0.85em;
+    font-weight: 600;
+    backdrop-filter: blur(10px);
+    display: none;
+    max-width: 90vw;
+    text-align: center;
+}
+
 #map {
     position: absolute;
     top: 0;

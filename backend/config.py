@@ -1,7 +1,9 @@
 import os
 
-TRAFIKLAB_GTFS_RT_KEY = os.environ.get("TRAFIKLAB_GTFS_RT_KEY", "")
-TRAFIKLAB_GTFS_STATIC_KEY = os.environ.get("TRAFIKLAB_GTFS_STATIC_KEY", "")
+# Support a single key or separate keys for static/realtime
+_default_key = os.environ.get("TRAFIKLAB_API_KEY", "")
+TRAFIKLAB_GTFS_RT_KEY = os.environ.get("TRAFIKLAB_GTFS_RT_KEY", "") or _default_key
+TRAFIKLAB_GTFS_STATIC_KEY = os.environ.get("TRAFIKLAB_GTFS_STATIC_KEY", "") or TRAFIKLAB_GTFS_RT_KEY or _default_key
 
 OPERATOR = os.environ.get("OPERATOR", "orebro")
 
