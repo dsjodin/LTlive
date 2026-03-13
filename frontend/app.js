@@ -8,6 +8,14 @@ const POLL_INTERVAL = 5000; // 5 seconds
 const OREBRO_CENTER = [59.2753, 15.2134];
 const DEFAULT_ZOOM = 13;
 
+// Örebro kommun approximate bounding box
+const KOMMUN_BOUNDS = {
+    south: 59.07,
+    north: 59.53,
+    west: 14.85,
+    east: 15.85,
+};
+
 // --- State ---
 let map;
 let vehicleMarkers = {};
@@ -16,6 +24,7 @@ let routeData = {};
 let activeFilters = new Set();
 let showStops = false;
 let showRoutes = false;
+const filterKommun = true; // Always filter shapes to Örebro kommun
 let showLabels = true;
 let darkMode = true;
 let tileLayer = null;
@@ -259,12 +268,30 @@ function loadRoutes() {
         .catch((err) => console.error("Error loading routes:", err));
 }
 
+function isShapeInKommun(coords) {
+    if (!coords || coords.length === 0) return false;
+    const inside = coords.filter(([lat, lon]) =>
+        lat >= KOMMUN_BOUNDS.south && lat <= KOMMUN_BOUNDS.north &&
+        lon >= KOMMUN_BOUNDS.west && lon <= KOMMUN_BOUNDS.east
+    );
+    // Shape is "in kommun" if at least 70% of points are within bounds
+    return inside.length / coords.length >= 0.7;
+}
+
 function loadRouteShapes(routeId) {
-    if (routeLayers[routeId]) {
+    // Clear cached layer if filter changed (force rebuild)
+    const cacheKey = `${routeId}_${filterKommun}`;
+    if (routeLayers[routeId] && routeLayers[routeId]._cacheKey === cacheKey) {
         if (showRoutes && !map.hasLayer(routeLayers[routeId])) {
             routeLayers[routeId].addTo(map);
         }
         return Promise.resolve();
+    }
+
+    // Remove old layer if filter changed
+    if (routeLayers[routeId]) {
+        map.removeLayer(routeLayers[routeId]);
+        delete routeLayers[routeId];
     }
 
     return fetch(`${API_BASE}/shapes/${routeId}`)
@@ -275,6 +302,10 @@ function loadRouteShapes(routeId) {
             const layerGroup = L.layerGroup();
 
             Object.values(data.shapes).forEach((coords) => {
+                // Skip shapes outside kommun if filter is active
+                if (filterKommun && !isShapeInKommun(coords)) {
+                    return;
+                }
                 const polyline = L.polyline(coords, {
                     color: color,
                     weight: 3,
@@ -283,6 +314,7 @@ function loadRouteShapes(routeId) {
                 layerGroup.addLayer(polyline);
             });
 
+            layerGroup._cacheKey = cacheKey;
             routeLayers[routeId] = layerGroup;
             if (showRoutes) {
                 layerGroup.addTo(map);
@@ -297,9 +329,7 @@ function toggleRouteShapes(visible) {
             ? [...activeFilters]
             : Object.keys(routeData);
 
-        routeIds.forEach((rid) => {
-            loadRouteShapes(rid);
-        });
+        routeIds.forEach((rid) => loadRouteShapes(rid));
     } else {
         Object.values(routeLayers).forEach((layer) => {
             map.removeLayer(layer);
