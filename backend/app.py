@@ -429,6 +429,28 @@ def shapes_for_route(route_id):
     return jsonify({"shapes": route_shapes, "route_id": route_id})
 
 
+@app.route("/api/debug/routes")
+def debug_routes():
+    """Debug: show all unique route_short_names in loaded GTFS data."""
+    with _lock:
+        route_list = list(_data["routes"].values())
+
+    by_name = {}
+    for r in route_list:
+        name = r.get("route_short_name", "")
+        by_name.setdefault(name, []).append({
+            "route_id": r["route_id"],
+            "route_long_name": r.get("route_long_name", ""),
+            "route_type": r.get("route_type"),
+        })
+
+    return jsonify({
+        "total_routes": len(route_list),
+        "unique_short_names": sorted(by_name.keys()),
+        "by_short_name": by_name,
+    })
+
+
 @app.route("/api/alerts")
 def alerts():
     """Return current service alerts."""
