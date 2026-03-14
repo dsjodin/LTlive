@@ -1,0 +1,874 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+  <meta charset="UTF-8">
+  <title>Schematic Tracer – LTlive</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #1a1a2e; --surface: #16213e; --border: #0f3460;
+      --accent: #e94560; --text: #eaeaea; --muted: #888;
+      --stop: #fff; --terminal: #ffd700;
+    }
+    html, body { height: 100%; overflow: hidden; background: var(--bg); color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', monospace; font-size: 13px; }
+
+    /* ── TOOLBAR ── */
+    #toolbar {
+      position: fixed; top: 0; left: 0; right: 0; height: 48px;
+      background: var(--surface); border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; padding: 0 12px; gap: 8px; z-index: 100;
+    }
+    #toolbar h1 { font-size: 14px; font-weight: 700; color: var(--accent); margin-right: 6px; white-space: nowrap; }
+    .tb-sep { width: 1px; height: 24px; background: var(--border); margin: 0 4px; }
+    .mode-btn {
+      padding: 5px 10px; border-radius: 5px; border: 1px solid var(--border);
+      background: transparent; color: var(--text); cursor: pointer; font-size: 12px;
+      transition: background .15s, border-color .15s;
+    }
+    .mode-btn:hover { background: rgba(255,255,255,.07); }
+    .mode-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 700; }
+    .mode-btn kbd {
+      font-size: 9px; opacity: .6; background: rgba(255,255,255,.15);
+      border-radius: 3px; padding: 1px 4px; margin-left: 4px;
+    }
+    #line-select {
+      display: flex; gap: 3px;
+    }
+    .line-btn {
+      width: 26px; height: 26px; border-radius: 50%; border: 2px solid transparent;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 11px; font-weight: 800; cursor: pointer; transition: transform .1s;
+    }
+    .line-btn:hover { transform: scale(1.15); }
+    .line-btn.active { border-color: #fff !important; box-shadow: 0 0 0 2px rgba(255,255,255,.5); }
+    .tb-action {
+      padding: 5px 12px; border-radius: 5px; border: 1px solid var(--border);
+      background: transparent; color: var(--text); cursor: pointer; font-size: 12px;
+    }
+    .tb-action:hover { background: rgba(255,255,255,.07); }
+    .tb-action.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+    .tb-action.primary:hover { opacity: .85; }
+    #file-input { display: none; }
+    #status-msg { color: var(--muted); font-size: 11px; margin-left: auto; white-space: nowrap; }
+
+    /* ── LAYOUT ── */
+    #app { display: flex; position: fixed; top: 48px; left: 0; right: 0; bottom: 0; }
+
+    /* ── SIDEBAR ── */
+    #sidebar {
+      width: 220px; flex-shrink: 0; background: var(--surface);
+      border-right: 1px solid var(--border); overflow-y: auto; display: flex; flex-direction: column;
+    }
+    .panel { border-bottom: 1px solid var(--border); }
+    .panel-title {
+      padding: 8px 12px; font-size: 11px; font-weight: 700; text-transform: uppercase;
+      letter-spacing: .8px; color: var(--muted); display: flex; justify-content: space-between;
+      align-items: center; cursor: pointer; user-select: none;
+    }
+    .panel-body { padding: 6px 0; }
+    .list-item {
+      padding: 4px 12px; cursor: pointer; display: flex; align-items: center;
+      gap: 6px; border-radius: 4px; margin: 1px 4px;
+    }
+    .list-item:hover { background: rgba(255,255,255,.05); }
+    .list-item.selected { background: rgba(233,69,96,.15); }
+    .list-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+    .list-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+    .list-del { opacity: 0; font-size: 14px; color: var(--accent); cursor: pointer; padding: 0 2px; }
+    .list-item:hover .list-del { opacity: 1; }
+    .path-count { font-size: 10px; color: var(--muted); }
+    #path-list { padding: 6px 12px; font-size: 11px; color: var(--muted); line-height: 1.7; }
+    .path-stop { display: inline-flex; align-items: center; gap: 2px; }
+    .path-arrow { color: var(--muted); }
+
+    /* ── CANVAS ── */
+    #canvas-wrapper {
+      flex: 1; position: relative; overflow: hidden;
+      background: repeating-conic-gradient(#2a2a3e 0% 25%, #1e1e30 0% 50%) 0 0 / 20px 20px;
+    }
+    #main-svg { width: 100%; height: 100%; cursor: crosshair; display: block; touch-action: none; }
+    #main-svg.mode-pan { cursor: grab; }
+    #main-svg.mode-pan:active { cursor: grabbing; }
+    #main-svg.mode-erase { cursor: not-allowed; }
+    #drop-hint {
+      position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center;
+      justify-content: center; pointer-events: none; gap: 12px;
+    }
+    #drop-hint-text {
+      font-size: 18px; color: var(--muted); text-align: center; line-height: 1.6;
+    }
+    #drop-hint-sub { font-size: 12px; color: #555; }
+    #canvas-wrapper.drag-over { outline: 3px dashed var(--accent); }
+
+    /* ── NAME INPUT POPUP ── */
+    #name-popup {
+      position: fixed; background: var(--surface); border: 1px solid var(--border);
+      border-radius: 8px; padding: 12px; z-index: 300; min-width: 220px;
+      box-shadow: 0 8px 32px rgba(0,0,0,.5); display: none;
+    }
+    #name-popup label { display: block; font-size: 11px; color: var(--muted); margin-bottom: 6px; }
+    #name-input {
+      width: 100%; padding: 6px 8px; background: var(--bg); border: 1px solid var(--border);
+      color: var(--text); border-radius: 5px; font-size: 13px; outline: none;
+    }
+    #name-input:focus { border-color: var(--accent); }
+    #name-popup-btns { display: flex; gap: 6px; margin-top: 8px; }
+    #name-popup-btns button {
+      flex: 1; padding: 5px; border-radius: 5px; cursor: pointer; font-size: 12px;
+      border: 1px solid var(--border); background: transparent; color: var(--text);
+    }
+    #name-popup-btns .ok-btn { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 700; }
+
+    /* ── EXPORT MODAL ── */
+    #export-modal {
+      position: fixed; inset: 0; background: rgba(0,0,0,.7); z-index: 400;
+      display: none; align-items: center; justify-content: center;
+    }
+    #export-modal.open { display: flex; }
+    #export-box {
+      background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+      width: min(800px, 90vw); max-height: 80vh; display: flex; flex-direction: column;
+    }
+    #export-header {
+      padding: 14px 16px; display: flex; justify-content: space-between; align-items: center;
+      border-bottom: 1px solid var(--border); flex-shrink: 0;
+    }
+    #export-header h2 { font-size: 15px; font-weight: 700; }
+    #export-close { background: none; border: none; color: var(--text); font-size: 20px; cursor: pointer; }
+    #export-code {
+      flex: 1; overflow: auto; padding: 16px;
+      font-family: 'Fira Code', 'Cascadia Code', monospace; font-size: 12px;
+      color: #a8d8a8; white-space: pre; line-height: 1.5;
+    }
+    #export-footer {
+      padding: 10px 16px; border-top: 1px solid var(--border); display: flex; gap: 8px; flex-shrink: 0;
+    }
+    .copy-btn { padding: 7px 18px; border-radius: 5px; cursor: pointer; font-size: 13px; font-weight: 600; border: none; }
+    .copy-btn.primary { background: var(--accent); color: #fff; }
+    .copy-btn:not(.primary) { background: var(--border); color: var(--text); }
+  </style>
+</head>
+<body>
+
+<div id="toolbar">
+  <h1>⬡ Tracer</h1>
+  <div class="tb-sep"></div>
+
+  <!-- Modes -->
+  <button class="mode-btn active" data-mode="pan" title="Pan / zoom">Pan <kbd>P</kbd></button>
+  <button class="mode-btn" data-mode="stop" title="Lägg till hållplats">Hållplats <kbd>S</kbd></button>
+  <button class="mode-btn" data-mode="terminal" title="Lägg till terminal">Terminal <kbd>T</kbd></button>
+  <button class="mode-btn" data-mode="line" title="Rita linjepath">Linje <kbd>L</kbd></button>
+  <button class="mode-btn" data-mode="erase" title="Ta bort">Radera <kbd>E</kbd></button>
+
+  <div class="tb-sep"></div>
+
+  <!-- Line selector -->
+  <div id="line-select"></div>
+
+  <div class="tb-sep"></div>
+
+  <!-- Actions -->
+  <label class="tb-action" style="cursor:pointer" title="Ladda bakgrundsbild (PDF/SVG/PNG)">
+    📂 Ladda bild
+    <input type="file" id="file-input" accept="image/*,.pdf,.svg">
+  </label>
+  <button class="tb-action" id="btn-save" title="Spara session (Ctrl+S)">💾 Spara</button>
+  <label class="tb-action" style="cursor:pointer" title="Återställ session">
+    📂 Öppna
+    <input type="file" id="session-input" accept=".json" style="display:none">
+  </label>
+  <button class="tb-action" id="btn-undo" title="Ångra (Ctrl+Z)">↩ Ångra</button>
+  <button class="tb-action primary" id="btn-export" title="Exportera som JS-kod">⬇ Exportera</button>
+
+  <span id="status-msg">Dra en PDF, SVG eller bild hit för att börja</span>
+</div>
+
+<div id="app">
+  <div id="sidebar">
+    <div class="panel">
+      <div class="panel-title" id="stops-title">
+        <span>Hållplatser</span><span id="stop-count" style="color:var(--muted);font-weight:400">0</span>
+      </div>
+      <div class="panel-body" id="stops-list"></div>
+    </div>
+    <div class="panel" style="flex:1">
+      <div class="panel-title">Linjepaths</div>
+      <div id="path-list">Välj "Linje"-läge och klicka på hållplatser i ordning.</div>
+    </div>
+  </div>
+
+  <div id="canvas-wrapper">
+    <svg id="main-svg" viewBox="0 0 1200 800" xmlns="http://www.w3.org/2000/svg">
+      <g id="g-bg"></g>
+      <g id="g-paths"></g>
+      <g id="g-stops-svg"></g>
+      <g id="g-preview"></g>
+    </svg>
+    <div id="drop-hint">
+      <div id="drop-hint-text">Dra en PDF, SVG eller bild hit<br>för att börja spåra</div>
+      <div id="drop-hint-sub">PNG · JPG · SVG · PDF (renderas via PDF.js)</div>
+    </div>
+  </div>
+</div>
+
+<!-- Floating name input -->
+<div id="name-popup">
+  <label id="name-label">Hållplatsnamn</label>
+  <input id="name-input" type="text" placeholder="t.ex. Resecentrum" autocomplete="off">
+  <div id="name-popup-btns">
+    <button id="name-cancel">Avbryt</button>
+    <button class="ok-btn" id="name-ok">Lägg till</button>
+  </div>
+</div>
+
+<!-- Export modal -->
+<div id="export-modal">
+  <div id="export-box">
+    <div id="export-header">
+      <h2>Exporterad JS-kod</h2>
+      <button id="export-close">×</button>
+    </div>
+    <pre id="export-code"></pre>
+    <div id="export-footer">
+      <button class="copy-btn primary" id="btn-copy">Kopiera</button>
+      <button class="copy-btn" id="btn-dl">Ladda ned .js</button>
+      <button class="copy-btn" id="export-close2">Stäng</button>
+    </div>
+  </div>
+</div>
+
+<script>
+"use strict";
+
+// ── LINE COLORS ────────────────────────────────────────────────────────────
+const LINE_COLORS = {
+  "1": { bg: "#421e55", fg: "#fff" },
+  "2": { bg: "#57aa35", fg: "#fff" },
+  "3": { bg: "#f04752", fg: "#fff" },
+  "4": { bg: "#456670", fg: "#fff" },
+  "5": { bg: "#26538f", fg: "#fff" },
+  "6": { bg: "#f58232", fg: "#fff" },
+  "7": { bg: "#b27ac3", fg: "#fff" },
+};
+
+// ── STATE ──────────────────────────────────────────────────────────────────
+let state = {
+  stops: {},       // id → { name, x, y, isTerminal }
+  linePaths: { "1":[],"2":[],"3":[],"4":[],"5":[],"6":[],"7":[] },
+  bgLoaded: false,
+  bgViewBox: "0 0 1200 800",
+};
+let mode = "pan";
+let activeLine = "1";
+let undoStack = [];
+let svgPan = { x:0, y:0, scale:1, dragging:false, sx:0, sy:0, spx:0, spy:0 };
+let pendingPlace = null;   // { x, y, isTerminal }
+let linePathStart = null;  // last clicked stop_id for line mode cursor
+
+const NS = "http://www.w3.org/2000/svg";
+const svg = document.getElementById("main-svg");
+
+// ── HELPERS ────────────────────────────────────────────────────────────────
+function el(tag, attrs={}, parent=null) {
+  const e = document.createElementNS(NS, tag);
+  for (const [k,v] of Object.entries(attrs)) e.setAttribute(k,v);
+  if (parent) parent.appendChild(e);
+  return e;
+}
+
+function toId(name) {
+  return name.toLowerCase()
+    .replace(/å/g,"a").replace(/ä/g,"a").replace(/ö/g,"o")
+    .replace(/[^a-z0-9]+/g,"-").replace(/^-+|-+$/g,"");
+}
+
+function setStatus(msg) { document.getElementById("status-msg").textContent = msg; }
+
+function pushUndo() {
+  undoStack.push(JSON.stringify(state));
+  if (undoStack.length > 50) undoStack.shift();
+}
+
+function undo() {
+  if (!undoStack.length) return;
+  state = JSON.parse(undoStack.pop());
+  renderAll();
+  setStatus("Ångrat.");
+}
+
+// ── VIEW ───────────────────────────────────────────────────────────────────
+function getViewBox() {
+  const [bx, by, bw, bh] = state.bgViewBox.split(" ").map(Number);
+  const vw = bw / svgPan.scale;
+  const vh = bh / svgPan.scale;
+  const vx = bx - svgPan.x / svgPan.scale;
+  const vy = by - svgPan.y / svgPan.scale;
+  return `${vx} ${vy} ${vw} ${vh}`;
+}
+
+function applyViewBox() { svg.setAttribute("viewBox", getViewBox()); }
+
+// Convert screen coords to SVG coords
+function screenToSVG(clientX, clientY) {
+  const pt = svg.createSVGPoint();
+  pt.x = clientX; pt.y = clientY;
+  return pt.matrixTransform(svg.getScreenCTM().inverse());
+}
+
+// ── LINE SELECT UI ─────────────────────────────────────────────────────────
+function buildLineSelect() {
+  const container = document.getElementById("line-select");
+  container.innerHTML = "";
+  for (const [ln, c] of Object.entries(LINE_COLORS)) {
+    const btn = document.createElement("button");
+    btn.className = "line-btn" + (ln === activeLine ? " active" : "");
+    btn.textContent = ln;
+    btn.style.background = c.bg;
+    btn.style.color = c.fg;
+    btn.title = `Linje ${ln}`;
+    btn.dataset.line = ln;
+    btn.addEventListener("click", () => {
+      activeLine = ln;
+      document.querySelectorAll(".line-btn").forEach(b => b.classList.toggle("active", b.dataset.line === ln));
+      if (mode !== "line") setModeBtn("line");
+      setStatus(`Linje ${ln} vald. Klicka på hållplatser i ordning.`);
+    });
+    container.appendChild(btn);
+  }
+}
+
+// ── MODE BUTTONS ───────────────────────────────────────────────────────────
+function setModeBtn(newMode) {
+  mode = newMode;
+  document.querySelectorAll(".mode-btn").forEach(b => b.classList.toggle("active", b.dataset.mode === newMode));
+  svg.className.baseVal = newMode === "pan" ? "mode-pan" : newMode === "erase" ? "mode-erase" : "";
+  linePathStart = null;
+  hideNamePopup();
+  if (newMode === "line") setStatus(`Linje ${activeLine}: klicka på hållplatser i ordning. Klicka tom yta = lägg ej till.`);
+  else if (newMode === "stop") setStatus("Klicka på kartan för att placera en hållplats.");
+  else if (newMode === "terminal") setStatus("Klicka på kartan för att placera en terminal.");
+  else if (newMode === "erase") setStatus("Klicka på en hållplats eller kryssa ur sista steget i linjepath.");
+  else setStatus("Pan: dra för att panorera, scroll för att zooma.");
+}
+
+document.querySelectorAll(".mode-btn").forEach(b => {
+  b.addEventListener("click", () => setModeBtn(b.dataset.mode));
+});
+
+// ── NAME POPUP ─────────────────────────────────────────────────────────────
+function showNamePopup(svgX, svgY, isTerminal) {
+  pendingPlace = { x: svgX, y: svgY, isTerminal };
+  const popup = document.getElementById("name-popup");
+  const input = document.getElementById("name-input");
+  document.getElementById("name-label").textContent = isTerminal ? "Terminalnamn" : "Hållplatsnamn";
+  popup.style.display = "block";
+  // Position near cursor but within viewport
+  const rect = svg.getBoundingClientRect();
+  const pt = svg.createSVGPoint();
+  pt.x = svgX; pt.y = svgY;
+  const screen = pt.matrixTransform(svg.getScreenCTM());
+  const px = Math.min(screen.x + 10, window.innerWidth - 250);
+  const py = Math.min(screen.y + 10, window.innerHeight - 120);
+  popup.style.left = px + "px";
+  popup.style.top = py + "px";
+  input.value = "";
+  input.focus();
+}
+
+function hideNamePopup() {
+  document.getElementById("name-popup").style.display = "none";
+  pendingPlace = null;
+}
+
+function confirmName() {
+  const name = document.getElementById("name-input").value.trim();
+  if (!name || !pendingPlace) { hideNamePopup(); return; }
+  pushUndo();
+  let id = toId(name);
+  if (pendingPlace.isTerminal) id = "t-" + id;
+  // Deduplicate id
+  let uid = id, n = 2;
+  while (state.stops[uid]) { uid = id + "-" + n++; }
+  state.stops[uid] = { name, x: pendingPlace.x, y: pendingPlace.y, isTerminal: pendingPlace.isTerminal };
+  hideNamePopup();
+  renderAll();
+  setStatus(`Lade till: ${name}`);
+}
+
+document.getElementById("name-ok").addEventListener("click", confirmName);
+document.getElementById("name-cancel").addEventListener("click", hideNamePopup);
+document.getElementById("name-input").addEventListener("keydown", e => {
+  if (e.key === "Enter") confirmName();
+  if (e.key === "Escape") hideNamePopup();
+});
+
+// ── FIND NEAREST STOP ──────────────────────────────────────────────────────
+function findNearestStop(svgX, svgY, thresholdPx = 18) {
+  // Convert threshold from screen pixels to SVG units
+  const rect = svg.getBoundingClientRect();
+  const [,, bw] = state.bgViewBox.split(" ").map(Number);
+  const svgUnits = (thresholdPx / rect.width) * (bw / svgPan.scale);
+
+  let best = null, bestDist = Infinity;
+  for (const [id, s] of Object.entries(state.stops)) {
+    const d = Math.hypot(s.x - svgX, s.y - svgY);
+    if (d < bestDist && d < svgUnits) { best = id; bestDist = d; }
+  }
+  return best;
+}
+
+// ── SVG CLICK HANDLER ──────────────────────────────────────────────────────
+svg.addEventListener("click", e => {
+  if (e.target.closest("[data-stop-id]") && (mode === "erase" || mode === "line")) {
+    const stopId = e.target.closest("[data-stop-id]").dataset.stopId;
+    if (mode === "erase") {
+      pushUndo();
+      delete state.stops[stopId];
+      for (const ln of Object.keys(state.linePaths)) {
+        state.linePaths[ln] = state.linePaths[ln].filter(id => id !== stopId);
+      }
+      renderAll();
+      setStatus(`Raderade hållplats.`);
+    } else if (mode === "line") {
+      addToLinePath(stopId);
+    }
+    return;
+  }
+
+  if (mode === "stop" || mode === "terminal") {
+    const { x, y } = screenToSVG(e.clientX, e.clientY);
+    showNamePopup(x, y, mode === "terminal");
+  } else if (mode === "line") {
+    // Click on empty space: check if near a stop
+    const { x, y } = screenToSVG(e.clientX, e.clientY);
+    const nearest = findNearestStop(x, y);
+    if (nearest) addToLinePath(nearest);
+  }
+});
+
+function addToLinePath(stopId) {
+  pushUndo();
+  const path = state.linePaths[activeLine];
+  // Toggle: if already last item, remove it
+  if (path.length && path[path.length - 1] === stopId) {
+    path.pop();
+    setStatus(`Tog bort ${state.stops[stopId]?.name} från linje ${activeLine}.`);
+  } else {
+    path.push(stopId);
+    setStatus(`Lade till ${state.stops[stopId]?.name} → linje ${activeLine} (${path.length} steg).`);
+  }
+  linePathStart = stopId;
+  renderAll();
+}
+
+// ── RIGHT CLICK: RENAME ────────────────────────────────────────────────────
+svg.addEventListener("contextmenu", e => {
+  e.preventDefault();
+  const g = e.target.closest("[data-stop-id]");
+  if (!g) return;
+  const id = g.dataset.stopId;
+  const s = state.stops[id];
+  if (!s) return;
+  const newName = prompt(`Byt namn på "${s.name}":`, s.name);
+  if (newName && newName.trim()) {
+    pushUndo();
+    state.stops[id].name = newName.trim();
+    renderAll();
+  }
+});
+
+// ── ERASE LINE STEP ────────────────────────────────────────────────────────
+// Ctrl+click on a line path step removes last step
+document.addEventListener("keydown", e => {
+  if (e.ctrlKey && e.key === "z") { e.preventDefault(); undo(); return; }
+  if (e.ctrlKey && e.key === "s") { e.preventDefault(); saveSession(); return; }
+  if (e.ctrlKey && e.key === "e") { e.preventDefault(); openExport(); return; }
+  if (document.getElementById("name-popup").style.display !== "none") return;
+  if (e.key === "p" || e.key === "P" || e.key === "Escape") setModeBtn("pan");
+  if (e.key === "s" || e.key === "S") setModeBtn("stop");
+  if (e.key === "t" || e.key === "T") setModeBtn("terminal");
+  if (e.key === "l" || e.key === "L") setModeBtn("line");
+  if (e.key === "e" || e.key === "E" || e.key === "Delete") setModeBtn("erase");
+  if (["1","2","3","4","5","6","7"].includes(e.key)) {
+    activeLine = e.key;
+    document.querySelectorAll(".line-btn").forEach(b => b.classList.toggle("active", b.dataset.line === e.key));
+  }
+  if (e.key === "Backspace" && mode === "line") {
+    const path = state.linePaths[activeLine];
+    if (path.length) { pushUndo(); path.pop(); renderAll(); }
+  }
+});
+
+// ── PAN & ZOOM ─────────────────────────────────────────────────────────────
+svg.addEventListener("mousedown", e => {
+  if (mode !== "pan") return;
+  svgPan.dragging = true;
+  svgPan.sx = e.clientX; svgPan.sy = e.clientY;
+  svgPan.spx = svgPan.x; svgPan.spy = svgPan.y;
+});
+window.addEventListener("mousemove", e => {
+  if (!svgPan.dragging) return;
+  svgPan.x = svgPan.spx + (e.clientX - svgPan.sx);
+  svgPan.y = svgPan.spy + (e.clientY - svgPan.sy);
+  applyViewBox();
+  // Update cursor preview for line mode
+  renderPathPreview(null, null);
+});
+window.addEventListener("mouseup", () => { svgPan.dragging = false; });
+
+svg.addEventListener("mousemove", e => {
+  if (mode === "line") {
+    const { x, y } = screenToSVG(e.clientX, e.clientY);
+    renderPathPreview(x, y);
+  }
+});
+
+svg.addEventListener("wheel", e => {
+  e.preventDefault();
+  const delta = e.deltaY > 0 ? 1/1.12 : 1.12;
+  const newScale = Math.max(0.2, Math.min(20, svgPan.scale * delta));
+  const rect = svg.getBoundingClientRect();
+  const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+  svgPan.x = mx - (mx - svgPan.x) * (newScale / svgPan.scale);
+  svgPan.y = my - (my - svgPan.y) * (newScale / svgPan.scale);
+  svgPan.scale = newScale;
+  applyViewBox();
+}, { passive: false });
+
+// ── RENDER ALL ─────────────────────────────────────────────────────────────
+function renderAll() {
+  renderPaths();
+  renderStopsSVG();
+  renderSidebar();
+}
+
+function renderPaths() {
+  const g = document.getElementById("g-paths");
+  g.innerHTML = "";
+  for (const [ln, path] of Object.entries(state.linePaths)) {
+    if (path.length < 2) continue;
+    const color = LINE_COLORS[ln].bg;
+    const pts = path.map(id => state.stops[id]).filter(Boolean);
+    const d = "M" + pts.map(s => `${s.x},${s.y}`).join("L");
+    el("path", {
+      d, stroke: color, "stroke-width": "4", fill: "none",
+      "stroke-linecap": "round", "stroke-linejoin": "round", opacity: "0.85",
+    }, g);
+  }
+}
+
+function renderPathPreview(curX, curY) {
+  const g = document.getElementById("g-preview");
+  g.innerHTML = "";
+  if (mode !== "line") return;
+  const path = state.linePaths[activeLine];
+  if (!path.length || curX === null) return;
+  const last = state.stops[path[path.length - 1]];
+  if (!last) return;
+  const color = LINE_COLORS[activeLine].bg;
+  el("line", {
+    x1: last.x, y1: last.y, x2: curX, y2: curY,
+    stroke: color, "stroke-width": "2", "stroke-dasharray": "6,4",
+    "stroke-linecap": "round", opacity: "0.6",
+  }, g);
+}
+
+function renderStopsSVG() {
+  const g = document.getElementById("g-stops-svg");
+  g.innerHTML = "";
+
+  // Determine which lines each stop belongs to
+  const stopLines = {};
+  for (const [ln, path] of Object.entries(state.linePaths)) {
+    for (const id of path) {
+      if (!stopLines[id]) stopLines[id] = [];
+      if (!stopLines[id].includes(ln)) stopLines[id].push(ln);
+    }
+  }
+
+  for (const [id, s] of Object.entries(state.stops)) {
+    const lines = stopLines[id] || [];
+    const isHub = lines.length >= 3;
+    const sg = el("g", { "data-stop-id": id, cursor: "pointer" }, g);
+
+    if (s.isTerminal) {
+      const ln = lines[0] || activeLine;
+      const c = LINE_COLORS[ln] || LINE_COLORS["1"];
+      el("circle", { cx: s.x, cy: s.y, r: 12, fill: c.bg, stroke: "#fff", "stroke-width": 2 }, sg);
+      el("text", { x: s.x, y: s.y + 4, "text-anchor": "middle", "font-size": "9", "font-weight": "800", fill: c.fg, "pointer-events": "none" }, sg).textContent = ln;
+    } else if (isHub) {
+      el("circle", { cx: s.x, cy: s.y, r: 9, fill: "#1565C0", stroke: "#fff", "stroke-width": 2 }, sg);
+    } else {
+      const fillC = lines.length === 1 ? LINE_COLORS[lines[0]].bg : "#fff";
+      const strokeC = lines.length === 1 ? "#fff" : "#555";
+      el("circle", { cx: s.x, cy: s.y, r: 5, fill: fillC, stroke: strokeC, "stroke-width": 2 }, sg);
+    }
+
+    // Name label
+    el("text", {
+      x: s.x + 8, y: s.y + 4,
+      "font-size": "10", fill: "#fff", "pointer-events": "none",
+      style: "text-shadow: 0 0 3px #000, 0 0 6px #000",
+    }, sg).textContent = s.name;
+  }
+}
+
+function renderSidebar() {
+  // Stops list
+  const stopsList = document.getElementById("stops-list");
+  const stops = Object.entries(state.stops);
+  document.getElementById("stop-count").textContent = stops.length;
+  stopsList.innerHTML = "";
+  for (const [id, s] of stops) {
+    const item = document.createElement("div");
+    item.className = "list-item";
+    item.innerHTML = `
+      <span class="list-dot" style="background:${s.isTerminal ? '#ffd700' : '#fff'};border:1.5px solid #555"></span>
+      <span class="list-name" title="${s.name}">${s.isTerminal ? "⊕ " : ""}${s.name}</span>
+      <span class="list-del" data-del="${id}">×</span>
+    `;
+    stopsList.appendChild(item);
+  }
+  stopsList.querySelectorAll("[data-del]").forEach(btn => {
+    btn.addEventListener("click", e => {
+      e.stopPropagation();
+      pushUndo();
+      const id = btn.dataset.del;
+      delete state.stops[id];
+      for (const ln of Object.keys(state.linePaths)) {
+        state.linePaths[ln] = state.linePaths[ln].filter(x => x !== id);
+      }
+      renderAll();
+    });
+  });
+
+  // Path list
+  const pathEl = document.getElementById("path-list");
+  let html = "";
+  for (const [ln, path] of Object.entries(state.linePaths)) {
+    if (!path.length) continue;
+    const c = LINE_COLORS[ln];
+    html += `<div style="margin-bottom:8px">
+      <span style="background:${c.bg};color:${c.fg};padding:1px 7px;border-radius:10px;font-size:11px;font-weight:700">Linje ${ln}</span>
+      <span style="color:var(--muted);font-size:10px;margin-left:4px">(${path.length} stopp)</span><br>
+      <span style="font-size:10px;color:#aaa;line-height:1.8">`;
+    path.forEach((id, i) => {
+      const name = state.stops[id]?.name || `?${id}`;
+      html += `<span style="color:${c.bg}">${name}</span>`;
+      if (i < path.length - 1) html += `<span style="color:#555"> → </span>`;
+    });
+    html += `</span>
+      <button onclick="clearPath('${ln}')" style="background:none;border:none;color:var(--accent);font-size:10px;cursor:pointer;margin-top:2px;display:block">× Rensa path</button>
+    </div>`;
+  }
+  pathEl.innerHTML = html || "Välj <b>Linje</b>-läge och klicka på hållplatser i ordning.";
+}
+
+function clearPath(ln) {
+  pushUndo();
+  state.linePaths[ln] = [];
+  renderAll();
+}
+window.clearPath = clearPath;
+
+// ── BACKGROUND FILE LOADING ────────────────────────────────────────────────
+function loadBackground(file) {
+  const ext = file.name.split(".").pop().toLowerCase();
+  if (ext === "pdf") {
+    loadPDF(file);
+  } else {
+    const url = URL.createObjectURL(file);
+    loadImageBg(url, file.name);
+  }
+}
+
+function loadImageBg(url, name) {
+  const img = new Image();
+  img.onload = () => {
+    const w = img.naturalWidth || 1200;
+    const h = img.naturalHeight || 800;
+    state.bgViewBox = `0 0 ${w} ${h}`;
+    svgPan = { x:0, y:0, scale:1, dragging:false, sx:0, sy:0, spx:0, spy:0 };
+    svg.setAttribute("viewBox", state.bgViewBox);
+    const gBg = document.getElementById("g-bg");
+    gBg.innerHTML = "";
+    el("image", { href: url, x:0, y:0, width:w, height:h, preserveAspectRatio:"xMidYMid meet" }, gBg);
+    document.getElementById("drop-hint").style.display = "none";
+    state.bgLoaded = true;
+    setStatus(`Bakgrund laddad: ${name} (${w}×${h}px)`);
+  };
+  img.src = url;
+}
+
+async function loadPDF(file) {
+  setStatus("Laddar PDF via PDF.js…");
+  try {
+    if (!window.pdfjsLib) {
+      // Try to load PDF.js dynamically
+      await new Promise((resolve, reject) => {
+        const s = document.createElement("script");
+        s.src = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";
+        s.onload = resolve; s.onerror = reject;
+        document.head.appendChild(s);
+      });
+      window.pdfjsLib.GlobalWorkerOptions.workerSrc =
+        "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+    }
+    const arrayBuffer = await file.arrayBuffer();
+    const pdf = await window.pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+    const page = await pdf.getPage(1);
+    const viewport = page.getViewport({ scale: 2.0 });
+    const canvas = document.createElement("canvas");
+    canvas.width = viewport.width;
+    canvas.height = viewport.height;
+    await page.render({ canvasContext: canvas.getContext("2d"), viewport }).promise;
+    const dataUrl = canvas.toDataURL("image/png");
+    loadImageBg(dataUrl, file.name);
+  } catch (err) {
+    setStatus(`PDF-fel: ${err.message}. Försök spara som PNG och ladda istället.`);
+    console.error(err);
+  }
+}
+
+// File input
+document.getElementById("file-input").addEventListener("change", e => {
+  const file = e.target.files[0];
+  if (file) loadBackground(file);
+});
+
+// Drag & drop
+const wrapper = document.getElementById("canvas-wrapper");
+wrapper.addEventListener("dragover", e => { e.preventDefault(); wrapper.classList.add("drag-over"); });
+wrapper.addEventListener("dragleave", () => wrapper.classList.remove("drag-over"));
+wrapper.addEventListener("drop", e => {
+  e.preventDefault();
+  wrapper.classList.remove("drag-over");
+  const file = e.dataTransfer.files[0];
+  if (file) loadBackground(file);
+});
+
+// ── SAVE / LOAD SESSION ────────────────────────────────────────────────────
+function saveSession() {
+  const json = JSON.stringify({ state, version: 1 }, null, 2);
+  const blob = new Blob([json], { type: "application/json" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "tracer-session.json";
+  a.click();
+  setStatus("Session sparad.");
+}
+
+document.getElementById("btn-save").addEventListener("click", saveSession);
+document.getElementById("session-input").addEventListener("change", e => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    try {
+      const { state: s } = JSON.parse(ev.target.result);
+      state.stops = s.stops || {};
+      state.linePaths = s.linePaths || {"1":[],"2":[],"3":[],"4":[],"5":[],"6":[],"7":[]};
+      state.bgViewBox = s.bgViewBox || "0 0 1200 800";
+      svg.setAttribute("viewBox", state.bgViewBox);
+      renderAll();
+      setStatus("Session öppnad. Ladda bakgrundsbilden manuellt om det behövs.");
+    } catch (err) { setStatus("Fel vid öppning av session."); }
+  };
+  reader.readAsText(file);
+});
+
+// ── EXPORT ─────────────────────────────────────────────────────────────────
+function generateCode() {
+  const stopLines = {};
+  for (const [ln, path] of Object.entries(state.linePaths)) {
+    for (const id of path) {
+      if (!stopLines[id]) stopLines[id] = [];
+      if (!stopLines[id].includes(ln)) stopLines[id].push(ln);
+    }
+  }
+
+  const stops = {};
+  const terminals = {};
+  for (const [id, s] of Object.entries(state.stops)) {
+    const lines = (stopLines[id] || []).sort();
+    const isHub = lines.length >= 3;
+    if (s.isTerminal) {
+      terminals[id] = { name: s.name, x: Math.round(s.x), y: Math.round(s.y), line: lines[0] || "?" };
+    } else {
+      const entry = { name: s.name, x: Math.round(s.x), y: Math.round(s.y), lines };
+      if (isHub) entry.hub = true;
+      stops[id] = entry;
+    }
+  }
+
+  const lines = ["1","2","3","4","5","6","7"];
+  const [,, bw, bh] = state.bgViewBox.split(" ").map(Number);
+
+  let code = `// Generated by LTlive Tracer – ${new Date().toISOString().slice(0,10)}\n`;
+  code += `// ViewBox: ${state.bgViewBox}\n\n`;
+
+  code += `const C = {\n`;
+  for (const [ln, c] of Object.entries(LINE_COLORS)) {
+    code += `  "${ln}": { bg: "${c.bg}", fg: "${c.fg}" },\n`;
+  }
+  code += `};\n\n`;
+
+  code += `const STOPS = {\n`;
+  for (const [id, s] of Object.entries(stops)) {
+    const linesStr = JSON.stringify(s.lines);
+    const hub = s.hub ? ", hub: true" : "";
+    code += `  "${id}": { name: "${s.name}", x: ${s.x}, y: ${s.y}, lines: ${linesStr}${hub} },\n`;
+  }
+  code += `};\n\n`;
+
+  code += `const TERMINALS = {\n`;
+  for (const [id, t] of Object.entries(terminals)) {
+    code += `  "${id}": { name: "${t.name}", x: ${t.x}, y: ${t.y}, line: "${t.line}" },\n`;
+  }
+  code += `};\n\n`;
+
+  code += `const LINE_PATHS = {\n`;
+  for (const ln of lines) {
+    const path = state.linePaths[ln];
+    if (!path || !path.length) continue;
+    code += `  "${ln}": [\n    ${path.map(id => `"${id}"`).join(", ")}\n  ],\n`;
+  }
+  code += `};\n`;
+
+  return code;
+}
+
+function openExport() {
+  const code = generateCode();
+  document.getElementById("export-code").textContent = code;
+  document.getElementById("export-modal").classList.add("open");
+}
+
+document.getElementById("btn-export").addEventListener("click", openExport);
+document.getElementById("export-close").addEventListener("click", () => document.getElementById("export-modal").classList.remove("open"));
+document.getElementById("export-close2").addEventListener("click", () => document.getElementById("export-modal").classList.remove("open"));
+
+document.getElementById("btn-copy").addEventListener("click", () => {
+  navigator.clipboard.writeText(document.getElementById("export-code").textContent)
+    .then(() => { document.getElementById("btn-copy").textContent = "✓ Kopierat!"; setTimeout(() => document.getElementById("btn-copy").textContent = "Kopiera", 2000); });
+});
+
+document.getElementById("btn-dl").addEventListener("click", () => {
+  const blob = new Blob([document.getElementById("export-code").textContent], { type: "text/javascript" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "schematic-data.js";
+  a.click();
+});
+
+// ── INIT ───────────────────────────────────────────────────────────────────
+buildLineSelect();
+renderAll();
+
+// Keyboard shortcut hint in status
+setStatus("Ladda en bakgrundsbild (PDF/SVG/PNG) för att börja spåra · P=Pan S=Stopp T=Terminal L=Linje E=Radera");
+</script>
+</body>
+</html>
