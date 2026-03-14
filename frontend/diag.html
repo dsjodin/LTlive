@@ -1,0 +1,651 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LTlive – Diagnostik</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: "Segoe UI", system-ui, sans-serif;
+      background: #0f1117;
+      color: #e0e0e0;
+      font-size: 13px;
+      line-height: 1.4;
+    }
+
+    a { color: #7eb8f7; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    /* ── Top bar ─────────────────────────────────────────── */
+    #topbar {
+      background: #1a1d27;
+      border-bottom: 1px solid #2a2d3d;
+      padding: 10px 18px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+    #topbar h1 { font-size: 16px; font-weight: 700; color: #fff; }
+    #topbar h1 span { color: #7eb8f7; }
+    #topbar .sep { flex: 1; }
+    #clock { color: #aaa; font-size: 12px; }
+    #refresh-btn {
+      background: #2a3050;
+      border: 1px solid #3a4060;
+      color: #ccc;
+      padding: 4px 10px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 12px;
+    }
+    #refresh-btn:hover { background: #3a4060; }
+    #auto-badge {
+      background: #1b4d2e;
+      color: #5de895;
+      border: 1px solid #2a7a46;
+      padding: 2px 8px;
+      border-radius: 10px;
+      font-size: 11px;
+    }
+    #main-link {
+      background: #1c2a40;
+      border: 1px solid #2a3a50;
+      color: #7eb8f7;
+      padding: 4px 10px;
+      border-radius: 4px;
+      font-size: 12px;
+    }
+
+    /* ── Layout ──────────────────────────────────────────── */
+    #page { max-width: 1400px; margin: 0 auto; padding: 16px; display: flex; flex-direction: column; gap: 16px; }
+
+    /* ── Section card ────────────────────────────────────── */
+    .card {
+      background: #1a1d27;
+      border: 1px solid #2a2d3d;
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    .card-header {
+      background: #20243a;
+      padding: 8px 14px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      border-bottom: 1px solid #2a2d3d;
+    }
+    .card-header h2 { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: #aab; }
+    .card-header .meta { font-size: 11px; color: #778; margin-left: auto; }
+    .card-body { padding: 12px 14px; }
+
+    /* ── System status pills ─────────────────────────────── */
+    #sysstatus { display: flex; flex-wrap: wrap; gap: 10px; }
+    .spill {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: #22263a;
+      border: 1px solid #2e3250;
+      border-radius: 6px;
+      padding: 6px 12px;
+    }
+    .spill .label { color: #778; font-size: 11px; }
+    .spill .val { font-weight: 600; color: #e0e0e0; }
+    .spill.ok .dot { width: 7px; height: 7px; border-radius: 50%; background: #5de895; }
+    .spill.warn .dot { width: 7px; height: 7px; border-radius: 50%; background: #f0a030; }
+    .spill.err .dot { width: 7px; height: 7px; border-radius: 50%; background: #f05050; }
+
+    /* ── Line table ──────────────────────────────────────── */
+    #lines-summary {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 10px;
+      flex-wrap: wrap;
+    }
+    .sum-pill {
+      background: #22263a;
+      border: 1px solid #2e3250;
+      border-radius: 6px;
+      padding: 5px 12px;
+      font-size: 12px;
+      color: #bbc;
+    }
+    .sum-pill strong { color: #fff; }
+
+    .lines-table { width: 100%; border-collapse: collapse; }
+    .lines-table th {
+      text-align: left;
+      font-size: 11px;
+      font-weight: 600;
+      color: #778;
+      padding: 5px 8px;
+      border-bottom: 1px solid #2a2d3d;
+      white-space: nowrap;
+    }
+    .lines-table td { padding: 5px 8px; vertical-align: top; border-bottom: 1px solid #1e2130; }
+    .lines-table tr:last-child td { border-bottom: none; }
+    .lines-table tr:hover td { background: #1e2236; }
+
+    /* line badge */
+    .line-badge {
+      display: inline-block;
+      padding: 2px 7px;
+      border-radius: 4px;
+      font-weight: 700;
+      font-size: 12px;
+      min-width: 32px;
+      text-align: center;
+      white-space: nowrap;
+    }
+
+    /* vehicle chips */
+    .vehicles-cell { display: flex; flex-direction: column; gap: 3px; }
+    .veh-row {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      background: #1e2236;
+      border-radius: 4px;
+      padding: 4px 8px;
+    }
+    .veh-id { color: #778; font-size: 11px; font-family: monospace; }
+    .veh-dest { color: #dde; font-weight: 600; }
+    .veh-dest::before { content: "→ "; color: #556; }
+    .veh-status { color: #aab; font-size: 11px; }
+    .veh-speed { color: #5de895; font-size: 11px; white-space: nowrap; }
+    .veh-age { color: #667; font-size: 11px; white-space: nowrap; }
+    .veh-age.stale { color: #f05050; }
+
+    .no-vehicles { color: #445; font-style: italic; font-size: 12px; }
+
+    .category-header td {
+      background: #20243a !important;
+      color: #7eb8f7;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      padding: 6px 8px;
+      border-bottom: 1px solid #2a2d3d;
+    }
+
+    /* ── Unconfigured section ────────────────────────────── */
+    .uncfg-table { width: 100%; border-collapse: collapse; }
+    .uncfg-table th { text-align: left; font-size: 11px; color: #778; padding: 5px 8px; border-bottom: 1px solid #2a2d3d; font-weight: 600; }
+    .uncfg-table td { padding: 5px 8px; border-bottom: 1px solid #1e2130; font-size: 12px; }
+    .uncfg-table tr:last-child td { border-bottom: none; }
+    .uncfg-table tr:hover td { background: #1e2236; }
+
+    /* ── Matching / debug section ────────────────────────── */
+    .stats-grid { display: flex; flex-wrap: wrap; gap: 10px; }
+    .stat-box {
+      background: #22263a;
+      border: 1px solid #2e3250;
+      border-radius: 6px;
+      padding: 10px 14px;
+      min-width: 130px;
+    }
+    .stat-box .sval { font-size: 22px; font-weight: 700; color: #fff; }
+    .stat-box .slabel { font-size: 11px; color: #778; margin-top: 2px; }
+    .stat-box.good .sval { color: #5de895; }
+    .stat-box.warn .sval { color: #f0a030; }
+    .stat-box.bad  .sval { color: #f05050; }
+
+    .sample-list { list-style: none; margin-top: 8px; display: flex; flex-direction: column; gap: 4px; }
+    .sample-list li {
+      background: #1e2236;
+      border-radius: 4px;
+      padding: 4px 8px;
+      font-size: 11px;
+      font-family: monospace;
+      color: #aab;
+    }
+
+    /* ── Loading state ───────────────────────────────────── */
+    #loading {
+      padding: 40px;
+      text-align: center;
+      color: #556;
+    }
+    .spin {
+      display: inline-block;
+      animation: spin 1s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+<div id="topbar">
+  <h1>LTlive <span>Diagnostik</span></h1>
+  <a href="/" id="main-link">← Kartan</a>
+  <div class="sep"></div>
+  <span id="clock"></span>
+  <span id="auto-badge">auto 10s</span>
+  <button id="refresh-btn" onclick="refresh()">⟳ Uppdatera</button>
+</div>
+
+<div id="page">
+  <div id="loading"><span class="spin">⟳</span> Laddar data…</div>
+</div>
+
+<script src="config.js"></script>
+<script>
+const API = '/api';
+let _refreshTimer = null;
+
+// ── Helpers ────────────────────────────────────────────────────────
+
+function fmtAge(ts) {
+  if (!ts) return '–';
+  const sek = Math.round(Date.now() / 1000 - ts);
+  if (sek < 60) return sek + 's';
+  if (sek < 3600) return Math.round(sek / 60) + 'm';
+  return Math.round(sek / 3600) + 'h';
+}
+
+function isStale(ts) {
+  return ts && (Date.now() / 1000 - ts) > 60;
+}
+
+function fmtTs(epoch) {
+  if (!epoch) return '–';
+  return new Date(epoch * 1000).toLocaleTimeString('sv-SE');
+}
+
+function fmtSpeed(mps) {
+  if (mps == null || mps === undefined) return null;
+  return Math.round(mps * 3.6) + ' km/h';
+}
+
+function badgeHtml(shortName) {
+  const cfg = (typeof LINE_COLORS_CUSTOM !== 'undefined') ? LINE_COLORS_CUSTOM : {};
+  let bg = '555', fg = 'fff';
+  if (cfg[shortName]) { bg = cfg[shortName].bg; fg = cfg[shortName].text; }
+  else if (cfg.lansbuss) { bg = cfg.lansbuss.bg; fg = cfg.lansbuss.text; }
+  return `<span class="line-badge" style="background:#${bg};color:#${fg}">${esc(shortName)}</span>`;
+}
+
+function esc(s) {
+  return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function pct(a, b) {
+  if (!b) return '0%';
+  return Math.round(100 * a / b) + '%';
+}
+
+// ── Fetch all data ─────────────────────────────────────────────────
+
+async function fetchAll() {
+  const [status, vehicles, matching] = await Promise.all([
+    fetch(`${API}/status`).then(r => r.json()).catch(() => null),
+    fetch(`${API}/vehicles`).then(r => r.json()).catch(() => []),
+    fetch(`${API}/debug/matching`).then(r => r.json()).catch(() => null),
+  ]);
+  return { status, vehicles, matching };
+}
+
+// ── Render ─────────────────────────────────────────────────────────
+
+function render({ status, vehicles, matching }) {
+  const page = document.getElementById('page');
+  page.innerHTML = '';
+
+  // group vehicles by route_short_name
+  const byLine = {};
+  for (const v of vehicles) {
+    const name = v.route_short_name || '__UNKNOWN__';
+    (byLine[name] = byLine[name] || []).push(v);
+  }
+
+  page.appendChild(buildSysStatus(status, vehicles.length));
+  page.appendChild(buildLinesTable(byLine));
+  page.appendChild(buildUnconfigured(byLine));
+  page.appendChild(buildMatching(matching, vehicles));
+}
+
+// ── System status card ─────────────────────────────────────────────
+
+function buildSysStatus(s, vehicleCount) {
+  const card = makeCard('Systemstatus');
+  const body = card.querySelector('.card-body');
+
+  if (!s) {
+    body.innerHTML = '<span style="color:#f05050">Kunde inte nå /api/status</span>';
+    return card;
+  }
+
+  const gtfsOk = s.gtfs_loaded;
+  const ageSek = s.last_vehicle_update ? Math.round(Date.now() / 1000 - s.last_vehicle_update) : null;
+
+  const pills = [
+    pill(gtfsOk ? 'ok' : 'err', 'GTFS', gtfsOk ? 'Laddad' : 'EJ LADDAD'),
+    pill('ok', 'Operatör', esc(s.operator || '–')),
+    pill('ok', 'Rutter', s.routes_count),
+    pill('ok', 'Hållplatser', s.stops_count),
+    pill('ok', 'Turer', s.trips_count),
+    pill('ok', 'Former', s.shapes_count),
+    pill(vehicleCount > 0 ? 'ok' : 'warn', 'Fordon nu', vehicleCount),
+    pill(ageSek != null ? (ageSek < 15 ? 'ok' : ageSek < 60 ? 'warn' : 'err') : 'warn',
+         'RT-ålder', ageSek != null ? ageSek + 's' : '–'),
+    pill(s.has_static_key ? 'ok' : 'err', 'Statisk nyckel', s.has_static_key ? 'OK' : 'SAKNAS'),
+    pill(s.has_rt_key ? 'ok' : 'err', 'RT-nyckel', s.has_rt_key ? 'OK' : 'SAKNAS'),
+  ];
+
+  if (s.gtfs_error) {
+    pills.push(pill('err', 'Fel', esc(s.gtfs_error)));
+  }
+
+  const wrap = document.createElement('div');
+  wrap.id = 'sysstatus';
+  wrap.innerHTML = pills.join('');
+  body.appendChild(wrap);
+
+  if (s.last_vehicle_update) {
+    const note = document.createElement('div');
+    note.style.cssText = 'margin-top:8px;color:#556;font-size:11px';
+    note.textContent = `Senaste RT-uppdatering: ${fmtTs(s.last_vehicle_update)} (${fmtAge(s.last_vehicle_update)} sedan)`;
+    body.appendChild(note);
+  }
+
+  return card;
+}
+
+function pill(state, label, val) {
+  return `<div class="spill ${state}"><div class="dot"></div><span class="label">${label}</span><span class="val">${val}</span></div>`;
+}
+
+// ── Configured lines table ─────────────────────────────────────────
+
+function buildLinesTable(byLine) {
+  const allConfigured = typeof LINE_CONFIG !== 'undefined'
+    ? { ...LINE_CONFIG }
+    : { linjer: [...(typeof ALLOWED_LINE_NUMBERS !== 'undefined' ? ALLOWED_LINE_NUMBERS : [])] };
+
+  let totalLines = 0, activeLines = 0;
+  for (const group of Object.values(allConfigured)) {
+    for (const ln of group) {
+      totalLines++;
+      if ((byLine[ln] || []).length > 0) activeLines++;
+    }
+  }
+
+  const card = makeCard('Konfigurerade linjer');
+  const hdr = card.querySelector('.card-header');
+  const meta = hdr.querySelector('.meta');
+  meta.textContent = `${activeLines} aktiva / ${totalLines} konfigurerade`;
+
+  const body = card.querySelector('.card-body');
+  body.style.padding = '0';
+
+  // summary bar
+  const sumWrap = document.createElement('div');
+  sumWrap.style.cssText = 'padding:10px 14px;border-bottom:1px solid #2a2d3d;';
+  sumWrap.id = 'lines-summary';
+  const inactiveCount = totalLines - activeLines;
+  sumWrap.innerHTML = `
+    <div class="sum-pill"><strong>${totalLines}</strong> linjer totalt</div>
+    <div class="sum-pill" style="border-color:#2a7a46;background:#1b3a28;color:#5de895"><strong>${activeLines}</strong> aktiva just nu</div>
+    <div class="sum-pill" style="${inactiveCount > 0 ? 'border-color:#7a4a20;background:#3a2a10;color:#f0a030' : ''}"><strong>${inactiveCount}</strong> utan fordon</div>
+    <div class="sum-pill"><strong>${Object.values(byLine).filter(([],_,arr) => true).reduce((s,vs) => s+vs.length, 0)}</strong> fordon totalt (konfigurerade)</div>
+  `;
+  body.appendChild(sumWrap);
+
+  const table = document.createElement('table');
+  table.className = 'lines-table';
+  table.innerHTML = `<thead><tr>
+    <th>Linje</th>
+    <th>Namn</th>
+    <th>Fordon</th>
+    <th>Fordon detaljer</th>
+  </tr></thead>`;
+  const tbody = document.createElement('tbody');
+
+  for (const [groupName, lineNums] of Object.entries(allConfigured)) {
+    // group header
+    const ghTr = document.createElement('tr');
+    ghTr.className = 'category-header';
+    ghTr.innerHTML = `<td colspan="4">${esc(groupName)}</td>`;
+    tbody.appendChild(ghTr);
+
+    for (const ln of lineNums) {
+      const vehs = byLine[ln] || [];
+      const tr = document.createElement('tr');
+
+      // badge
+      const tdBadge = document.createElement('td');
+      tdBadge.innerHTML = badgeHtml(ln);
+
+      // name – pick from first vehicle or blank
+      const tdName = document.createElement('td');
+      const longName = vehs.length > 0
+        ? (vehs[0].route_long_name || '–')
+        : '–';
+      tdName.style.color = '#aab';
+      tdName.textContent = longName;
+
+      // count
+      const tdCount = document.createElement('td');
+      tdCount.style.whiteSpace = 'nowrap';
+      if (vehs.length > 0) {
+        tdCount.innerHTML = `<span style="color:#5de895;font-weight:600">${vehs.length}</span>`;
+      } else {
+        tdCount.innerHTML = `<span style="color:#445">0</span>`;
+      }
+
+      // vehicles detail
+      const tdDetail = document.createElement('td');
+      if (vehs.length === 0) {
+        tdDetail.innerHTML = '<span class="no-vehicles">Inga aktiva fordon</span>';
+      } else {
+        const wrap = document.createElement('div');
+        wrap.className = 'vehicles-cell';
+        for (const v of vehs) {
+          const speed = fmtSpeed(v.speed);
+          const age = fmtAge(v.timestamp);
+          const stale = isStale(v.timestamp);
+          wrap.innerHTML += `
+            <div class="veh-row">
+              <span class="veh-id">${esc(v.vehicle_id)}</span>
+              <span class="veh-dest">${esc(v.trip_headsign || '?')}</span>
+              <span class="veh-status">${esc(v.current_status || '')}</span>
+              ${speed ? `<span class="veh-speed">${speed}</span>` : ''}
+              <span class="veh-age${stale ? ' stale' : ''}">${age} sedan</span>
+            </div>`;
+        }
+        tdDetail.appendChild(wrap);
+      }
+
+      tr.append(tdBadge, tdName, tdCount, tdDetail);
+      tbody.appendChild(tr);
+    }
+  }
+
+  table.appendChild(tbody);
+  body.appendChild(table);
+  return card;
+}
+
+// ── Unconfigured vehicles ──────────────────────────────────────────
+
+function buildUnconfigured(byLine) {
+  const allowed = typeof ALLOWED_LINE_NUMBERS !== 'undefined' ? ALLOWED_LINE_NUMBERS : new Set();
+  const unknown = [];
+  for (const [name, vehs] of Object.entries(byLine)) {
+    if (name !== '__UNKNOWN__' && !allowed.has(name)) {
+      unknown.push({ name, vehs });
+    }
+  }
+  const noRouteVehs = byLine['__UNKNOWN__'] || [];
+
+  const card = makeCard('Okonfigurerade fordon');
+  const hdr = card.querySelector('.card-header');
+  const meta = hdr.querySelector('.meta');
+  meta.textContent = `${unknown.length} okända linjer · ${noRouteVehs.length} fordon utan rutt`;
+
+  const body = card.querySelector('.card-body');
+
+  if (unknown.length === 0 && noRouteVehs.length === 0) {
+    body.innerHTML = '<span style="color:#5de895">Inga okonfigurerade fordon – allt matchar LINE_CONFIG ✓</span>';
+    return card;
+  }
+
+  if (unknown.length > 0) {
+    const h = document.createElement('div');
+    h.style.cssText = 'color:#f0a030;font-weight:600;margin-bottom:8px;font-size:12px';
+    h.textContent = 'Linjer i trafik men ej i LINE_CONFIG:';
+    body.appendChild(h);
+
+    const table = document.createElement('table');
+    table.className = 'uncfg-table';
+    table.innerHTML = '<thead><tr><th>Linje</th><th>Fordon</th><th>Detaljer</th></tr></thead>';
+    const tbody = document.createElement('tbody');
+    for (const { name, vehs } of unknown.sort((a, b) => a.name.localeCompare(b.name))) {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${badgeHtml(name)}</td>
+        <td>${vehs.length}</td>
+        <td style="color:#aab">${vehs.map(v => esc(v.route_long_name || v.route_id || '–')).filter((v,i,a) => a.indexOf(v) === i).join(' / ')}</td>`;
+      tbody.appendChild(tr);
+    }
+    table.appendChild(tbody);
+    body.appendChild(table);
+  }
+
+  if (noRouteVehs.length > 0) {
+    const h = document.createElement('div');
+    h.style.cssText = 'color:#f05050;font-weight:600;margin:12px 0 8px;font-size:12px';
+    h.textContent = `${noRouteVehs.length} fordon saknar helt rutt-information:`;
+    body.appendChild(h);
+    const ul = document.createElement('ul');
+    ul.className = 'sample-list';
+    for (const v of noRouteVehs.slice(0, 10)) {
+      ul.innerHTML += `<li>${esc(v.vehicle_id)} · trip_id: ${esc(v.trip_id || '–')} · ${esc(v.current_status || '')}</li>`;
+    }
+    if (noRouteVehs.length > 10) {
+      ul.innerHTML += `<li style="color:#556">… och ${noRouteVehs.length - 10} till</li>`;
+    }
+    body.appendChild(ul);
+  }
+
+  return card;
+}
+
+// ── RT matching stats ──────────────────────────────────────────────
+
+function buildMatching(m, vehicles) {
+  const card = makeCard('RT-matchning & debug');
+  const body = card.querySelector('.card-body');
+
+  if (!m) {
+    body.innerHTML = '<span style="color:#f05050">Kunde inte nå /api/debug/matching</span>';
+    return card;
+  }
+
+  const withPct = m.total_vehicles ? Math.round(100 * m.with_route / m.total_vehicles) : 0;
+  const tripPct = m.total_vehicles ? Math.round(100 * m.trip_id_match_ok / m.total_vehicles) : 0;
+
+  const grid = document.createElement('div');
+  grid.className = 'stats-grid';
+  grid.innerHTML = `
+    <div class="stat-box"><div class="sval">${m.total_vehicles}</div><div class="slabel">Fordon totalt (RT)</div></div>
+    <div class="stat-box ${withPct >= 90 ? 'good' : withPct >= 70 ? 'warn' : 'bad'}">
+      <div class="sval">${m.with_route} <small style="font-size:14px">(${withPct}%)</small></div>
+      <div class="slabel">Med rutt-info</div>
+    </div>
+    <div class="stat-box ${m.without_route === 0 ? 'good' : 'warn'}">
+      <div class="sval">${m.without_route}</div>
+      <div class="slabel">Utan rutt-info</div>
+    </div>
+    <div class="stat-box ${tripPct >= 90 ? 'good' : tripPct >= 70 ? 'warn' : 'bad'}">
+      <div class="sval">${m.trip_id_match_ok} <small style="font-size:14px">(${tripPct}%)</small></div>
+      <div class="slabel">Trip-ID matchade</div>
+    </div>
+    <div class="stat-box ${m.trip_id_match_fail === 0 ? 'good' : 'warn'}">
+      <div class="sval">${m.trip_id_match_fail}</div>
+      <div class="slabel">Trip-ID misslyckades</div>
+    </div>
+    <div class="stat-box">
+      <div class="sval">${m.total_trip_update_mappings}</div>
+      <div class="slabel">TripUpdate-mappningar</div>
+    </div>
+  `;
+  body.appendChild(grid);
+
+  // Sample: vehicles without route
+  if (m.sample_without_route && m.sample_without_route.length > 0) {
+    const h = document.createElement('div');
+    h.style.cssText = 'color:#f0a030;font-weight:600;margin:14px 0 6px;font-size:12px';
+    h.textContent = 'Exempel: fordon utan rutt-ID';
+    body.appendChild(h);
+    const ul = document.createElement('ul');
+    ul.className = 'sample-list';
+    for (const vid of m.sample_without_route) {
+      ul.innerHTML += `<li>${esc(vid)}</li>`;
+    }
+    body.appendChild(ul);
+  }
+
+  // Sample: trip update mappings
+  if (m.sample_trip_update_mappings && m.sample_trip_update_mappings.length > 0) {
+    const h = document.createElement('div');
+    h.style.cssText = 'color:#7eb8f7;font-weight:600;margin:14px 0 6px;font-size:12px';
+    h.textContent = 'Exempel: TripUpdate-mappningar';
+    body.appendChild(h);
+    const ul = document.createElement('ul');
+    ul.className = 'sample-list';
+    for (const s of m.sample_trip_update_mappings) {
+      ul.innerHTML += `<li>vehicle ${esc(s.vehicle_id)} → trip ${esc(s.trip_id)} → linje ${esc(s.route_short_name || '–')} "${esc(s.route_long_name || '')}"</li>`;
+    }
+    body.appendChild(ul);
+  }
+
+  return card;
+}
+
+// ── Util ───────────────────────────────────────────────────────────
+
+function makeCard(title) {
+  const card = document.createElement('div');
+  card.className = 'card';
+  card.innerHTML = `
+    <div class="card-header">
+      <h2>${esc(title)}</h2>
+      <span class="meta"></span>
+    </div>
+    <div class="card-body"></div>`;
+  return card;
+}
+
+function updateClock() {
+  document.getElementById('clock').textContent =
+    new Date().toLocaleTimeString('sv-SE');
+}
+
+// ── Main loop ──────────────────────────────────────────────────────
+
+async function refresh() {
+  try {
+    const data = await fetchAll();
+    render(data);
+  } catch (e) {
+    document.getElementById('page').innerHTML =
+      `<div style="color:#f05050;padding:20px">Fel: ${esc(String(e))}</div>`;
+  }
+}
+
+setInterval(updateClock, 1000);
+updateClock();
+
+refresh();
+_refreshTimer = setInterval(refresh, 10000);
+</script>
+</body>
+</html>
