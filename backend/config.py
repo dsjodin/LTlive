@@ -21,4 +21,6 @@ SERVICE_ALERTS_URL = f"{GTFS_RT_BASE}/ServiceAlerts.pb?key={TRAFIKLAB_GTFS_RT_KE
 GTFS_DATA_DIR = os.environ.get("GTFS_DATA_DIR", "/app/data/gtfs")
 GTFS_REFRESH_HOURS = int(os.environ.get("GTFS_REFRESH_HOURS", "24"))
 
-RT_POLL_SECONDS = int(os.environ.get("RT_POLL_SECONDS", "15"))
+RT_POLL_SECONDS = int(os.environ.get("RT_POLL_SECONDS", "180"))
+# Bronze: max ~180s (30 000 req/30 days ÷ 2 feeds)
+# Silver: ok med 5s (2 000 000 req/30 days)
