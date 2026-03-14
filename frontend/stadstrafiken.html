@@ -1,0 +1,910 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0">
+  <title>Stadstrafiken Örebro – LTlive</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #f5f5f5; --surface: #fff; --border: #ddd;
+      --text: #1a1a1a; --muted: #666; --hub-bg: #1565C0;
+      --panel-bg: #fff; --panel-shadow: 0 -4px 24px rgba(0,0,0,.15);
+    }
+    body.dark {
+      --bg: #121212; --surface: #1e1e1e; --border: #333;
+      --text: #f0f0f0; --muted: #aaa; --hub-bg: #1976D2;
+      --panel-bg: #1e1e1e; --panel-shadow: 0 -4px 24px rgba(0,0,0,.5);
+    }
+    html, body { height: 100%; overflow: hidden; background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+
+    #header {
+      position: fixed; top: 0; left: 0; right: 0; height: 52px;
+      background: var(--surface); border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; padding: 0 16px; gap: 14px; z-index: 100;
+    }
+    #header a { color: var(--muted); text-decoration: none; font-size: 13px; white-space: nowrap; }
+    #header a:hover { color: var(--text); }
+    #header h1 { font-size: 16px; font-weight: 700; flex: 1; }
+    .line-badges { display: flex; gap: 5px; }
+    .line-badge {
+      width: 24px; height: 24px; border-radius: 50%; display: flex;
+      align-items: center; justify-content: center;
+      font-size: 11px; font-weight: 700; color: #fff; flex-shrink: 0;
+      cursor: pointer; transition: opacity .15s;
+    }
+    .line-badge.faded { opacity: .3; }
+    #vehicle-counts { display: flex; gap: 6px; font-size: 12px; color: var(--muted); }
+    .vc-item { display: flex; align-items: center; gap: 3px; }
+    .vc-dot { width: 8px; height: 8px; border-radius: 50%; }
+    #toolbar { display: flex; gap: 8px; align-items: center; }
+    #toolbar button {
+      background: var(--surface); border: 1px solid var(--border);
+      color: var(--text); padding: 4px 10px; border-radius: 6px;
+      font-size: 12px; cursor: pointer;
+    }
+    #toolbar button:hover { background: var(--border); }
+
+    #map-wrapper {
+      position: fixed; top: 52px; left: 0; right: 0; bottom: 0;
+      overflow: hidden; touch-action: none;
+    }
+    #schematic-svg {
+      width: 100%; height: 100%; cursor: grab; user-select: none;
+      display: block;
+    }
+    #schematic-svg:active { cursor: grabbing; }
+
+    /* SVG element styles */
+    .line-path { fill: none; stroke-linecap: round; stroke-linejoin: round; }
+    .stop-circle { cursor: pointer; transition: r .1s; }
+    .stop-circle:hover { }
+    .stop-label { font-size: 11px; pointer-events: none; fill: var(--text); }
+    .hub-circle { cursor: pointer; }
+    .terminal-label { font-size: 14px; font-weight: 700; pointer-events: none; fill: var(--text); }
+    .line-number-badge { pointer-events: none; }
+    .landmark-icon { pointer-events: none; }
+    .vehicle-marker { pointer-events: none; transition: cx .5s, cy .5s; }
+
+    /* Departure panel */
+    #dep-panel {
+      position: fixed; bottom: 0; left: 0; right: 0;
+      background: var(--panel-bg); box-shadow: var(--panel-shadow);
+      border-radius: 16px 16px 0 0; padding: 0;
+      transform: translateY(100%); transition: transform .3s ease;
+      z-index: 200; max-height: 60vh; display: flex; flex-direction: column;
+    }
+    #dep-panel.open { transform: translateY(0); }
+    #dep-handle {
+      width: 40px; height: 4px; background: var(--border); border-radius: 2px;
+      margin: 10px auto 0;
+    }
+    #dep-header {
+      display: flex; align-items: center; padding: 12px 20px 8px;
+      gap: 10px; flex-shrink: 0;
+    }
+    #dep-stop-name { font-size: 17px; font-weight: 700; flex: 1; }
+    #dep-close {
+      width: 28px; height: 28px; border-radius: 50%; border: none;
+      background: var(--border); cursor: pointer; font-size: 16px;
+      display: flex; align-items: center; justify-content: center; color: var(--text);
+    }
+    #dep-lines { display: flex; gap: 6px; padding: 0 20px 10px; flex-wrap: wrap; }
+    .dep-line-badge {
+      padding: 2px 9px; border-radius: 12px; font-size: 12px; font-weight: 700; color: #fff;
+    }
+    #dep-content { overflow-y: auto; flex: 1; }
+    .dep-direction { padding: 8px 20px 4px; border-top: 1px solid var(--border); }
+    .dep-direction-label {
+      font-size: 11px; font-weight: 600; color: var(--muted);
+      text-transform: uppercase; letter-spacing: .5px; margin-bottom: 6px;
+    }
+    .dep-row {
+      display: flex; align-items: center; padding: 7px 0; gap: 12px;
+      border-bottom: 1px solid var(--border);
+    }
+    .dep-row:last-child { border-bottom: none; }
+    .dep-line {
+      min-width: 28px; height: 28px; border-radius: 50%; display: flex;
+      align-items: center; justify-content: center;
+      font-size: 12px; font-weight: 700; color: #fff; flex-shrink: 0;
+    }
+    .dep-dest { flex: 1; font-size: 14px; }
+    .dep-time { font-size: 18px; font-weight: 700; }
+    .dep-time.realtime { color: #2e8b3a; }
+    .dep-time.soon { color: #e87722; }
+    .dep-track { font-size: 11px; color: var(--muted); }
+    .no-deps { padding: 20px; text-align: center; color: var(--muted); font-size: 14px; }
+    .loading-deps { padding: 20px; text-align: center; color: var(--muted); font-size: 14px; }
+
+    #status-bar {
+      position: fixed; top: 52px; left: 50%; transform: translateX(-50%);
+      background: #f5a623; color: #fff; padding: 4px 14px; border-radius: 0 0 8px 8px;
+      font-size: 12px; z-index: 150; display: none;
+    }
+    #last-update {
+      position: fixed; bottom: 8px; right: 12px;
+      font-size: 11px; color: var(--muted); z-index: 50; pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+  <div id="header">
+    <a href="/">← Karta</a>
+    <h1>Stadstrafiken Örebro</h1>
+    <div class="line-badges" id="line-badges"></div>
+    <div id="vehicle-counts"></div>
+    <div id="toolbar">
+      <button id="btn-dark">🌙</button>
+      <button id="btn-labels">Etiketter</button>
+    </div>
+  </div>
+
+  <div id="map-wrapper">
+    <svg id="schematic-svg" viewBox="0 0 1700 960" xmlns="http://www.w3.org/2000/svg">
+      <g id="g-lines"></g>
+      <g id="g-stops"></g>
+      <g id="g-labels"></g>
+      <g id="g-vehicles"></g>
+    </svg>
+  </div>
+
+  <div id="dep-panel">
+    <div id="dep-handle"></div>
+    <div id="dep-header">
+      <div id="dep-stop-name">Hållplats</div>
+      <button id="dep-close">×</button>
+    </div>
+    <div id="dep-lines"></div>
+    <div id="dep-content"></div>
+  </div>
+
+  <div id="status-bar">Laddar GTFS-data…</div>
+  <div id="last-update"></div>
+
+  <script src="config.js"></script>
+  <script>
+  "use strict";
+
+  // ── SCHEMATIC DATA ─────────────────────────────────────────────────────────
+  // ViewBox: 0 0 1700 960
+  // Resecentrum is at (820, 460), Kulturkvarteret at (820, 553)
+
+  const C = {
+    "1": { bg: "#5B2D8E", fg: "#fff" },
+    "2": { bg: "#2E8B3A", fg: "#fff" },
+    "3": { bg: "#E87722", fg: "#fff" },
+    "4": { bg: "#1A7A7A", fg: "#fff" },
+    "5": { bg: "#1565C0", fg: "#fff" },
+    "6": { bg: "#CCAA00", fg: "#1C1C1E" },
+    "7": { bg: "#D4607A", fg: "#fff" },
+  };
+
+  // Stop definitions: id → { name, x, y, lines:[], hub?, landmark?, terminal? }
+  const STOPS = {
+    // ── HUBS ─────────────────────────────────
+    "rc": { name: "Örebro resecentrum", x: 820, y: 460, lines: ["1","2","3","4","5","6","7"], hub: true },
+    "kk": { name: "Kulturkvarteret",    x: 820, y: 553, lines: ["1","2","3","4"],              hub: true },
+
+    // ── LINE 1 – NW branch: Vivalla ──────────
+    "vivalla-c":      { name: "Vivalla centrum",    x: 668, y: 103, lines: ["1"] },
+    "versgatan":      { name: "Versgatan",           x: 668, y: 150, lines: ["1"] },
+    "strofgatan":     { name: "Strofgatan",          x: 668, y: 197, lines: ["1"] },
+    "poesigatan":     { name: "Poesigatan",          x: 668, y: 244, lines: ["1"] },
+    "boglungsangen":  { name: "Boglundsängen",       x: 668, y: 291, lines: ["1"] },
+    "baronbackarna":  { name: "Baronbackarna",       x: 668, y: 338, lines: ["1"] },
+    "tegnerlunden":   { name: "Tegnérlunden",        x: 716, y: 385, lines: ["1","2"] },
+    "markbackens-c":  { name: "Markbackens centrum", x: 762, y: 420, lines: ["1","2"] },
+    "vasterplan":     { name: "Västerplan",          x: 793, y: 440, lines: ["1","2"] },
+
+    // ── LINE 1 – SE branch: Brickebacken ─────
+    "slottet":        { name: "Slottet",             x: 908, y: 553, lines: ["1","2","4","5"], landmark: true },
+    "stortorget":     { name: "Stortorget",          x: 908, y: 620, lines: ["1","2","4","5"] },
+    "drottningg":     { name: "Drottninggatan",      x: 908, y: 672, lines: ["1","2","4","5"] },
+    "osterplan":      { name: "Österplan",           x: 1020, y: 672, lines: ["1","2","4","5","6"] },
+    "almbyplan":      { name: "Almbyplan",           x: 1112, y: 672, lines: ["1","2","4","5","6"] },
+    "tybble-centrum": { name: "Tybble centrum",      x: 1210, y: 715, lines: ["1","2","4","5"] },
+    "brickebacks-c":  { name: "Brickebackens centrum",x:1348, y: 808, lines: ["1"] },
+    "adolfsbergss":   { name: "Adolfsbergsskolan",   x: 1398, y: 832, lines: ["1"] },
+
+    // ── LINE 2 – W branch: Mellringe ─────────
+    "mellringestaden":{ name: "Mellringestaden", x: 185, y: 452, lines: ["2"] },
+    "mellringev":     { name: "Mellringevägen",  x: 262, y: 452, lines: ["2"] },
+    "sliparvagen":    { name: "Sliparevägen",    x: 338, y: 452, lines: ["2"] },
+    "ligusterv":      { name: "Ligustervägen",   x: 412, y: 452, lines: ["2"] },
+    "trollbarsgatan": { name: "Trollbärsgatan",  x: 484, y: 452, lines: ["2"] },
+    "varberga-torg":  { name: "Varberga torg",   x: 552, y: 452, lines: ["2"] },
+    "apelvagen":      { name: "Apelvägen",        x: 618, y: 452, lines: ["2"] },
+
+    // ── LINE 2 – SE branch: Örebro Universitetet ──
+    "korskyrkan":     { name: "Korskyrkan",          x: 1175, y: 785, lines: ["2","6"] },
+    "univ":           { name: "Universitetet",       x: 1175, y: 828, lines: ["2","6"], terminal: true },
+
+    // ── LINE 3 – NW branch: Lundby ───────────
+    "lillans-skola":  { name: "Lillåns skola",        x: 380, y: 193, lines: ["3"] },
+    "lillans-center": { name: "Lillåns center",       x: 408, y: 233, lines: ["3"] },
+    "lillans-vc":     { name: "Lillåns vårdcentral",  x: 435, y: 270, lines: ["3"] },
+    "rodklovervagen": { name: "Rödklövervägen",       x: 460, y: 305, lines: ["3"] },
+    "kavivagen":      { name: "Kåvivägen",            x: 483, y: 338, lines: ["3"] },
+    "gnejsvagen":     { name: "Gnejsvägen",           x: 505, y: 370, lines: ["3"] },
+    "haga-centrum":   { name: "Haga centrum",         x: 700, y: 490, lines: ["3","6"] },
+    "tengvallsg":     { name: "Tengvallsgatan",       x: 655, y: 503, lines: ["3","6"] },
+    "slattervagen":   { name: "Slättervägen",         x: 606, y: 516, lines: ["3"] },
+    "gumaelius":      { name: "Gumaeliusskolan",      x: 553, y: 528, lines: ["3"] },
+
+    // ── LINE 3 – SW branch: Solhaga ──────────
+    "hagagatan":      { name: "Hagagatan",         x: 780, y: 628, lines: ["3"] },
+    "trumpetareg":    { name: "Trumpetaregatan",   x: 727, y: 672, lines: ["3"] },
+    "rosta-centrum":  { name: "Rosta centrum",     x: 652, y: 706, lines: ["3"] },
+    "vastra-vinterg": { name: "Västra Vintergatan", x: 576, y: 730, lines: ["3"] },
+    "risbergska":     { name: "Risbergska",        x: 500, y: 750, lines: ["3"] },
+    "rosta-garde":    { name: "Rosta gärde",       x: 424, y: 766, lines: ["3"] },
+    "stodjegrand":    { name: "Stödjegränd",       x: 360, y: 780, lines: ["3"] },
+    "stolpgrand":     { name: "Stolpgränd",        x: 298, y: 794, lines: ["3"] },
+
+    // ── LINES 4 & 5 – N corridor through Svampen ──
+    "bromsplan":      { name: "Bromsplan",          x: 893, y: 430, lines: ["4","5"] },
+    "olaus-petrik":   { name: "Olaus Petrikyrkan",  x: 820, y: 400, lines: ["4","5"] },
+    "svampen-stop":   { name: "Svampen",            x: 820, y: 338, lines: ["4","5"], landmark: true },
+    "hagaby":         { name: "Hagaby",             x: 820, y: 278, lines: ["4","5"] },
+    "norra-kyrkogard":{ name: "Norra kyrkogården",  x: 820, y: 220, lines: ["4","5"] },
+    "krematoriet":    { name: "Krematoriet",        x: 820, y: 163, lines: ["5"] },
+
+    // ── LINE 4 – NE branch: Rynningeåsen ──────
+    "bjorkbacksg":    { name: "Björkbacksgatan", x: 1368, y: 195, lines: ["4"] },
+    "grenadjar":      { name: "Grenadjärvallen", x: 1280, y: 255, lines: ["4"] },
+    "uso-slussen-ne": { name: "USÖ slussen",     x: 1198, y: 312, lines: ["4"] },
+    "uso-akuten-ne":  { name: "USÖ akuten",      x: 1122, y: 363, lines: ["4"] },
+    "uso-hhuset-ne":  { name: "USÖ H-huset",     x: 1055, y: 403, lines: ["4"] },
+    "uso-grev-ne":    { name: "Grev Rosengatan", x: 995,  y: 432, lines: ["4"] },
+
+    // ── LINE 5 – NW branch: Hovsta ───────────
+    "hovsta-c":       { name: "Hovsta centrum",  x: 748, y: 103, lines: ["5"] },
+    "karvagen":       { name: "Kårstavägen",     x: 756, y: 130, lines: ["5"] },
+
+    // ── LINE 5 – S branch: Södra Station ─────
+    "svarta-bangata": { name: "Svartå Bangata",  x: 780, y: 628, lines: ["5"] },
+    "idrottsvagen":   { name: "Idrottsvägen",    x: 780, y: 672, lines: ["5"] },
+    "klerkgatan":     { name: "Klerkgatan",      x: 820, y: 720, lines: ["5"] },
+    "elementvagen":   { name: "Elementvägen",    x: 820, y: 762, lines: ["5"] },
+    "termikgatan":    { name: "Termikgatan",     x: 880, y: 800, lines: ["5"] },
+
+    // ── LINE 6 – W branch: Björkhaga ─────────
+    "posthornsg":     { name: "Posthornsgatan",  x: 205, y: 592, lines: ["6"] },
+    "postmastare":    { name: "Postmästaregatan",x: 292, y: 592, lines: ["6"] },
+    "korsbandsg":     { name: "Korsbandsgatan",  x: 377, y: 592, lines: ["6"] },
+    "vaktelv":        { name: "Vaktelvägen",     x: 460, y: 592, lines: ["6"] },
+    "domherregatan":  { name: "Domherregatan",   x: 545, y: 568, lines: ["6"] },
+
+    // ── LINES 6 & 7 – E corridor: USÖ ────────
+    "wadkoping":      { name: "Wadköping/Stadsparken", x: 988,  y: 455, lines: ["6","7"], landmark: true },
+    "uso-e":          { name: "USÖ",                   x: 1072, y: 455, lines: ["6","7"], landmark: true },
+    "uso-grev-e":     { name: "Grev Rosengatan",       x: 1150, y: 408, lines: ["6","7"] },
+    "uso-sodra-e":    { name: "USÖ Södra",             x: 1205, y: 368, lines: ["6","7"] },
+    "uso-hhuset-e":   { name: "USÖ H-huset",           x: 1253, y: 328, lines: ["6","7"] },
+    "uso-akuten-e":   { name: "USÖ akuten",            x: 1295, y: 288, lines: ["6","7"] },
+    "uso-slussen-e":  { name: "USÖ slussen",           x: 1332, y: 250, lines: ["6","7"] },
+
+    // ── LINE 7 – N branch: Lillån ─────────────
+    "lillans-c-7":    { name: "Lillåns center",       x: 598, y: 155, lines: ["7"] },
+    "lillans-vc-7":   { name: "Lillåns vårdcentral",  x: 628, y: 200, lines: ["7"] },
+    "osbergsv":       { name: "Östanbergsvägen",      x: 643, y: 240, lines: ["7"] },
+    "skiffergatan":   { name: "Skiffergatan",         x: 653, y: 278, lines: ["7"] },
+    "vinterhag":      { name: "Vinterhagsvägen",      x: 660, y: 315, lines: ["7"] },
+    "gnejsvagen-7":   { name: "Gnejsvägen",           x: 664, y: 352, lines: ["7"] },
+
+    // ── LINE 7 – SE branch: Mosås ─────────────
+    "hagmarksr":      { name: "Hagmarksrondellen",  x: 1210, y: 672, lines: ["6","7"] },
+    "salsmastare":    { name: "Salsmästaregatan",   x: 1285, y: 750, lines: ["6","7"] },
+    "skvadronsv":     { name: "Skvadronvägen",      x: 1370, y: 800, lines: ["7"] },
+    "brannbollsplan": { name: "Brännbollsplan",     x: 1430, y: 832, lines: ["7"] },
+  };
+
+  // Terminals: id → { name, x, y, line }
+  const TERMINALS = {
+    "t-vivalla":    { name: "Vivalla",             x: 668, y: 54,  line: "1" },
+    "t-mellringe":  { name: "Mellringe",           x: 52,  y: 452, line: "2" },
+    "t-bjorkhaga":  { name: "Björkhaga",           x: 52,  y: 592, line: "6" },
+    "t-solhaga":    { name: "Solhaga",             x: 183, y: 838, line: "3" },
+    "t-hovsta":     { name: "Hovsta station",      x: 748, y: 54,  line: "5" },
+    "t-lundby":     { name: "Lundby",              x: 235, y: 54,  line: "3" },
+    "t-lillan":     { name: "Lillån",              x: 548, y: 54,  line: "7" },
+    "t-rynning":    { name: "Rynningeåsen",        x: 1468,y: 148, line: "4" },
+    "t-bricke":     { name: "Brickebacken",        x: 1448,y: 858, line: "1" },
+    "t-tybble":     { name: "Tybble",              x: 1318,y: 878, line: "4" },
+    "t-tybble5":    { name: "Tybble",              x: 1268,y: 878, line: "5" },
+    "t-orebro-univ":{ name: "Örebro Universitetet",x: 1120,y: 878, line: "6" },
+    "t-mosås":      { name: "Mosås",               x: 1498,y: 878, line: "7" },
+  };
+
+  // Line paths: ordered array of stop IDs from terminal A to terminal B
+  // A '+' prefix means the stop should be drawn with a small offset to separate parallel lines
+  const LINE_PATHS = {
+    "1": [
+      "t-vivalla", "vivalla-c", "versgatan", "strofgatan", "poesigatan",
+      "boglungsangen", "baronbackarna",
+      "tegnerlunden", "markbackens-c", "vasterplan",
+      "rc", "kk",
+      "slottet", "stortorget", "drottningg",
+      "osterplan", "almbyplan", "tybble-centrum",
+      "brickebacks-c", "adolfsbergss", "t-bricke"
+    ],
+    "2": [
+      "t-mellringe", "mellringestaden", "mellringev", "sliparvagen",
+      "ligusterv", "trollbarsgatan", "varberga-torg", "apelvagen",
+      "tegnerlunden", "markbackens-c", "vasterplan",
+      "rc", "kk",
+      "slottet", "stortorget", "drottningg",
+      "osterplan", "almbyplan", "tybble-centrum",
+      "hagmarksr", "salsmastare", "korskyrkan", "univ", "t-orebro-univ"
+    ],
+    "3": [
+      "t-lundby", "lillans-skola", "lillans-center", "lillans-vc",
+      "rodklovervagen", "kavivagen", "gnejsvagen",
+      "gumaelius", "slattervagen", "tengvallsg", "haga-centrum",
+      "rc", "kk",
+      "hagagatan", "trumpetareg", "rosta-centrum",
+      "vastra-vinterg", "risbergska", "rosta-garde",
+      "stodjegrand", "stolpgrand", "t-solhaga"
+    ],
+    "4": [
+      "t-rynning", "bjorkbacksg", "grenadjar",
+      "uso-slussen-ne", "uso-akuten-ne", "uso-hhuset-ne", "uso-grev-ne",
+      "bromsplan", "olaus-petrik", "svampen-stop", "hagaby",
+      "norra-kyrkogard",
+      "rc", "kk",
+      "slottet", "stortorget", "drottningg",
+      "osterplan", "almbyplan", "tybble-centrum", "t-tybble"
+    ],
+    "5": [
+      "t-hovsta", "hovsta-c", "karvagen",
+      "krematoriet", "norra-kyrkogard", "hagaby", "svampen-stop",
+      "olaus-petrik", "bromsplan",
+      "rc",
+      "svarta-bangata", "idrottsvagen", "klerkgatan",
+      "elementvagen", "termikgatan", "t-tybble5"
+    ],
+    "6": [
+      "t-bjorkhaga", "posthornsg", "postmastare", "korsbandsg",
+      "vaktelv", "domherregatan",
+      "haga-centrum", "tengvallsg",
+      "rc",
+      "wadkoping", "uso-e",
+      "uso-grev-e", "uso-sodra-e", "uso-hhuset-e", "uso-akuten-e", "uso-slussen-e",
+      "osterplan", "almbyplan",
+      "hagmarksr", "salsmastare", "korskyrkan", "univ", "t-orebro-univ"
+    ],
+    "7": [
+      "t-lillan", "lillans-c-7", "lillans-vc-7", "osbergsv",
+      "skiffergatan", "vinterhag", "gnejsvagen-7",
+      "tegnerlunden",
+      "rc", "kk",
+      "wadkoping", "uso-e",
+      "uso-grev-e", "uso-sodra-e", "uso-hhuset-e", "uso-akuten-e", "uso-slussen-e",
+      "hagmarksr", "salsmastare", "skvadronsv", "brannbollsplan", "t-mosås"
+    ],
+  };
+
+  // ── GLOBALS ────────────────────────────────────────────────────────────────
+  const RT_POLL_MS = (window.__RT_POLL_SECONDS || 180) * 1000;
+  let stopNameToId = {};   // GTFS name → stop_id
+  let stopNameToIdAlt = {}; // normalized → stop_id
+  let vehiclesByLine = {};  // line → [vehicles]
+  let labelsVisible = true;
+  let darkMode = false;
+  let hiddenLines = new Set();
+  let selectedStopId = null;
+  let svgPan = { x: 0, y: 0, scale: 1, dragging: false, startX: 0, startY: 0, startPanX: 0, startPanY: 0 };
+
+  // ── SVG HELPERS ────────────────────────────────────────────────────────────
+  const NS = "http://www.w3.org/2000/svg";
+  function el(tag, attrs={}, parent=null) {
+    const e = document.createElementNS(NS, tag);
+    for (const [k,v] of Object.entries(attrs)) e.setAttribute(k,v);
+    if (parent) parent.appendChild(e);
+    return e;
+  }
+
+  function resolveStop(id) {
+    if (id.startsWith("t-")) {
+      const t = TERMINALS[id];
+      if (t) return t;
+    }
+    return STOPS[id];
+  }
+
+  function getLineOffset(lineNum, stopId) {
+    // Perpendicular offset for parallel lines sharing a node
+    return 0; // simplified — all lines pass through exact node coords
+  }
+
+  // ── RENDER SCHEMATIC ───────────────────────────────────────────────────────
+  function buildSchematic() {
+    const gLines   = document.getElementById("g-lines");
+    const gStops   = document.getElementById("g-stops");
+    const gLabels  = document.getElementById("g-labels");
+
+    // Draw lines
+    for (const [lineNum, stopIds] of Object.entries(LINE_PATHS)) {
+      const color = C[lineNum].bg;
+      const coords = stopIds.map(id => resolveStop(id)).filter(Boolean);
+      if (coords.length < 2) continue;
+
+      // Build smooth path using straight segments with rounded corners at bends
+      let d = `M ${coords[0].x} ${coords[0].y}`;
+      for (let i = 1; i < coords.length; i++) {
+        const p = coords[i];
+        d += ` L ${p.x} ${p.y}`;
+      }
+      el("path", {
+        d, class: "line-path",
+        stroke: color, "stroke-width": "7",
+        "stroke-linecap": "round", "stroke-linejoin": "round",
+        fill: "none",
+        "data-line": lineNum,
+      }, gLines);
+    }
+
+    // Draw stops
+    const drawnStops = new Set();
+    for (const [id, s] of Object.entries(STOPS)) {
+      if (drawnStops.has(id)) continue;
+      drawnStops.add(id);
+
+      if (s.hub) {
+        // Large hub circle
+        const g = el("g", { class: "hub-group", "data-stop-id": id, cursor: "pointer" }, gStops);
+        g.addEventListener("click", () => onStopClick(id, s));
+        el("circle", { cx: s.x, cy: s.y, r: 22, fill: "#1565C0", stroke: "#fff", "stroke-width": 3 }, g);
+        // Line badges inside hub
+        const lines = s.lines;
+        const cols = Math.min(lines.length, 4);
+        const rows = Math.ceil(lines.length / cols);
+        const bw = 13, bh = 13, gap = 2;
+        const totalW = cols * bw + (cols-1) * gap;
+        const totalH = rows * bh + (rows-1) * gap;
+        const ox = s.x - totalW/2 + bw/2;
+        const oy = s.y - totalH/2 + bh/2;
+        lines.forEach((ln, i) => {
+          const col = i % cols, row = Math.floor(i / cols);
+          const bx = ox + col*(bw+gap), by = oy + row*(bh+gap);
+          el("rect", { x: bx-bw/2, y: by-bh/2, width: bw, height: bh, rx: 3,
+            fill: C[ln].bg }, g);
+          el("text", { x: bx, y: by+4.5, "text-anchor": "middle",
+            "font-size": "8.5", "font-weight": "700", fill: C[ln].fg,
+            "pointer-events": "none" }, g).textContent = ln;
+        });
+        // Hub name label
+        const lbl = el("text", {
+          x: s.x, y: s.y + 34,
+          "text-anchor": "middle", "font-size": "12.5", "font-weight": "700",
+          class: "hub-label", fill: "#1565C0", "pointer-events": "none"
+        }, gLabels);
+        lbl.textContent = s.name;
+
+      } else {
+        // Regular stop
+        const multiLine = s.lines.length > 1;
+        const r = multiLine ? 6 : 4.5;
+        const fillColor = s.lines.length === 1 ? C[s.lines[0]].bg : "#fff";
+        const strokeColor = s.lines.length === 1 ? "#fff" : C[s.lines[0]].bg;
+
+        const g = el("g", { class: "stop-group", "data-stop-id": id, cursor: "pointer" }, gStops);
+        g.addEventListener("click", () => onStopClick(id, s));
+        el("circle", {
+          cx: s.x, cy: s.y, r,
+          fill: fillColor, stroke: strokeColor, "stroke-width": "2",
+          class: "stop-circle"
+        }, g);
+
+        // Label — positioned to avoid overlap (alternating sides)
+        const anchor = s.x < 820 ? "end" : "start";
+        const dx = s.x < 820 ? -9 : 9;
+        const lbl = el("text", {
+          x: s.x + dx, y: s.y + 4,
+          "text-anchor": anchor, "font-size": "10.5",
+          class: "stop-label", "pointer-events": "none"
+        }, gLabels);
+        lbl.textContent = s.name;
+      }
+    }
+
+    // Draw terminals
+    for (const [id, t] of Object.entries(TERMINALS)) {
+      const color = C[t.line].bg;
+      const g = el("g", { class: "terminal-group" }, gStops);
+      el("circle", { cx: t.x, cy: t.y, r: 16,
+        fill: color, stroke: "#fff", "stroke-width": 3 }, g);
+      el("text", {
+        x: t.x, y: t.y + 5.5, "text-anchor": "middle",
+        "font-size": "13", "font-weight": "800", fill: C[t.line].fg,
+        "pointer-events": "none"
+      }, g).textContent = t.line;
+
+      // Terminal name
+      const isTop  = t.y < 200;
+      const isLeft = t.x < 200;
+      const isBot  = t.y > 750;
+      let tx = t.x, ty = t.y, anchor = "middle";
+      if (isTop)  { ty = t.y - 24; }
+      if (isBot)  { ty = t.y + 28; }
+      if (isLeft) { tx = t.x + 25; ty = t.y + 5; anchor = "start"; }
+      if (!isTop && !isBot && !isLeft && t.x > 1200) { tx = t.x + 24; ty = t.y + 5; anchor = "start"; }
+      if (!isTop && !isBot && !isLeft && t.x < 300 && t.y > 400) { tx = t.x + 25; ty = t.y + 5; anchor = "start"; }
+
+      el("text", {
+        x: tx, y: ty, "text-anchor": anchor,
+        "font-size": "15", "font-weight": "800",
+        class: "terminal-label", "pointer-events": "none"
+      }, gLabels).textContent = t.name;
+    }
+
+    // Landmark icons (simple SVG symbols)
+    renderLandmark("svampen-stop",  "🌊", "SVAMPEN");
+    renderLandmark("slottet",       "🏰", "ÖREBRO SLOTT");
+    renderLandmark("uso-e",         "🏥", "USÖ");
+    renderLandmark("wadkoping",     "🎨", "WADKÖPING");
+  }
+
+  function renderLandmark(stopId, emoji, label) {
+    const s = STOPS[stopId];
+    if (!s) return;
+    const gLabels = document.getElementById("g-labels");
+    // Already drawn as stop — just add an icon label above
+    el("text", {
+      x: s.x, y: s.y - 12,
+      "text-anchor": "middle", "font-size": "14",
+      "pointer-events": "none"
+    }, gLabels).textContent = emoji;
+  }
+
+  // ── STOP CLICK & DEPARTURES ────────────────────────────────────────────────
+  async function onStopClick(stopId, stopData) {
+    const panel = document.getElementById("dep-panel");
+    const nameEl = document.getElementById("dep-stop-name");
+    const linesEl = document.getElementById("dep-lines");
+    const contentEl = document.getElementById("dep-content");
+
+    nameEl.textContent = stopData.name;
+    linesEl.innerHTML = stopData.lines.map(ln =>
+      `<span class="dep-line-badge" style="background:${C[ln].bg};color:${C[ln].fg}">${ln}</span>`
+    ).join("");
+    contentEl.innerHTML = '<div class="loading-deps">Hämtar avgångar…</div>';
+    panel.classList.add("open");
+
+    // Try to find the GTFS stop_id by name
+    const gtfsId = lookupStopId(stopData.name);
+    if (!gtfsId) {
+      contentEl.innerHTML = `<div class="no-deps">Hållplats hittades inte i GTFS-data.<br><small>${stopData.name}</small></div>`;
+      return;
+    }
+
+    selectedStopId = gtfsId;
+    await loadDepartures(gtfsId, stopData.lines);
+  }
+
+  async function loadDepartures(stopId, lines) {
+    const contentEl = document.getElementById("dep-content");
+    try {
+      const resp = await fetch(`/api/departures/${stopId}`);
+      if (!resp.ok) throw new Error(resp.statusText);
+      const data = await resp.json();
+
+      const deps = data.departures || [];
+      if (!deps.length) {
+        contentEl.innerHTML = '<div class="no-deps">Inga avgångar hittades just nu.</div>';
+        return;
+      }
+
+      const nowSec = Math.floor(Date.now() / 1000);
+
+      // Group by direction (headsign)
+      const byDir = {};
+      for (const d of deps) {
+        const dir = d.headsign || "–";
+        if (!byDir[dir]) byDir[dir] = [];
+        byDir[dir].push(d);
+      }
+
+      let html = "";
+      for (const [dir, dirDeps] of Object.entries(byDir)) {
+        html += `<div class="dep-direction">`;
+        html += `<div class="dep-direction-label">→ ${dir}</div>`;
+        dirDeps.slice(0, 5).forEach(d => {
+          const lineNum = d.route_short_name || "?";
+          const bg = C[lineNum] ? C[lineNum].bg : `#${d.route_color || "888"}`;
+          const fg = C[lineNum] ? C[lineNum].fg : `#${d.route_text_color || "fff"}`;
+          const mins = Math.round((d.departure_time - nowSec) / 60);
+          const cls = mins <= 1 ? "dep-time soon" : (d.is_realtime ? "dep-time realtime" : "dep-time");
+          const label = mins <= 0 ? "Nu" : mins === 1 ? "1 min" : `${mins} min`;
+          const rtDot = d.is_realtime ? '<span style="color:#2e8b3a;font-size:9px">●RT </span>' : '';
+          html += `<div class="dep-row">
+            <div class="dep-line" style="background:${bg};color:${fg}">${lineNum}</div>
+            <div class="dep-dest">${rtDot}${dir}</div>
+            <span class="${cls}">${label}</span>
+          </div>`;
+        });
+        html += "</div>";
+      }
+      contentEl.innerHTML = html;
+    } catch(e) {
+      contentEl.innerHTML = `<div class="no-deps">Kunde inte hämta avgångar.<br><small>${e.message}</small></div>`;
+    }
+  }
+
+  function lookupStopId(name) {
+    // Exact match
+    if (stopNameToId[name]) return stopNameToId[name];
+    // Normalized match
+    const norm = normalizeName(name);
+    if (stopNameToIdAlt[norm]) return stopNameToIdAlt[norm];
+    return null;
+  }
+
+  function normalizeName(name) {
+    return name.toLowerCase()
+      .replace(/ä/g,"a").replace(/å/g,"a").replace(/ö/g,"o")
+      .replace(/[^a-z0-9]/g,"");
+  }
+
+  // ── LOAD GTFS STOPS ────────────────────────────────────────────────────────
+  async function loadStops() {
+    try {
+      const resp = await fetch("/api/stops");
+      if (!resp.ok) return;
+      const data = await resp.json();
+      const stops = data.stops || [];
+      for (const s of stops) {
+        const n = s.stop_name || s.name;
+        const id = s.stop_id || s.id;
+        if (n && id) {
+          stopNameToId[n] = id;
+          stopNameToIdAlt[normalizeName(n)] = id;
+        }
+      }
+    } catch(e) { console.warn("Could not load stops:", e); }
+  }
+
+  // ── LIVE VEHICLES ──────────────────────────────────────────────────────────
+  async function fetchVehicles() {
+    try {
+      const resp = await fetch("/api/vehicles");
+      if (!resp.ok) return;
+      const data = await resp.json();
+      const vehicles = data.vehicles || [];
+
+      vehiclesByLine = {};
+      for (const v of vehicles) {
+        const ln = v.route_short_name || v.line;
+        if (!ln || !C[ln]) continue;
+        if (!vehiclesByLine[ln]) vehiclesByLine[ln] = [];
+        vehiclesByLine[ln].push(v);
+      }
+      renderVehicles();
+      updateVehicleCounts();
+      document.getElementById("last-update").textContent =
+        "Uppdaterad " + new Date().toLocaleTimeString("sv-SE");
+    } catch(e) { console.warn("Vehicle fetch failed:", e); }
+  }
+
+  function renderVehicles() {
+    const g = document.getElementById("g-vehicles");
+    g.innerHTML = "";
+
+    for (const [lineNum, vehicles] of Object.entries(vehiclesByLine)) {
+      if (hiddenLines.has(lineNum)) continue;
+      const color = C[lineNum].bg;
+
+      for (const v of vehicles) {
+        // Find schematic position: map next_stop_id → schematic coords
+        const schCoords = getSchematicPosition(v, lineNum);
+        if (!schCoords) continue;
+
+        // Draw a small triangle (arrowhead) at the position
+        const { x, y } = schCoords;
+        const r = 9;
+        const vg = el("g", { transform: `translate(${x},${y})`, class: "vehicle-marker" }, g);
+        el("circle", { cx: 0, cy: 0, r, fill: color, stroke: "#fff", "stroke-width": 2 }, vg);
+        el("text", { x: 0, y: 4, "text-anchor": "middle",
+          "font-size": "8", "font-weight": "800", fill: C[lineNum].fg,
+          "pointer-events": "none" }, vg).textContent = lineNum;
+      }
+    }
+  }
+
+  function getSchematicPosition(vehicle, lineNum) {
+    // Try to match vehicle's current stop to a schematic stop
+    const nextStopId = vehicle.next_stop_id || vehicle.stop_id || vehicle.current_stop_id;
+    if (nextStopId) {
+      // Find schematic stop matching this GTFS stop_id
+      for (const [sid, s] of Object.entries(STOPS)) {
+        const gtfsId = lookupStopId(s.name);
+        if (gtfsId === nextStopId || gtfsId === String(nextStopId)) {
+          // Small stable jitter per vehicle_id so multiple buses at same stop don't overlap
+          const hash = (vehicle.vehicle_id || "").split("").reduce((h,c) => (h*31+c.charCodeAt(0))|0, 0);
+          return { x: s.x + (hash % 10) - 5, y: s.y + ((hash >> 4) % 10) - 5 };
+        }
+      }
+    }
+
+    // Fallback: no match, don't render
+    return null;
+  }
+
+  function updateVehicleCounts() {
+    const el = document.getElementById("vehicle-counts");
+    const parts = [];
+    for (const [ln, vs] of Object.entries(vehiclesByLine)) {
+      if (vs.length > 0 && C[ln]) {
+        parts.push(`<span class="vc-item"><span class="vc-dot" style="background:${C[ln].bg}"></span>${vs.length}</span>`);
+      }
+    }
+    el.innerHTML = parts.join("");
+  }
+
+  // ── LINE FILTER BADGES ─────────────────────────────────────────────────────
+  function buildLineBadges() {
+    const container = document.getElementById("line-badges");
+    container.innerHTML = "";
+    ["1","2","3","4","5","6","7"].forEach(ln => {
+      const btn = document.createElement("button");
+      btn.className = "line-badge";
+      btn.textContent = ln;
+      btn.style.background = C[ln].bg;
+      btn.style.color = C[ln].fg;
+      btn.style.border = "none";
+      btn.style.outline = "none";
+      btn.title = `Linje ${ln}`;
+      btn.addEventListener("click", () => {
+        if (hiddenLines.has(ln)) hiddenLines.delete(ln);
+        else hiddenLines.add(ln);
+        btn.classList.toggle("faded", hiddenLines.has(ln));
+        applyLineVisibility();
+      });
+      container.appendChild(btn);
+    });
+  }
+
+  function applyLineVisibility() {
+    document.querySelectorAll(".line-path").forEach(p => {
+      const ln = p.dataset.line;
+      p.style.opacity = hiddenLines.has(ln) ? "0.08" : "1";
+    });
+    renderVehicles();
+  }
+
+  // ── PAN & ZOOM ─────────────────────────────────────────────────────────────
+  function initPanZoom() {
+    const wrapper = document.getElementById("map-wrapper");
+    const svg = document.getElementById("schematic-svg");
+
+    function applyTransform() {
+      svg.setAttribute("viewBox",
+        `${-svgPan.x/svgPan.scale} ${-svgPan.y/svgPan.scale} ${1700/svgPan.scale} ${960/svgPan.scale}`);
+    }
+
+    // Mouse drag
+    wrapper.addEventListener("mousedown", e => {
+      svgPan.dragging = true;
+      svgPan.startX = e.clientX;
+      svgPan.startY = e.clientY;
+      svgPan.startPanX = svgPan.x;
+      svgPan.startPanY = svgPan.y;
+    });
+    window.addEventListener("mousemove", e => {
+      if (!svgPan.dragging) return;
+      svgPan.x = svgPan.startPanX + (e.clientX - svgPan.startX);
+      svgPan.y = svgPan.startPanY + (e.clientY - svgPan.startY);
+      applyTransform();
+    });
+    window.addEventListener("mouseup", () => { svgPan.dragging = false; });
+
+    // Wheel zoom
+    wrapper.addEventListener("wheel", e => {
+      e.preventDefault();
+      const delta = e.deltaY > 0 ? 0.9 : 1.1;
+      const newScale = Math.max(0.5, Math.min(5, svgPan.scale * delta));
+      // Zoom toward mouse position
+      const rect = wrapper.getBoundingClientRect();
+      const mx = e.clientX - rect.left;
+      const my = e.clientY - rect.top;
+      svgPan.x = mx - (mx - svgPan.x) * (newScale / svgPan.scale);
+      svgPan.y = my - (my - svgPan.y) * (newScale / svgPan.scale);
+      svgPan.scale = newScale;
+      applyTransform();
+    }, { passive: false });
+
+    // Touch support
+    let lastTouchDist = 0;
+    wrapper.addEventListener("touchstart", e => {
+      if (e.touches.length === 1) {
+        svgPan.dragging = true;
+        svgPan.startX = e.touches[0].clientX;
+        svgPan.startY = e.touches[0].clientY;
+        svgPan.startPanX = svgPan.x;
+        svgPan.startPanY = svgPan.y;
+      } else if (e.touches.length === 2) {
+        svgPan.dragging = false;
+        const dx = e.touches[0].clientX - e.touches[1].clientX;
+        const dy = e.touches[0].clientY - e.touches[1].clientY;
+        lastTouchDist = Math.hypot(dx, dy);
+      }
+    }, { passive: true });
+    wrapper.addEventListener("touchmove", e => {
+      e.preventDefault();
+      if (e.touches.length === 1 && svgPan.dragging) {
+        svgPan.x = svgPan.startPanX + (e.touches[0].clientX - svgPan.startX);
+        svgPan.y = svgPan.startPanY + (e.touches[0].clientY - svgPan.startY);
+        applyTransform();
+      } else if (e.touches.length === 2) {
+        const dx = e.touches[0].clientX - e.touches[1].clientX;
+        const dy = e.touches[0].clientY - e.touches[1].clientY;
+        const dist = Math.hypot(dx, dy);
+        if (lastTouchDist > 0) {
+          const delta = dist / lastTouchDist;
+          svgPan.scale = Math.max(0.5, Math.min(5, svgPan.scale * delta));
+          applyTransform();
+        }
+        lastTouchDist = dist;
+      }
+    }, { passive: false });
+    wrapper.addEventListener("touchend", () => { svgPan.dragging = false; lastTouchDist = 0; });
+  }
+
+  // ── DARK MODE ──────────────────────────────────────────────────────────────
+  function applyDarkMode(dark) {
+    darkMode = dark;
+    document.body.classList.toggle("dark", dark);
+    document.querySelectorAll(".stop-label, .terminal-label, .hub-label").forEach(el => {
+      el.setAttribute("fill", dark ? "#e0e0e0" : "#1a1a1a");
+    });
+    document.getElementById("btn-dark").textContent = dark ? "☀️" : "🌙";
+  }
+
+  // ── LABELS TOGGLE ─────────────────────────────────────────────────────────
+  function toggleLabels() {
+    labelsVisible = !labelsVisible;
+    document.getElementById("g-labels").style.display = labelsVisible ? "" : "none";
+    document.getElementById("btn-labels").style.opacity = labelsVisible ? "1" : "0.4";
+  }
+
+  // ── STATUS CHECK ──────────────────────────────────────────────────────────
+  async function checkStatus() {
+    try {
+      const r = await fetch("/api/health");
+      const d = await r.json();
+      const bar = document.getElementById("status-bar");
+      bar.style.display = d.gtfs_loaded ? "none" : "block";
+    } catch(e) {}
+  }
+
+  // ── INIT ───────────────────────────────────────────────────────────────────
+  async function init() {
+    buildLineBadges();
+    buildSchematic();
+    initPanZoom();
+
+    document.getElementById("dep-close").addEventListener("click", () => {
+      document.getElementById("dep-panel").classList.remove("open");
+    });
+    document.getElementById("btn-dark").addEventListener("click", () => applyDarkMode(!darkMode));
+    document.getElementById("btn-labels").addEventListener("click", toggleLabels);
+
+    // Respect existing dark mode preference
+    if (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches) {
+      applyDarkMode(true);
+    }
+
+    await loadStops();
+    await checkStatus();
+    await fetchVehicles();
+
+    // Poll vehicles every RT_POLL_SECONDS
+    setInterval(fetchVehicles, Math.max(RT_POLL_MS, 30000));
+    setInterval(checkStatus, 30000);
+  }
+
+  document.addEventListener("DOMContentLoaded", init);
+  </script>
+</body>
+</html>
