@@ -168,220 +168,272 @@
 
   // ── SCHEMATIC DATA ─────────────────────────────────────────────────────────
   // ViewBox: 0 0 1700 960
-  // Resecentrum is at (820, 460), Kulturkvarteret at (820, 553)
+  // Coordinates derived from official PDF schematic map.
+  // Resecentrum (RC): x=808, y=469  |  Kulturkvarteret (KK): x=855, y=532
 
   const C = {
-    "1": { bg: "#421e55", fg: "#fff" },
-    "2": { bg: "#57aa35", fg: "#fff" },
-    "3": { bg: "#f58232", fg: "#fff" },
-    "4": { bg: "#456670", fg: "#fff" },
-    "5": { bg: "#26538f", fg: "#fff" },
-    "6": { bg: "#ccaa00", fg: "#1C1C1E" },
-    "7": { bg: "#b27ac3", fg: "#fff" },
+    "1": { bg: "#421e55", fg: "#fff" },  // dark purple
+    "2": { bg: "#57aa35", fg: "#fff" },  // green
+    "3": { bg: "#f58232", fg: "#fff" },  // orange
+    "4": { bg: "#456670", fg: "#fff" },  // teal
+    "5": { bg: "#26538f", fg: "#fff" },  // dark blue
+    "6": { bg: "#ccaa00", fg: "#1C1C1E" }, // gold
+    "7": { bg: "#b27ac3", fg: "#fff" },  // lilac
   };
 
-  // Stop definitions: id → { name, x, y, lines:[], hub?, landmark?, terminal? }
+  // Stop definitions: id → { name, x, y, lines:[], hub?, landmark? }
+  // Coordinates from the official PDF schematic (viewBox 0 0 1700 960).
   const STOPS = {
-    // ── HUBS ─────────────────────────────────
-    "rc": { name: "Örebro resecentrum", x: 820, y: 460, lines: ["1","2","3","4","5","6","7"], hub: true },
-    "kk": { name: "Kulturkvarteret",    x: 820, y: 553, lines: ["1","2","3","4"],              hub: true },
+    // ── HUBS ─────────────────────────────────────────────────────────────────
+    "rc": { name: "Örebro resecentrum", x: 808, y: 469, lines: ["1","2","3","4","5","6","7"], hub: true },
+    "kk": { name: "Kulturkvarteret",    x: 855, y: 532, lines: ["1","2","3","4","7"],          hub: true },
 
-    // ── LINE 1 – NW branch: Vivalla ──────────
-    "vivalla-c":      { name: "Vivalla centrum",    x: 668, y: 103, lines: ["1"] },
-    "versgatan":      { name: "Versgatan",           x: 668, y: 150, lines: ["1"] },
-    "strofgatan":     { name: "Strofgatan",          x: 668, y: 197, lines: ["1"] },
-    "poesigatan":     { name: "Poesigatan",          x: 668, y: 244, lines: ["1"] },
-    "boglungsangen":  { name: "Boglundsängen",       x: 668, y: 291, lines: ["1"] },
-    "baronbackarna":  { name: "Baronbackarna",       x: 668, y: 338, lines: ["1"] },
-    "tegnerlunden":   { name: "Tegnérlunden",        x: 716, y: 385, lines: ["1","2"] },
-    "markbackens-c":  { name: "Markbackens centrum", x: 762, y: 420, lines: ["1","2"] },
-    "vasterplan":     { name: "Västerplan",          x: 793, y: 440, lines: ["1","2"] },
+    // ── SHARED STOPS (multiple lines) ─────────────────────────────────────────
+    "tegnerlunden":        { name: "Tegnérlunden",          x: 728,  y: 420, lines: ["1","2","7"] },
+    "markbackens-c":       { name: "Markbackens centrum",   x: 485,  y: 439, lines: ["1","2"] },
+    "vasterplan":          { name: "Västerplan",             x: 613,  y: 439, lines: ["1","2"] },
+    "stortorget":          { name: "Stortorget",             x: 1066, y: 534, lines: ["1","2","4","7"] },
+    "drottninggatan":      { name: "Drottninggatan",         x: 1090, y: 561, lines: ["1","2","4"] },
+    "vaghustorget":        { name: "Våghustorget",           x: 1099, y: 599, lines: ["1","2","4","7"] },
+    "osterplan":           { name: "Österplan",              x: 1394, y: 573, lines: ["1","2","4","6","7"] },
+    "almbyplan":           { name: "Almbyplan",              x: 1528, y: 573, lines: ["1","2","4","6","7"] },
+    "tybble-centrum":      { name: "Tybble centrum",         x: 1477, y: 624, lines: ["1","2","4","6","7"] },
+    "norra-kyrkogarden":   { name: "Norra kyrkogården",      x: 825,  y: 296, lines: ["4","5"] },
+    "hagaby":              { name: "Hagaby",                 x: 870,  y: 333, lines: ["4","5"] },
+    "svampen":             { name: "Svampen",                x: 867,  y: 359, lines: ["4","5"], landmark: true },
+    "olaus-petrik":        { name: "Olaus Petrikyrkan",      x: 953,  y: 420, lines: ["4","5"] },
+    "bromsplan":           { name: "Bromsplan",              x: 1081, y: 408, lines: ["4","5"] },
+    "gumaeliusskolan":     { name: "Gumaeliusskolan",        x: 642,  y: 500, lines: ["3","6"] },
+    "slattervagen":        { name: "Slättervägen",           x: 559,  y: 527, lines: ["3","6"] },
+    "tengvallsgatan":      { name: "Tengvallsgatan",         x: 519,  y: 521, lines: ["3","6"] },
+    "haga-centrum":        { name: "Haga centrum",           x: 355,  y: 523, lines: ["3","6"] },
+    "wadkoping":           { name: "Wadköping/Stadsparken",  x: 1560, y: 474, lines: ["6","7"], landmark: true },
+    "uso":                 { name: "USÖ",                    x: 1650, y: 455, lines: ["6","7"], landmark: true },
+    "eyra":                { name: "Eyra idrottsområde",     x: 1224, y: 569, lines: ["6","7"] },
+    "hagmarksrondellen":   { name: "Hagmarksrondellen",      x: 1560, y: 536, lines: ["2","6","7"] },
+    "salsmastare":         { name: "Salsmästaregatan",       x: 1592, y: 561, lines: ["2","6","7"] },
+    "korskyrkan":          { name: "Korskyrkan",             x: 386,  y: 724, lines: ["2","6"] },
+    "ostanbergsv":         { name: "Östanbergsvägen",        x: 993,  y: 224, lines: ["3","7"] },
+    "kavivagen":           { name: "Kåvivägen",              x: 993,  y: 209, lines: ["3","7"] },
+    "rodklovervagen":      { name: "Rödklövervägen",         x: 764,  y: 199, lines: ["3","7"] },
+    "gnejsvagen":          { name: "Gnejsvägen",             x: 610,  y: 250, lines: ["3","7"] },
+    "lundby-centrum":      { name: "Lundby centrum",         x: 590,  y: 235, lines: ["3","7"] },
+    "skvadronvagen":       { name: "Skvadronvägen",          x: 688,  y: 679, lines: ["5","7"] },
 
-    // ── LINE 1 – SE branch: Brickebacken ─────
-    "slottet":        { name: "Slottet",             x: 908, y: 553, lines: ["1","2","4","5"], landmark: true },
-    "stortorget":     { name: "Stortorget",          x: 908, y: 620, lines: ["1","2","4","5"] },
-    "drottningg":     { name: "Drottninggatan",      x: 908, y: 672, lines: ["1","2","4","5"] },
-    "osterplan":      { name: "Österplan",           x: 1020, y: 672, lines: ["1","2","4","5","6"] },
-    "almbyplan":      { name: "Almbyplan",           x: 1112, y: 672, lines: ["1","2","4","5","6"] },
-    "tybble-centrum": { name: "Tybble centrum",      x: 1210, y: 715, lines: ["1","2","4","5"] },
-    "brickebacks-c":  { name: "Brickebackens centrum",x:1348, y: 808, lines: ["1"] },
-    "adolfsbergss":   { name: "Adolfsbergsskolan",   x: 1398, y: 832, lines: ["1"] },
+    // ── LINE 1 – NW branch stops (Vivalla side) ───────────────────────────────
+    "vivalla-centrum":     { name: "Vivalla centrum",        x: 468,  y: 311, lines: ["1"] },
+    "versgatan":           { name: "Versgatan",              x: 616,  y: 280, lines: ["1"] },
+    "strofgatan":          { name: "Strofgatan",             x: 616,  y: 267, lines: ["1"] },
+    "poesigatan":          { name: "Poesigatan",             x: 586,  y: 316, lines: ["1"] },
+    "boglungsangen":       { name: "Boglundsängen",          x: 558,  y: 342, lines: ["1"] },
+    "baronbackarna":       { name: "Baronbackarna",          x: 558,  y: 355, lines: ["1"] },
 
-    // ── LINE 2 – W branch: Mellringe ─────────
-    "mellringestaden":{ name: "Mellringestaden", x: 185, y: 452, lines: ["2"] },
-    "mellringev":     { name: "Mellringevägen",  x: 262, y: 452, lines: ["2"] },
-    "sliparvagen":    { name: "Sliparevägen",    x: 338, y: 452, lines: ["2"] },
-    "ligusterv":      { name: "Ligustervägen",   x: 412, y: 452, lines: ["2"] },
-    "trollbarsgatan": { name: "Trollbärsgatan",  x: 484, y: 452, lines: ["2"] },
-    "varberga-torg":  { name: "Varberga torg",   x: 552, y: 452, lines: ["2"] },
-    "apelvagen":      { name: "Apelvägen",        x: 618, y: 452, lines: ["2"] },
+    // ── LINE 1 – SE branch stops (Brickebacken side) ──────────────────────────
+    "brickebacks-c":       { name: "Brickebackens centrum",  x: 1534, y: 771, lines: ["1"] },
+    "adolfsbergsskolan":   { name: "Adolfsbergsskolan",      x: 913,  y: 797, lines: ["1"] },
 
-    // ── LINE 2 – SE branch: Örebro Universitetet ──
-    "korskyrkan":     { name: "Korskyrkan",          x: 1175, y: 785, lines: ["2","6"] },
-    "univ":           { name: "Universitetet",       x: 1175, y: 828, lines: ["2","6"], terminal: true },
+    // ── LINE 2 – W branch stops (Mellringe side) ──────────────────────────────
+    "mellringestaden":     { name: "Mellringestaden",        x: 151,  y: 358, lines: ["2"] },
+    "mellringev":          { name: "Mellringevägen",         x: 215,  y: 367, lines: ["2"] },
+    "trollbarsgatan":      { name: "Trollbärsgatan",         x: 257,  y: 381, lines: ["2"] },
+    "varberga-vastra":     { name: "Varberga västra",        x: 286,  y: 395, lines: ["2"] },
+    "varberga-torg":       { name: "Varberga torg",          x: 335,  y: 409, lines: ["2"] },
+    "apelvagen":           { name: "Apelvägen",              x: 386,  y: 423, lines: ["2"] },
 
-    // ── LINE 3 – NW branch: Lundby ───────────
-    "lillans-skola":  { name: "Lillåns skola",        x: 380, y: 193, lines: ["3"] },
-    "lillans-center": { name: "Lillåns center",       x: 408, y: 233, lines: ["3"] },
-    "lillans-vc":     { name: "Lillåns vårdcentral",  x: 435, y: 270, lines: ["3"] },
-    "rodklovervagen": { name: "Rödklövervägen",       x: 460, y: 305, lines: ["3"] },
-    "kavivagen":      { name: "Kåvivägen",            x: 483, y: 338, lines: ["3"] },
-    "gnejsvagen":     { name: "Gnejsvägen",           x: 505, y: 370, lines: ["3"] },
-    "haga-centrum":   { name: "Haga centrum",         x: 700, y: 490, lines: ["3","6"] },
-    "tengvallsg":     { name: "Tengvallsgatan",       x: 655, y: 503, lines: ["3","6"] },
-    "slattervagen":   { name: "Slättervägen",         x: 606, y: 516, lines: ["3"] },
-    "gumaelius":      { name: "Gumaeliusskolan",      x: 553, y: 528, lines: ["3"] },
+    // ── LINE 3 – NW branch stops (Lundby side) ────────────────────────────────
+    "skiffergatan":        { name: "Skiffergatan",           x: 605,  y: 218, lines: ["3"] },
+    "lillans-skola":       { name: "Lillåns skola",          x: 985,  y: 188, lines: ["3"] },
 
-    // ── LINE 3 – SW branch: Solhaga ──────────
-    "hagagatan":      { name: "Hagagatan",         x: 780, y: 628, lines: ["3"] },
-    "trumpetareg":    { name: "Trumpetaregatan",   x: 727, y: 672, lines: ["3"] },
-    "rosta-centrum":  { name: "Rosta centrum",     x: 652, y: 706, lines: ["3"] },
-    "vastra-vinterg": { name: "Västra Vintergatan", x: 576, y: 730, lines: ["3"] },
-    "risbergska":     { name: "Risbergska",        x: 500, y: 750, lines: ["3"] },
-    "rosta-garde":    { name: "Rosta gärde",       x: 424, y: 766, lines: ["3"] },
-    "stodjegrand":    { name: "Stödjegränd",       x: 360, y: 780, lines: ["3"] },
-    "stolpgrand":     { name: "Stolpgränd",        x: 298, y: 794, lines: ["3"] },
+    // ── LINE 3 – SW branch stops (Solhaga side) ───────────────────────────────
+    "hagagatan":           { name: "Hagagatan",              x: 733,  y: 579, lines: ["3"] },
+    "trumpetaregatan":     { name: "Trumpetaregatan",        x: 649,  y: 585, lines: ["3"] },
+    "rosta-centrum":       { name: "Rosta centrum",          x: 566,  y: 585, lines: ["3"] },
+    "vastra-vinterg":      { name: "Västra Vintergatan",     x: 486,  y: 585, lines: ["3"] },
+    "risbergska":          { name: "Risbergska",             x: 376,  y: 581, lines: ["3"] },
+    "rosta-garde":         { name: "Rosta gärde",            x: 270,  y: 570, lines: ["3"] },
+    "stodjegrand":         { name: "Stödjegränd",            x: 207,  y: 546, lines: ["3"] },
+    "stolpgrand":          { name: "Stolpgränd",             x: 241,  y: 557, lines: ["3"] },
 
-    // ── LINES 4 & 5 – N corridor through Svampen ──
-    "bromsplan":      { name: "Bromsplan",          x: 893, y: 430, lines: ["4","5"] },
-    "olaus-petrik":   { name: "Olaus Petrikyrkan",  x: 820, y: 400, lines: ["4","5"] },
-    "svampen-stop":   { name: "Svampen",            x: 820, y: 338, lines: ["4","5"], landmark: true },
-    "hagaby":         { name: "Hagaby",             x: 820, y: 278, lines: ["4","5"] },
-    "norra-kyrkogard":{ name: "Norra kyrkogården",  x: 820, y: 220, lines: ["4","5"] },
-    "krematoriet":    { name: "Krematoriet",        x: 820, y: 163, lines: ["5"] },
+    // ── LINE 4 – NE branch stops (Rynningeåsen side) ──────────────────────────
+    "bjorkbacksgatan":     { name: "Björkbacksgatan",        x: 1497, y: 364, lines: ["4"] },
+    "grenadjar":           { name: "Grenadjärvallen",        x: 1415, y: 386, lines: ["4"] },
+    "uso-m-huset":         { name: "USÖ M-huset",           x: 1388, y: 447, lines: ["4"] },
+    "honolulugatan":       { name: "Honolulugatan",          x: 1163, y: 418, lines: ["4"] },
+    "pettersberg":         { name: "Pettersberg",            x: 1105, y: 364, lines: ["4"] },
+    "norrby":              { name: "Norrby",                 x: 1105, y: 379, lines: ["4"] },
+    "phragmensvagen":      { name: "Phragménsvägen",         x: 1116, y: 384, lines: ["4"] },
+    "langbrotorg":         { name: "Längbrotorg",            x: 1116, y: 399, lines: ["4"] },
+    "ringstorpsv":         { name: "Ringstorpsvägen",        x: 1134, y: 344, lines: ["4"] },
+    "svampen-ostra":       { name: "Svampen Östra",          x: 1134, y: 360, lines: ["4"] },
+    "nolhagavagen":        { name: "Nolhagavägen",           x: 1125, y: 316, lines: ["4"] },
+    "karosserigatan":      { name: "Karosserigatan",         x: 1129, y: 295, lines: ["4"] },
+    "skottv":              { name: "Skottvägen",             x: 1164, y: 287, lines: ["4"] },
+    "kornellv":            { name: "Kornellvägen",           x: 1171, y: 271, lines: ["4"] },
+    "tujav":               { name: "Tujavägen",              x: 1168, y: 271, lines: ["4"] },
+    "ligusterv":           { name: "Ligustervägen",          x: 1168, y: 255, lines: ["4"] },
+    "vinterhagsvagen":     { name: "Vinterhagsvägen",        x: 1192, y: 248, lines: ["4"] },
+    "klockarangsv":        { name: "Klockarängsvägen",       x: 1192, y: 233, lines: ["4"] },
+    "slipare":             { name: "Sliparevägen",           x: 849,  y: 250, lines: ["4","5"] },
 
-    // ── LINE 4 – NE branch: Rynningeåsen ──────
-    "bjorkbacksg":    { name: "Björkbacksgatan", x: 1368, y: 195, lines: ["4"] },
-    "grenadjar":      { name: "Grenadjärvallen", x: 1280, y: 255, lines: ["4"] },
-    "uso-slussen-ne": { name: "USÖ slussen",     x: 1198, y: 312, lines: ["4"] },
-    "uso-akuten-ne":  { name: "USÖ akuten",      x: 1122, y: 363, lines: ["4"] },
-    "uso-hhuset-ne":  { name: "USÖ H-huset",     x: 1055, y: 403, lines: ["4"] },
-    "uso-grev-ne":    { name: "Grev Rosengatan", x: 995,  y: 432, lines: ["4"] },
+    // ── LINE 5 – N branch stops (Hovsta side) ─────────────────────────────────
+    "hovsta-centrum":      { name: "Hovsta centrum",         x: 990,  y: 92,  lines: ["5"] },
+    "karstavagen":         { name: "Kårstavägen",            x: 894,  y: 62,  lines: ["5"] },
+    "lundvagen":           { name: "Lundvägen",              x: 990,  y: 107, lines: ["5"] },
+    "ragvagen":            { name: "Rågvägen",               x: 977,  y: 122, lines: ["5"] },
+    "vetevagen":           { name: "Vetevägen",              x: 977,  y: 137, lines: ["5"] },
+    "forlunda":            { name: "Förlunda",               x: 971,  y: 144, lines: ["5"] },
+    "krematoriet":         { name: "Krematoriet",            x: 825,  y: 296, lines: ["5"] },
 
-    // ── LINE 5 – NW branch: Hovsta ───────────
-    "hovsta-c":       { name: "Hovsta centrum",  x: 748, y: 103, lines: ["5"] },
-    "karvagen":       { name: "Kårstavägen",     x: 756, y: 130, lines: ["5"] },
+    // ── LINE 5 – S branch stops (Tybble side) ─────────────────────────────────
+    "svarta-bangata":      { name: "Svartå Bangata",         x: 707,  y: 608, lines: ["5"] },
+    "idrottsvagen":        { name: "Idrottsvägen",           x: 720,  y: 627, lines: ["5"] },
+    "klerkgatan":          { name: "Klerkgatan",             x: 879,  y: 666, lines: ["5"] },
+    "elementvagen":        { name: "Elementvägen",           x: 504,  y: 679, lines: ["5"] },
 
-    // ── LINE 5 – S branch: Södra Station ─────
-    "svarta-bangata": { name: "Svartå Bangata",  x: 780, y: 628, lines: ["5"] },
-    "idrottsvagen":   { name: "Idrottsvägen",    x: 780, y: 672, lines: ["5"] },
-    "klerkgatan":     { name: "Klerkgatan",      x: 820, y: 720, lines: ["5"] },
-    "elementvagen":   { name: "Elementvägen",    x: 820, y: 762, lines: ["5"] },
-    "termikgatan":    { name: "Termikgatan",     x: 880, y: 800, lines: ["5"] },
+    // ── LINE 6 – W branch stops (Björkhaga side) ──────────────────────────────
+    "posthornsgatan":      { name: "Posthornsgatan",         x: 271,  y: 450, lines: ["6"] },
+    "postmastare":         { name: "Postmästaregatan",       x: 310,  y: 462, lines: ["6"] },
+    "korsbandsgatan":      { name: "Korsbandsgatan",         x: 335,  y: 474, lines: ["6"] },
+    "vaktelv":             { name: "Vaktelvägen",            x: 350,  y: 487, lines: ["6"] },
+    "domherregatan":       { name: "Domherregatan",          x: 397,  y: 498, lines: ["6"] },
 
-    // ── LINE 6 – W branch: Björkhaga ─────────
-    "posthornsg":     { name: "Posthornsgatan",  x: 205, y: 592, lines: ["6"] },
-    "postmastare":    { name: "Postmästaregatan",x: 292, y: 592, lines: ["6"] },
-    "korsbandsg":     { name: "Korsbandsgatan",  x: 377, y: 592, lines: ["6"] },
-    "vaktelv":        { name: "Vaktelvägen",     x: 460, y: 592, lines: ["6"] },
-    "domherregatan":  { name: "Domherregatan",   x: 545, y: 568, lines: ["6"] },
+    // ── LINE 6/7 – E branch stops (USÖ/Universitetet side) ───────────────────
+    "ingenjorsgatan":      { name: "Ingenjörsgatan",         x: 1592, y: 608, lines: ["6"] },
+    "hollandaregatan":     { name: "Holländaregatan",        x: 1578, y: 625, lines: ["6"] },
+    "valsaregatan":        { name: "Valsaregatan",           x: 1592, y: 640, lines: ["6"] },
+    "tybble-vc":           { name: "Tybble vårdcentral",     x: 1464, y: 692, lines: ["6"] },
+    "termikgatan":         { name: "Termikgatan",            x: 1157, y: 715, lines: ["6"] },
+    "sodra-allen":         { name: "Södra Allén",            x: 1153, y: 647, lines: ["6"] },
+    "tullangsgymnasiet":   { name: "Tullängsgymnasiet",      x: 1176, y: 675, lines: ["6"] },
 
-    // ── LINES 6 & 7 – E corridor: USÖ ────────
-    "wadkoping":      { name: "Wadköping/Stadsparken", x: 988,  y: 455, lines: ["6","7"], landmark: true },
-    "uso-e":          { name: "USÖ",                   x: 1072, y: 455, lines: ["6","7"], landmark: true },
-    "uso-grev-e":     { name: "Grev Rosengatan",       x: 1150, y: 408, lines: ["6","7"] },
-    "uso-sodra-e":    { name: "USÖ Södra",             x: 1205, y: 368, lines: ["6","7"] },
-    "uso-hhuset-e":   { name: "USÖ H-huset",           x: 1253, y: 328, lines: ["6","7"] },
-    "uso-akuten-e":   { name: "USÖ akuten",            x: 1295, y: 288, lines: ["6","7"] },
-    "uso-slussen-e":  { name: "USÖ slussen",           x: 1332, y: 250, lines: ["6","7"] },
+    // ── LINE 7 – N branch stops (Lillån side) ─────────────────────────────────
+    "lillans-center-7":    { name: "Lillåns center",         x: 994,  y: 172, lines: ["7"] },
+    "lillans-vc-7":        { name: "Lillåns vårdcentral",    x: 766,  y: 172, lines: ["7"] },
 
-    // ── LINE 7 – N branch: Lillån ─────────────
-    "lillans-c-7":    { name: "Lillåns center",       x: 598, y: 155, lines: ["7"] },
-    "lillans-vc-7":   { name: "Lillåns vårdcentral",  x: 628, y: 200, lines: ["7"] },
-    "osbergsv":       { name: "Östanbergsvägen",      x: 643, y: 240, lines: ["7"] },
-    "skiffergatan":   { name: "Skiffergatan",         x: 653, y: 278, lines: ["7"] },
-    "vinterhag":      { name: "Vinterhagsvägen",      x: 660, y: 315, lines: ["7"] },
-    "gnejsvagen-7":   { name: "Gnejsvägen",           x: 664, y: 352, lines: ["7"] },
+    // ── LINE 7 – SE branch stops (Mosås side) ─────────────────────────────────
+    "olof-palmes-torg":    { name: "Olof Palmes torg",       x: 1099, y: 615, lines: ["7"] },
+    "brannbollsplan":      { name: "Brännbollsplan",         x: 598,  y: 901, lines: ["7"] },
+    "viktor-dahlens":      { name: "Viktor Dahléns väg",     x: 614,  y: 915, lines: ["7"] },
 
-    // ── LINE 7 – SE branch: Mosås ─────────────
-    "hagmarksr":      { name: "Hagmarksrondellen",  x: 1210, y: 672, lines: ["6","7"] },
-    "salsmastare":    { name: "Salsmästaregatan",   x: 1285, y: 750, lines: ["6","7"] },
-    "skvadronsv":     { name: "Skvadronvägen",      x: 1370, y: 800, lines: ["7"] },
-    "brannbollsplan": { name: "Brännbollsplan",     x: 1430, y: 832, lines: ["7"] },
+    // ── ADDITIONAL STOPS (various lines) ─────────────────────────────────────
+    "slottet":             { name: "Slottet",                x: 1031, y: 478, lines: ["1","2","4","5"], landmark: true },
+    "wadkoping-stadspark": { name: "Wadköping/Stadsparken",  x: 1560, y: 474, lines: ["6","7"], landmark: true },
+    "brunnsparken":        { name: "Brunnsparken",           x: 374,  y: 712, lines: ["3"] },
+    "sanatorievagen":      { name: "Sanatorievägen",         x: 370,  y: 747, lines: ["3"] },
+    "ekeskolan":           { name: "Ekeskolan",              x: 581,  y: 745, lines: ["7"] },
+    "backlunda":           { name: "Bäcklunda",              x: 597,  y: 852, lines: ["7"] },
+    "kundvagen":           { name: "Kundvägen",              x: 389,  y: 855, lines: ["7"] },
+    "paketvagen":          { name: "Paketvägen",             x: 561,  y: 864, lines: ["7"] },
+    "storbackavagen":      { name: "Storbackavägen",         x: 1016, y: 737, lines: ["4"] },
+    "halltorpsvagen":      { name: "Halltorpsvägen",         x: 976,  y: 764, lines: ["4"] },
+    "tallrisvagen":        { name: "Tallrisvägen",           x: 1500, y: 808, lines: ["1"] },
+    "barkv":               { name: "Barkvägen",              x: 1560, y: 732, lines: ["1"] },
+    "bjorkrisv":           { name: "Björkrisvägen",          x: 1560, y: 752, lines: ["1"] },
+    "marieberg":           { name: "Marieberg köpcentrum",   x: 336,  y: 826, lines: ["3"] },
   };
 
   // Terminals: id → { name, x, y, line }
   const TERMINALS = {
-    "t-vivalla":    { name: "Vivalla",             x: 668, y: 54,  line: "1" },
-    "t-mellringe":  { name: "Mellringe",           x: 52,  y: 452, line: "2" },
-    "t-bjorkhaga":  { name: "Björkhaga",           x: 52,  y: 592, line: "6" },
-    "t-solhaga":    { name: "Solhaga",             x: 183, y: 838, line: "3" },
-    "t-hovsta":     { name: "Hovsta station",      x: 748, y: 54,  line: "5" },
-    "t-lundby":     { name: "Lundby",              x: 235, y: 54,  line: "3" },
-    "t-lillan":     { name: "Lillån",              x: 548, y: 54,  line: "7" },
-    "t-rynning":    { name: "Rynningeåsen",        x: 1468,y: 148, line: "4" },
-    "t-bricke":     { name: "Brickebacken",        x: 1448,y: 858, line: "1" },
-    "t-tybble":     { name: "Tybble",              x: 1318,y: 878, line: "4" },
-    "t-tybble5":    { name: "Tybble",              x: 1268,y: 878, line: "5" },
-    "t-orebro-univ":{ name: "Örebro Universitetet",x: 1120,y: 878, line: "6" },
-    "t-mosås":      { name: "Mosås",               x: 1498,y: 878, line: "7" },
+    "t-vivalla":     { name: "Vivalla",              x: 506,  y: 282,  line: "1" },
+    "t-mellringe":   { name: "Mellringe",            x: 153,  y: 330,  line: "2" },
+    "t-bjorkhaga":   { name: "Björkhaga",            x: 174,  y: 426,  line: "6" },
+    "t-solhaga":     { name: "Solhaga",              x: 249,  y: 519,  line: "3" },
+    "t-hovsta":      { name: "Hovsta station",       x: 740,  y: 63,   line: "5" },
+    "t-lundby":      { name: "Lundby",               x: 641,  y: 190,  line: "3" },
+    "t-lillan":      { name: "Lillån",               x: 844,  y: 150,  line: "7" },
+    "t-rynning":     { name: "Rynningeåsen",         x: 1402, y: 336,  line: "4" },
+    "t-bricke":      { name: "Brickebacken",         x: 1566, y: 836,  line: "1" },
+    "t-tybble4":     { name: "Tybble",               x: 1484, y: 660,  line: "4" },
+    "t-tybble5":     { name: "Tybble",               x: 1484, y: 680,  line: "5" },
+    "t-orebro-univ": { name: "Örebro Universitetet", x: 1650, y: 699,  line: "2" },
+    "t-mosås":       { name: "Mosås",                x: 592,  y: 920,  line: "7" },
   };
 
-  // Line paths: ordered array of stop IDs from terminal A to terminal B
-  // A '+' prefix means the stop should be drawn with a small offset to separate parallel lines
+  // Line paths: ordered array of stop IDs terminal → terminal
+  // IDs prefixed with "t-" reference TERMINALS; all others reference STOPS.
   const LINE_PATHS = {
     "1": [
-      "t-vivalla", "vivalla-c", "versgatan", "strofgatan", "poesigatan",
+      "t-vivalla",
+      "vivalla-centrum", "versgatan", "strofgatan", "poesigatan",
       "boglungsangen", "baronbackarna",
       "tegnerlunden", "markbackens-c", "vasterplan",
       "rc", "kk",
-      "slottet", "stortorget", "drottningg",
+      "stortorget", "drottninggatan", "vaghustorget",
       "osterplan", "almbyplan", "tybble-centrum",
-      "brickebacks-c", "adolfsbergss", "t-bricke"
+      "brickebacks-c", "adolfsbergsskolan",
+      "t-bricke"
     ],
     "2": [
-      "t-mellringe", "mellringestaden", "mellringev", "sliparvagen",
-      "ligusterv", "trollbarsgatan", "varberga-torg", "apelvagen",
+      "t-mellringe",
+      "mellringestaden", "mellringev", "trollbarsgatan",
+      "varberga-vastra", "varberga-torg", "apelvagen",
       "tegnerlunden", "markbackens-c", "vasterplan",
       "rc", "kk",
-      "slottet", "stortorget", "drottningg",
+      "stortorget", "drottninggatan", "vaghustorget",
       "osterplan", "almbyplan", "tybble-centrum",
-      "hagmarksr", "salsmastare", "korskyrkan", "univ", "t-orebro-univ"
+      "hagmarksrondellen", "salsmastare", "korskyrkan",
+      "t-orebro-univ"
     ],
     "3": [
-      "t-lundby", "lillans-skola", "lillans-center", "lillans-vc",
-      "rodklovervagen", "kavivagen", "gnejsvagen",
-      "gumaelius", "slattervagen", "tengvallsg", "haga-centrum",
+      "t-lundby",
+      "lundby-centrum", "gnejsvagen", "skiffergatan",
+      "rodklovervagen", "ostanbergsv", "kavivagen", "lillans-skola",
+      "gumaeliusskolan", "slattervagen", "tengvallsgatan", "haga-centrum",
       "rc", "kk",
-      "hagagatan", "trumpetareg", "rosta-centrum",
+      "hagagatan", "trumpetaregatan", "rosta-centrum",
       "vastra-vinterg", "risbergska", "rosta-garde",
-      "stodjegrand", "stolpgrand", "t-solhaga"
+      "stodjegrand", "stolpgrand",
+      "t-solhaga"
     ],
     "4": [
-      "t-rynning", "bjorkbacksg", "grenadjar",
-      "uso-slussen-ne", "uso-akuten-ne", "uso-hhuset-ne", "uso-grev-ne",
-      "bromsplan", "olaus-petrik", "svampen-stop", "hagaby",
-      "norra-kyrkogard",
+      "t-rynning",
+      "bjorkbacksgatan", "grenadjar", "uso-m-huset",
+      "honolulugatan", "bromsplan", "olaus-petrik",
+      "svampen", "hagaby", "norra-kyrkogarden",
+      "klockarangsv", "vinterhagsvagen", "ligusterv",
+      "tujav", "kornellv", "skottv",
+      "karosserigatan", "nolhagavagen",
+      "ringstorpsv", "svampen-ostra", "pettersberg", "norrby",
+      "phragmensvagen", "langbrotorg",
       "rc", "kk",
-      "slottet", "stortorget", "drottningg",
-      "osterplan", "almbyplan", "tybble-centrum", "t-tybble"
+      "stortorget", "drottninggatan", "vaghustorget",
+      "osterplan", "almbyplan", "tybble-centrum",
+      "t-tybble4"
     ],
     "5": [
-      "t-hovsta", "hovsta-c", "karvagen",
-      "krematoriet", "norra-kyrkogard", "hagaby", "svampen-stop",
-      "olaus-petrik", "bromsplan",
+      "t-hovsta",
+      "karstavagen", "hovsta-centrum", "lundvagen",
+      "ragvagen", "vetevagen", "forlunda",
+      "slipare", "krematoriet", "norra-kyrkogarden",
+      "hagaby", "svampen", "olaus-petrik", "bromsplan",
       "rc",
       "svarta-bangata", "idrottsvagen", "klerkgatan",
-      "elementvagen", "termikgatan", "t-tybble5"
+      "elementvagen", "skvadronvagen",
+      "t-tybble5"
     ],
     "6": [
-      "t-bjorkhaga", "posthornsg", "postmastare", "korsbandsg",
+      "t-bjorkhaga",
+      "posthornsgatan", "postmastare", "korsbandsgatan",
       "vaktelv", "domherregatan",
-      "haga-centrum", "tengvallsg",
+      "gumaeliusskolan", "slattervagen", "tengvallsgatan", "haga-centrum",
       "rc",
-      "wadkoping", "uso-e",
-      "uso-grev-e", "uso-sodra-e", "uso-hhuset-e", "uso-akuten-e", "uso-slussen-e",
-      "osterplan", "almbyplan",
-      "hagmarksr", "salsmastare", "korskyrkan", "univ", "t-orebro-univ"
+      "wadkoping", "uso",
+      "eyra", "osterplan", "almbyplan", "tybble-centrum",
+      "hagmarksrondellen", "salsmastare", "korskyrkan",
+      "t-orebro-univ"
     ],
     "7": [
-      "t-lillan", "lillans-c-7", "lillans-vc-7", "osbergsv",
-      "skiffergatan", "vinterhag", "gnejsvagen-7",
+      "t-lillan",
+      "lillans-center-7", "lillans-vc-7",
+      "ostanbergsv", "kavivagen", "rodklovervagen",
+      "gnejsvagen", "lundby-centrum",
       "tegnerlunden",
       "rc", "kk",
-      "wadkoping", "uso-e",
-      "uso-grev-e", "uso-sodra-e", "uso-hhuset-e", "uso-akuten-e", "uso-slussen-e",
-      "hagmarksr", "salsmastare", "skvadronsv", "brannbollsplan", "t-mosås"
+      "wadkoping", "uso",
+      "eyra", "osterplan", "almbyplan", "tybble-centrum",
+      "vaghustorget", "olof-palmes-torg",
+      "skvadronvagen", "brannbollsplan", "viktor-dahlens",
+      "t-mosås"
     ],
   };
 
@@ -498,8 +550,8 @@
         }, g);
 
         // Label — positioned to avoid overlap (alternating sides)
-        const anchor = s.x < 820 ? "end" : "start";
-        const dx = s.x < 820 ? -9 : 9;
+        const anchor = s.x < 808 ? "end" : "start";
+        const dx = s.x < 808 ? -9 : 9;
         const lbl = el("text", {
           x: s.x + dx, y: s.y + 4,
           "text-anchor": anchor, "font-size": "10.5",
@@ -540,10 +592,10 @@
     }
 
     // Landmark icons (simple SVG symbols)
-    renderLandmark("svampen-stop",  "🌊", "SVAMPEN");
-    renderLandmark("slottet",       "🏰", "ÖREBRO SLOTT");
-    renderLandmark("uso-e",         "🏥", "USÖ");
-    renderLandmark("wadkoping",     "🎨", "WADKÖPING");
+    renderLandmark("svampen",    "🌊", "SVAMPEN");
+    renderLandmark("slottet",    "🏰", "ÖREBRO SLOTT");
+    renderLandmark("uso",        "🏥", "USÖ");
+    renderLandmark("wadkoping",  "🎨", "WADKÖPING");
   }
 
   function renderLandmark(stopId, emoji, label) {
