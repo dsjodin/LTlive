@@ -481,6 +481,61 @@ def debug_routes():
     })
 
 
+@app.route("/api/debug/rt-feed")
+def debug_rt_feed():
+    """Fetch VehiclePositions raw and return stats for diagnosis."""
+    import requests
+    from google.transit import gtfs_realtime_pb2
+
+    result = {
+        "url_prefix": config.VEHICLE_POSITIONS_URL.split("?")[0],
+        "http_status": None,
+        "error": None,
+        "raw_entity_count": 0,
+        "vehicle_entities": 0,
+        "filtered_no_position": 0,
+        "parsed_vehicles": 0,
+        "sample_vehicles": [],
+    }
+
+    try:
+        resp = requests.get(config.VEHICLE_POSITIONS_URL, timeout=10)
+        result["http_status"] = resp.status_code
+        resp.raise_for_status()
+    except requests.RequestException as e:
+        result["error"] = str(e)
+        return jsonify(result)
+
+    try:
+        feed = gtfs_realtime_pb2.FeedMessage()
+        feed.ParseFromString(resp.content)
+        result["raw_entity_count"] = len(feed.entity)
+
+        for entity in feed.entity:
+            if not entity.HasField("vehicle"):
+                continue
+            result["vehicle_entities"] += 1
+            v = entity.vehicle
+            pos = v.position
+            if not pos.latitude or not pos.longitude:
+                result["filtered_no_position"] += 1
+                continue
+            result["parsed_vehicles"] += 1
+            if len(result["sample_vehicles"]) < 5:
+                result["sample_vehicles"].append({
+                    "id": entity.id,
+                    "vehicle_id": v.vehicle.id,
+                    "lat": pos.latitude,
+                    "lon": pos.longitude,
+                    "trip_id": v.trip.trip_id if v.HasField("trip") else "",
+                    "route_id": v.trip.route_id if v.HasField("trip") else "",
+                })
+    except Exception as e:
+        result["error"] = f"Parse error: {e}"
+
+    return jsonify(result)
+
+
 @app.route("/api/alerts")
 def alerts():
     """Return current service alerts."""

@@ -292,6 +292,10 @@ async function fetchAll() {
   return { status, vehicles, matching };
 }
 
+async function fetchRtFeed() {
+  return fetch(`${API}/debug/rt-feed`).then(r => r.json()).catch(e => ({ error: String(e) }));
+}
+
 // ── Render ─────────────────────────────────────────────────────────
 
 function render({ status, vehicles, matching }) {
@@ -309,6 +313,12 @@ function render({ status, vehicles, matching }) {
   page.appendChild(buildLinesTable(byLine));
   page.appendChild(buildUnconfigured(byLine));
   page.appendChild(buildMatching(matching, vehicles));
+
+  // Fetch RT feed raw stats asynchronously and append when ready
+  fetchRtFeed().then(rtFeed => {
+    const card = buildRtFeedCard(rtFeed);
+    document.getElementById('page').appendChild(card);
+  });
 }
 
 // ── System status card ─────────────────────────────────────────────
@@ -614,6 +624,59 @@ function buildMatching(m, vehicles) {
       ul.innerHTML += `<li>vehicle ${esc(s.vehicle_id)} → trip ${esc(s.trip_id)} → linje ${esc(s.route_short_name || '–')} "${esc(s.route_long_name || '')}"</li>`;
     }
     body.appendChild(ul);
+  }
+
+  return card;
+}
+
+// ── RT feed raw debug ─────────────────────────────────────────────
+
+function buildRtFeedCard(f) {
+  const card = makeCard('RT-flöde rådata (live hämtning)');
+  const hdr = card.querySelector('.card-header');
+  hdr.querySelector('.meta').textContent = 'hämtas direkt från Trafiklab';
+  const body = card.querySelector('.card-body');
+
+  if (!f || f.error) {
+    body.innerHTML = `<span style="color:#f05050">Fel: ${esc(f?.error || 'okänt')}</span>`;
+    return card;
+  }
+
+  const httpColor = f.http_status === 200 ? '#5de895' : '#f05050';
+  const grid = document.createElement('div');
+  grid.className = 'stats-grid';
+  grid.innerHTML = `
+    <div class="stat-box"><div class="sval" style="color:${httpColor}">${f.http_status ?? '–'}</div><div class="slabel">HTTP-status</div></div>
+    <div class="stat-box"><div class="sval">${f.raw_entity_count}</div><div class="slabel">Entiteter i flödet</div></div>
+    <div class="stat-box"><div class="sval">${f.vehicle_entities}</div><div class="slabel">Fordons-entiteter</div></div>
+    <div class="stat-box ${f.filtered_no_position > 0 ? 'warn' : 'good'}"><div class="sval">${f.filtered_no_position}</div><div class="slabel">Filtrerade (ingen pos)</div></div>
+    <div class="stat-box ${f.parsed_vehicles > 0 ? 'good' : 'warn'}"><div class="sval">${f.parsed_vehicles}</div><div class="slabel">Fordon med position</div></div>
+  `;
+  body.appendChild(grid);
+
+  if (f.error) {
+    const err = document.createElement('div');
+    err.style.cssText = 'color:#f05050;margin-top:10px;font-size:12px';
+    err.textContent = 'Parse-fel: ' + f.error;
+    body.appendChild(err);
+  }
+
+  if (f.sample_vehicles && f.sample_vehicles.length > 0) {
+    const h = document.createElement('div');
+    h.style.cssText = 'color:#7eb8f7;font-weight:600;margin:14px 0 6px;font-size:12px';
+    h.textContent = 'Exempelfordon från flödet:';
+    body.appendChild(h);
+    const ul = document.createElement('ul');
+    ul.className = 'sample-list';
+    for (const v of f.sample_vehicles) {
+      ul.innerHTML += `<li>id:<b>${esc(v.id)}</b>  vehicle_id:<b>${esc(v.vehicle_id)}</b>  lat:${v.lat?.toFixed(4)}  trip_id:<span style="color:#f0a030">${esc(v.trip_id||'–')}</span>  route_id:<span style="color:#7eb8f7">${esc(v.route_id||'–')}</span></li>`;
+    }
+    body.appendChild(ul);
+  } else if (f.parsed_vehicles === 0) {
+    const note = document.createElement('div');
+    note.style.cssText = 'color:#778;margin-top:10px;font-size:12px';
+    note.textContent = 'Inga fordon med giltig position i flödet just nu.';
+    body.appendChild(note);
   }
 
   return card;
