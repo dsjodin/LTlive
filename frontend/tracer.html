@@ -308,13 +308,28 @@ function getViewBox() {
   return `${vx} ${vy} ${vw} ${vh}`;
 }
 
-function applyViewBox() { svg.setAttribute("viewBox", getViewBox()); }
+function applyViewBox() {
+  svg.setAttribute("viewBox", getViewBox());
+  // Re-render overlays so element sizes stay consistent with the new zoom level
+  renderPaths();
+  renderStopsSVG();
+}
 
 // Convert screen coords to SVG coords
 function screenToSVG(clientX, clientY) {
   const pt = svg.createSVGPoint();
   pt.x = clientX; pt.y = clientY;
   return pt.matrixTransform(svg.getScreenCTM().inverse());
+}
+
+// How many SVG units equal 1 screen pixel at the current zoom/viewBox.
+// Used to keep overlay elements at a consistent physical size on screen.
+function svgUnitsPerPx() {
+  const vb = svg.getAttribute("viewBox");
+  if (!vb) return 1;
+  const vw = parseFloat(vb.split(" ")[2]) || 1200;
+  const screenW = svg.getBoundingClientRect().width || 1200;
+  return vw / screenW;
 }
 
 // ── LINE SELECT UI ─────────────────────────────────────────────────────────
@@ -406,15 +421,11 @@ document.getElementById("name-input").addEventListener("keydown", e => {
 
 // ── FIND NEAREST STOP ──────────────────────────────────────────────────────
 function findNearestStop(svgX, svgY, thresholdPx = 18) {
-  // Convert threshold from screen pixels to SVG units
-  const rect = svg.getBoundingClientRect();
-  const [,, bw] = state.bgViewBox.split(" ").map(Number);
-  const svgUnits = (thresholdPx / rect.width) * (bw / svgPan.scale);
-
+  const threshold = thresholdPx * svgUnitsPerPx();
   let best = null, bestDist = Infinity;
   for (const [id, s] of Object.entries(state.stops)) {
     const d = Math.hypot(s.x - svgX, s.y - svgY);
-    if (d < bestDist && d < svgUnits) { best = id; bestDist = d; }
+    if (d < bestDist && d < threshold) { best = id; bestDist = d; }
   }
   return best;
 }
@@ -547,13 +558,14 @@ function renderAll() {
 function renderPaths() {
   const g = document.getElementById("g-paths");
   g.innerHTML = "";
+  const sw = (4 * svgUnitsPerPx()).toFixed(3);
   for (const [ln, path] of Object.entries(state.linePaths)) {
     if (path.length < 2) continue;
     const color = LINE_COLORS[ln].bg;
     const pts = path.map(id => state.stops[id]).filter(Boolean);
     const d = "M" + pts.map(s => `${s.x},${s.y}`).join("L");
     el("path", {
-      d, stroke: color, "stroke-width": "4", fill: "none",
+      d, stroke: color, "stroke-width": sw, fill: "none",
       "stroke-linecap": "round", "stroke-linejoin": "round", opacity: "0.85",
     }, g);
   }
@@ -567,10 +579,12 @@ function renderPathPreview(curX, curY) {
   if (!path.length || curX === null) return;
   const last = state.stops[path[path.length - 1]];
   if (!last) return;
+  const uPx = svgUnitsPerPx();
   const color = LINE_COLORS[activeLine].bg;
   el("line", {
     x1: last.x, y1: last.y, x2: curX, y2: curY,
-    stroke: color, "stroke-width": "2", "stroke-dasharray": "6,4",
+    stroke: color, "stroke-width": (2 * uPx).toFixed(3),
+    "stroke-dasharray": `${6 * uPx},${4 * uPx}`,
     "stroke-linecap": "round", opacity: "0.6",
   }, g);
 }
@@ -578,6 +592,15 @@ function renderPathPreview(curX, curY) {
 function renderStopsSVG() {
   const g = document.getElementById("g-stops-svg");
   g.innerHTML = "";
+
+  // Scale all visual sizes to constant screen pixels
+  const uPx = svgUnitsPerPx();
+  const R  = (6  * uPx).toFixed(3);   // regular stop radius
+  const RH = (9  * uPx).toFixed(3);   // hub radius
+  const RT = (12 * uPx).toFixed(3);   // terminal radius
+  const SW = (2  * uPx).toFixed(3);   // stroke width
+  const FZ = (11 * uPx).toFixed(3);   // label font size
+  const FZS= (9  * uPx).toFixed(3);   // terminal badge font size
 
   // Determine which lines each stop belongs to
   const stopLines = {};
@@ -596,21 +619,22 @@ function renderStopsSVG() {
     if (s.isTerminal) {
       const ln = lines[0] || activeLine;
       const c = LINE_COLORS[ln] || LINE_COLORS["1"];
-      el("circle", { cx: s.x, cy: s.y, r: 12, fill: c.bg, stroke: "#fff", "stroke-width": 2 }, sg);
-      el("text", { x: s.x, y: s.y + 4, "text-anchor": "middle", "font-size": "9", "font-weight": "800", fill: c.fg, "pointer-events": "none" }, sg).textContent = ln;
+      el("circle", { cx: s.x, cy: s.y, r: RT, fill: c.bg, stroke: "#fff", "stroke-width": SW }, sg);
+      el("text", { x: s.x, y: s.y, dy: "0.35em", "text-anchor": "middle",
+        "font-size": FZS, "font-weight": "800", fill: c.fg, "pointer-events": "none" }, sg).textContent = ln;
     } else if (isHub) {
-      el("circle", { cx: s.x, cy: s.y, r: 9, fill: "#1565C0", stroke: "#fff", "stroke-width": 2 }, sg);
+      el("circle", { cx: s.x, cy: s.y, r: RH, fill: "#1565C0", stroke: "#fff", "stroke-width": SW }, sg);
     } else {
       const fillC = lines.length === 1 ? LINE_COLORS[lines[0]].bg : "#fff";
       const strokeC = lines.length === 1 ? "#fff" : "#555";
-      el("circle", { cx: s.x, cy: s.y, r: 5, fill: fillC, stroke: strokeC, "stroke-width": 2 }, sg);
+      el("circle", { cx: s.x, cy: s.y, r: R, fill: fillC, stroke: strokeC, "stroke-width": SW }, sg);
     }
 
-    // Name label
+    // Name label — offset by 8px to the right in screen space
     el("text", {
-      x: s.x + 8, y: s.y + 4,
-      "font-size": "10", fill: "#fff", "pointer-events": "none",
-      style: "text-shadow: 0 0 3px #000, 0 0 6px #000",
+      x: s.x + 8 * uPx, y: s.y, dy: "0.35em",
+      "font-size": FZ, fill: "#fff", "pointer-events": "none",
+      style: "text-shadow: 0 0 3px #000, 0 0 5px #000; paint-order: stroke; stroke: #000; stroke-width: 3px;",
     }, sg).textContent = s.name;
   }
 }
