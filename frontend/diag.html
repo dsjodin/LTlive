@@ -286,7 +286,7 @@ function pct(a, b) {
 async function fetchAll() {
   const [status, vehicles, matching] = await Promise.all([
     fetch(`${API}/status`).then(r => r.json()).catch(() => null),
-    fetch(`${API}/vehicles`).then(r => r.json()).catch(() => []),
+    fetch(`${API}/vehicles`).then(r => r.json()).then(d => d.vehicles ?? d).catch(() => []),
     fetch(`${API}/debug/matching`).then(r => r.json()).catch(() => null),
   ]);
   return { status, vehicles, matching };
