@@ -56,43 +56,67 @@ def fetch_vehicle_positions():
 
 
 def fetch_trip_updates():
-    """Fetch GTFS-RT TripUpdates and build vehicle_id -> trip mapping.
+    """Fetch GTFS-RT TripUpdates.
 
-    TripUpdates often contains the vehicle descriptor linked to trip info,
-    which VehiclePositions may lack for some operators.
+    Returns:
+        vehicle_trips: vehicle_id -> trip info dict
+        stop_departures: stop_id -> list of upcoming departure dicts
     """
     try:
         resp = requests.get(config.TRIP_UPDATES_URL, timeout=10)
         resp.raise_for_status()
     except requests.RequestException as e:
         print(f"Error fetching trip updates: {e}")
-        return {}
+        return {}, {}
 
     feed = gtfs_realtime_pb2.FeedMessage()
     feed.ParseFromString(resp.content)
 
     vehicle_trips = {}
+    stop_departures = {}  # stop_id -> list of departure dicts
+
     for entity in feed.entity:
         if not entity.HasField("trip_update"):
             continue
         tu = entity.trip_update
         vehicle_id = tu.vehicle.id if tu.HasField("vehicle") and tu.vehicle.id else ""
-        if not vehicle_id:
-            continue
 
         trip_id = tu.trip.trip_id if tu.trip.trip_id else ""
         route_id = tu.trip.route_id if tu.trip.route_id else ""
         direction_id = tu.trip.direction_id if tu.trip.direction_id else None
         start_date = tu.trip.start_date if tu.trip.start_date else ""
 
-        vehicle_trips[vehicle_id] = {
-            "trip_id": trip_id,
-            "route_id": route_id,
-            "direction_id": direction_id,
-            "start_date": start_date,
-        }
+        if vehicle_id:
+            vehicle_trips[vehicle_id] = {
+                "trip_id": trip_id,
+                "route_id": route_id,
+                "direction_id": direction_id,
+                "start_date": start_date,
+            }
 
-    return vehicle_trips
+        # Extract per-stop departure times for the departure board
+        for stu in tu.stop_time_update:
+            stop_id = stu.stop_id if stu.stop_id else ""
+            if not stop_id:
+                continue
+
+            dep_time = stu.departure.time if stu.HasField("departure") and stu.departure.time else None
+            arr_time = stu.arrival.time if stu.HasField("arrival") and stu.arrival.time else None
+            t = dep_time or arr_time
+            if not t:
+                continue
+
+            is_realtime = bool(dep_time or arr_time)
+            if stop_id not in stop_departures:
+                stop_departures[stop_id] = []
+            stop_departures[stop_id].append({
+                "trip_id": trip_id,
+                "route_id": route_id,
+                "time": t,
+                "is_realtime": is_realtime,
+            })
+
+    return vehicle_trips, stop_departures
 
 
 def fetch_service_alerts():

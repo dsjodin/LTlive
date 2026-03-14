@@ -424,3 +424,94 @@ body {
 .light-mode .station-marker {
     border-color: #555;
 }
+
+/* ===== Stop departure board popup ===== */
+.popup-stop-name {
+    font-size: 14px;
+    font-weight: 700;
+    margin-bottom: 8px;
+}
+
+.dep-loading,
+.dep-empty {
+    color: #8e8e93;
+    font-size: 0.85em;
+    padding: 4px 0;
+}
+
+.dep-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+    margin-top: 2px;
+}
+
+.dep-table tr + tr td {
+    border-top: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.dep-table td {
+    padding: 5px 4px;
+    vertical-align: middle;
+}
+
+.dep-badge {
+    display: inline-block;
+    border-radius: 4px;
+    padding: 2px 6px;
+    font-size: 11px;
+    font-weight: 700;
+    white-space: nowrap;
+    min-width: 28px;
+    text-align: center;
+}
+
+.dep-headsign {
+    padding-left: 6px;
+    color: #d0d0d5;
+    max-width: 130px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.dep-time {
+    font-weight: 700;
+    white-space: nowrap;
+    text-align: right;
+    padding-right: 4px;
+    color: #fff;
+}
+
+.dep-clock {
+    color: #8e8e93;
+    white-space: nowrap;
+    text-align: right;
+    font-size: 11px;
+}
+
+.dep-rt {
+    display: inline-block;
+    margin-left: 4px;
+    font-size: 9px;
+    font-weight: 700;
+    color: #30d158;
+    vertical-align: middle;
+}
+
+/* Light mode adjustments */
+.light-mode .dep-table tr + tr td {
+    border-top-color: rgba(0, 0, 0, 0.07);
+}
+
+.light-mode .dep-headsign {
+    color: #555;
+}
+
+.light-mode .dep-time {
+    color: #111;
+}
+
+.light-mode .dep-clock {
+    color: #888;
+}

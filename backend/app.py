@@ -141,7 +141,7 @@ def poll_realtime():
         return
 
     # Fetch trip updates and alerts (non-critical — use cached on failure)
-    vehicle_trips = gtfs_rt.fetch_trip_updates()
+    vehicle_trips, stop_departures = gtfs_rt.fetch_trip_updates()
     alerts = gtfs_rt.fetch_service_alerts()
 
     # Merge TripUpdates into vehicles that lack trip info,
@@ -173,6 +173,8 @@ def poll_realtime():
     with _lock:
         _data["vehicles"] = vehicles
         _data["vehicle_trips"] = vehicle_trips
+        if stop_departures:
+            _data["stop_departures"] = stop_departures
         if alerts:
             _data["alerts"] = alerts
         _data["last_vehicle_update"] = int(time.time())
@@ -350,6 +352,48 @@ def stops():
         ]
 
     return jsonify({"stops": stop_list, "count": len(stop_list)})
+
+
+@app.route("/api/departures/<stop_id>")
+def departures_for_stop(stop_id):
+    """Return upcoming departures for a stop, enriched with route info."""
+    now = int(time.time())
+    limit = min(int(request.args.get("limit", 10)), 30)
+
+    with _lock:
+        stop_departures = _data.get("stop_departures", {})
+        routes = _data["routes"]
+        trips = _data["trips"]
+        trip_headsigns = _data.get("trip_headsigns", {})
+        raw = stop_departures.get(stop_id, [])
+
+    upcoming = sorted(
+        [d for d in raw if d["time"] >= now - 60],
+        key=lambda d: d["time"],
+    )[:limit]
+
+    result = []
+    for d in upcoming:
+        route_id = d["route_id"]
+        trip_id = d["trip_id"]
+
+        # Try to resolve route from static trips if not in TripUpdate
+        if not route_id:
+            route_id = trips.get(trip_id, {}).get("route_id", "")
+
+        route = routes.get(route_id, {})
+        headsign = trip_headsigns.get(trip_id, "") or route.get("route_long_name", "")
+
+        result.append({
+            "route_short_name": route.get("route_short_name", "?"),
+            "route_color": route.get("route_color", "0074D9"),
+            "route_text_color": route.get("route_text_color", "FFFFFF"),
+            "headsign": headsign,
+            "departure_time": d["time"],
+            "is_realtime": d["is_realtime"],
+        })
+
+    return jsonify({"stop_id": stop_id, "departures": result, "count": len(result)})
 
 
 @app.route("/api/stops/stations")

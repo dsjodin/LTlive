@@ -192,6 +192,64 @@ function updateVehicles(vehicles) {
     document.getElementById("last-update").textContent = new Date().toLocaleTimeString("sv-SE");
 }
 
+// --- Stop departure board ---
+function showStopDepartures(stop, marker) {
+    const loadingHtml = `
+        <div class="popup-stop">
+            <div class="popup-stop-name">${stop.stop_name}</div>
+            <div class="dep-loading">Hämtar avgångar…</div>
+        </div>`;
+    marker.bindPopup(loadingHtml, { maxWidth: 320 }).openPopup();
+
+    fetch(`${API_BASE}/departures/${encodeURIComponent(stop.stop_id)}`)
+        .then((r) => r.json())
+        .then((data) => {
+            let html;
+            if (!data.departures || data.departures.length === 0) {
+                html = `
+                    <div class="popup-stop">
+                        <div class="popup-stop-name">${stop.stop_name}</div>
+                        <div class="dep-empty">Inga kommande avgångar</div>
+                    </div>`;
+            } else {
+                const now = Date.now() / 1000;
+                const rows = data.departures.map((d) => {
+                    const mins = Math.round((d.departure_time - now) / 60);
+                    const timeStr = mins <= 0 ? "Nu" : `${mins} min`;
+                    const clock = new Date(d.departure_time * 1000)
+                        .toLocaleTimeString("sv-SE", { hour: "2-digit", minute: "2-digit" });
+                    const bg = `#${d.route_color}`;
+                    const fg = `#${d.route_text_color}`;
+                    const rt = d.is_realtime
+                        ? '<span class="dep-rt" title="Realtid">RT</span>'
+                        : "";
+                    return `
+                        <tr>
+                            <td><span class="dep-badge" style="background:${bg};color:${fg}">${d.route_short_name}</span></td>
+                            <td class="dep-headsign">${d.headsign}</td>
+                            <td class="dep-time">${timeStr}${rt}</td>
+                            <td class="dep-clock">${clock}</td>
+                        </tr>`;
+                }).join("");
+                html = `
+                    <div class="popup-stop">
+                        <div class="popup-stop-name">${stop.stop_name}</div>
+                        <table class="dep-table"><tbody>${rows}</tbody></table>
+                    </div>`;
+            }
+            if (marker.isPopupOpen()) marker.setPopupContent(html);
+        })
+        .catch(() => {
+            if (marker.isPopupOpen()) {
+                marker.setPopupContent(`
+                    <div class="popup-stop">
+                        <div class="popup-stop-name">${stop.stop_name}</div>
+                        <div class="dep-empty">Kunde inte hämta avgångar</div>
+                    </div>`);
+            }
+        });
+}
+
 function showVehiclePopup(vehicle, marker) {
     const color = getRouteColor({
         route_color: vehicle.route_color,
@@ -269,9 +327,7 @@ function loadStops() {
                     icon,
                     zIndexOffset: isStation ? 500 : 100,
                 });
-                marker.bindPopup(
-                    `<strong>${stop.stop_name}</strong><br/><small>${isStation ? "Station" : "Hållplats"}</small>`
-                );
+                marker.on("click", () => showStopDepartures(stop, marker));
                 stopsLayer.addLayer(marker);
             });
 
