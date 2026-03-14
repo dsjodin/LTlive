@@ -6,7 +6,7 @@ import time
 import traceback
 
 from apscheduler.schedulers.background import BackgroundScheduler
-from flask import Flask, jsonify
+from flask import Flask, jsonify, request
 from flask_cors import CORS
 
 import config
@@ -82,9 +82,9 @@ def init_gtfs_static():
             trips = gtfs_loader.load_trips()
             shapes = gtfs_loader.load_shapes()
 
-        # Build headsigns from last stop name (when trips.txt lacks headsign)
-        print("Building trip headsigns from stop_times...")
-        trip_headsigns = gtfs_loader.load_trip_headsigns(stops)
+        # Build headsigns and stop->route map in a single pass over stop_times.txt
+        print("Building trip headsigns and stop->route map from stop_times...")
+        trip_headsigns, stop_route_map = gtfs_loader.load_trip_headsigns_and_stop_route_map(stops, trips)
 
         with _lock:
             _data["routes"] = routes
@@ -92,6 +92,7 @@ def init_gtfs_static():
             _data["trips"] = trips
             _data["shapes"] = shapes
             _data["trip_headsigns"] = trip_headsigns
+            _data["stop_route_map"] = stop_route_map
             _data["gtfs_loaded"] = True
             _data["gtfs_error"] = None
 
@@ -335,9 +336,19 @@ def routes_all():
 
 @app.route("/api/stops")
 def stops():
-    """Return all stops (location_type 0 = stop, 1 = station)."""
+    """Return stops, optionally filtered by route_ids query param."""
+    route_ids_param = request.args.get("route_ids", "")
     with _lock:
         stop_list = list(_data["stops"].values())
+        stop_route_map = _data.get("stop_route_map", {})
+
+    if route_ids_param:
+        allowed = set(route_ids_param.split(","))
+        stop_list = [
+            s for s in stop_list
+            if allowed.intersection(stop_route_map.get(s["stop_id"], []))
+        ]
+
     return jsonify({"stops": stop_list, "count": len(stop_list)})
 
 

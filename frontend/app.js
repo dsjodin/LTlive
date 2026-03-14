@@ -124,6 +124,15 @@ function updateVehicles(vehicles) {
         const id = v.vehicle_id || v.id;
         currentIds.add(id);
 
+        // Skip vehicles not in our configured lines
+        if (ALLOWED_LINE_NUMBERS.size > 0 && !ALLOWED_LINE_NUMBERS.has(v.route_short_name)) {
+            if (vehicleMarkers[id]) {
+                map.removeLayer(vehicleMarkers[id]);
+                delete vehicleMarkers[id];
+            }
+            return;
+        }
+
         if (activeFilters.size > 0 && !activeFilters.has(v.route_id)) {
             if (vehicleMarkers[id]) {
                 map.removeLayer(vehicleMarkers[id]);
@@ -232,7 +241,12 @@ function showVehiclePopup(vehicle, marker) {
 function loadStops() {
     if (stopsLoaded) return;
 
-    fetch(`${API_BASE}/stops`)
+    const routeIds = Object.keys(routeData);
+    const url = routeIds.length > 0
+        ? `${API_BASE}/stops?route_ids=${encodeURIComponent(routeIds.join(","))}`
+        : `${API_BASE}/stops`;
+
+    fetch(url)
         .then((r) => r.json())
         .then((data) => {
             if (data.count === 0) {
@@ -284,13 +298,21 @@ function loadRoutes() {
             }
 
             routeData = {};
-            data.routes.forEach((r) => {
+            const filtered = ALLOWED_LINE_NUMBERS.size > 0
+                ? data.routes.filter(r => ALLOWED_LINE_NUMBERS.has(r.route_short_name))
+                : data.routes;
+            filtered.forEach((r) => {
                 routeData[r.route_id] = r;
             });
-            document.getElementById("route-count").textContent = data.count;
-            buildLineButtons(data.routes);
+            document.getElementById("route-count").textContent = filtered.length;
+            buildLineButtons(filtered);
             routesLoaded = true;
-            console.log(`Loaded ${data.count} routes`);
+            console.log(`Loaded ${filtered.length} / ${data.count} routes (filtered by config)`);
+
+            // Load stops now that we know which route_ids to filter on
+            if (!stopsLoaded) {
+                loadStops();
+            }
         })
         .catch((err) => console.error("Error loading routes:", err));
 }
@@ -482,9 +504,6 @@ async function checkStatus() {
 
         if (!routesLoaded) {
             loadRoutes();
-        }
-        if (!stopsLoaded) {
-            loadStops();
         }
     } catch (err) {
         console.error("Error checking status:", err);

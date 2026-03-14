@@ -149,22 +149,28 @@ def load_stop_times_for_trips(trip_ids):
     return dict(trip_stops)
 
 
-def load_trip_headsigns(stops):
-    """Build trip_id -> headsign by finding last stop name for each trip.
+def load_trip_headsigns_and_stop_route_map(stops, trips):
+    """Build trip headsigns and a stop->route mapping in a single pass over stop_times.txt.
 
-    Used when trips.txt has no trip_headsign (common in Swedish GTFS).
-    Reads stop_times.txt and finds the last stop for each trip.
+    Returns:
+        headsigns: dict trip_id -> headsign (last stop name)
+        stop_route_map: dict stop_id -> list of route_ids that serve the stop
     """
-    # First pass: find last stop_id per trip (highest stop_sequence)
+    trip_to_route = {tid: t["route_id"] for tid, t in trips.items() if t.get("route_id")}
     trip_last_stop = {}  # trip_id -> (max_sequence, stop_id)
+    stop_routes = defaultdict(set)
+
     for row in _read_csv("stop_times.txt"):
         tid = row["trip_id"]
         seq = int(row.get("stop_sequence", 0))
         stop_id = row["stop_id"]
+
         if tid not in trip_last_stop or seq > trip_last_stop[tid][0]:
             trip_last_stop[tid] = (seq, stop_id)
 
-    # Map to stop names
+        if tid in trip_to_route:
+            stop_routes[stop_id].add(trip_to_route[tid])
+
     headsigns = {}
     for tid, (_, stop_id) in trip_last_stop.items():
         stop = stops.get(stop_id, {})
@@ -172,4 +178,5 @@ def load_trip_headsigns(stops):
         if name:
             headsigns[tid] = name
 
-    return headsigns
+    stop_route_map = {sid: list(rids) for sid, rids in stop_routes.items()}
+    return headsigns, stop_route_map
