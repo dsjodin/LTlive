@@ -27,6 +27,8 @@ _data = {
     "alerts": [],
     "trip_headsigns": {},
     "last_vehicle_update": 0,
+    "last_rt_poll": 0,
+    "last_rt_poll_count": None,
     "gtfs_loaded": False,
     "gtfs_error": None,
 }
@@ -136,6 +138,11 @@ def poll_realtime():
     """Poll GTFS-RT vehicle positions + trip updates."""
     vehicles = gtfs_rt.fetch_vehicle_positions()
 
+    # Always record that we polled, even if the feed is empty
+    with _lock:
+        _data["last_rt_poll"] = int(time.time())
+        _data["last_rt_poll_count"] = len(vehicles)
+
     # Don't overwrite with empty data on fetch failure
     if not vehicles:
         return
@@ -218,6 +225,8 @@ def status():
             "vehicles_count": len(_data["vehicles"]),
             "alerts_count": len(_data["alerts"]),
             "last_vehicle_update": _data["last_vehicle_update"],
+            "last_rt_poll": _data["last_rt_poll"],
+            "last_rt_poll_count": _data["last_rt_poll_count"],
             "operator": config.OPERATOR,
             "has_static_key": bool(config.TRAFIKLAB_GTFS_STATIC_KEY),
             "has_rt_key": bool(config.TRAFIKLAB_GTFS_RT_KEY),

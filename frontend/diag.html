@@ -325,6 +325,9 @@ function buildSysStatus(s, vehicleCount) {
   const gtfsOk = s.gtfs_loaded;
   const ageSek = s.last_vehicle_update ? Math.round(Date.now() / 1000 - s.last_vehicle_update) : null;
 
+  const pollAgeSek = s.last_rt_poll ? Math.round(Date.now() / 1000 - s.last_rt_poll) : null;
+  const pollCount = s.last_rt_poll_count;
+
   const pills = [
     pill(gtfsOk ? 'ok' : 'err', 'GTFS', gtfsOk ? 'Laddad' : 'EJ LADDAD'),
     pill('ok', 'Operatör', esc(s.operator || '–')),
@@ -335,6 +338,10 @@ function buildSysStatus(s, vehicleCount) {
     pill(vehicleCount > 0 ? 'ok' : 'warn', 'Fordon nu', vehicleCount),
     pill(ageSek != null ? (ageSek < 15 ? 'ok' : ageSek < 60 ? 'warn' : 'err') : 'warn',
          'RT-ålder', ageSek != null ? ageSek + 's' : '–'),
+    pill(pollAgeSek != null ? (pollAgeSek < 20 ? 'ok' : pollAgeSek < 60 ? 'warn' : 'err') : 'err',
+         'Senaste poll', pollAgeSek != null ? pollAgeSek + 's sedan' : 'aldrig'),
+    pill(pollCount === null ? 'warn' : pollCount > 0 ? 'ok' : 'warn',
+         'Fordon i flödet', pollCount === null ? '–' : pollCount),
     pill(s.has_static_key ? 'ok' : 'err', 'Statisk nyckel', s.has_static_key ? 'OK' : 'SAKNAS'),
     pill(s.has_rt_key ? 'ok' : 'err', 'RT-nyckel', s.has_rt_key ? 'OK' : 'SAKNAS'),
   ];
