@@ -45,7 +45,15 @@ const LINE_COLORS = [
     "FF6B6B", "4ECDC4", "45B7D1", "96CEB4", "FFEAA7",
 ];
 
+function getLineStyle(shortName) {
+    if (LINE_COLORS_CUSTOM[shortName]) return LINE_COLORS_CUSTOM[shortName];
+    if (LINE_CONFIG.lansbuss.includes(shortName)) return LINE_COLORS_CUSTOM.lansbuss;
+    return null;
+}
+
 function getRouteColor(route) {
+    const custom = getLineStyle(route.route_short_name);
+    if (custom) return `#${custom.bg}`;
     if (route.route_color && route.route_color !== "000000") {
         return `#${route.route_color}`;
     }
@@ -55,6 +63,12 @@ function getRouteColor(route) {
         hash = name.charCodeAt(i) + ((hash << 5) - hash);
     }
     return `#${LINE_COLORS[Math.abs(hash) % LINE_COLORS.length]}`;
+}
+
+function getRouteTextColor(route) {
+    const custom = getLineStyle(route.route_short_name);
+    if (custom) return `#${custom.text}`;
+    return route.route_text_color ? `#${route.route_text_color}` : "#fff";
 }
 
 // --- Map Init ---
@@ -87,9 +101,7 @@ function createBusIcon(vehicle) {
         route_short_name: vehicle.route_short_name,
         route_id: vehicle.route_id,
     });
-    const textColor = vehicle.route_text_color
-        ? `#${vehicle.route_text_color}`
-        : "#fff";
+    const textColor = getRouteTextColor(vehicle);
     const label = vehicle.route_short_name || "";
     const size = showLabels && label ? Math.max(24, label.length * 8 + 12) : 14;
     const height = showLabels && label ? 24 : 14;
@@ -218,8 +230,9 @@ function showStopDepartures(stop, marker) {
                     const timeStr = mins <= 0 ? "Nu" : `${mins} min`;
                     const clock = new Date(d.departure_time * 1000)
                         .toLocaleTimeString("sv-SE", { hour: "2-digit", minute: "2-digit" });
-                    const bg = `#${d.route_color}`;
-                    const fg = `#${d.route_text_color}`;
+                    const custom = getLineStyle(d.route_short_name);
+                    const bg = custom ? `#${custom.bg}` : `#${d.route_color}`;
+                    const fg = custom ? `#${custom.text}` : `#${d.route_text_color}`;
                     const rt = d.is_realtime
                         ? '<span class="dep-rt" title="Realtid">RT</span>'
                         : "";
@@ -456,9 +469,7 @@ function buildLineButtons(routes) {
 
     sorted.forEach((route) => {
         const color = getRouteColor(route);
-        const textColor = route.route_text_color
-            ? `#${route.route_text_color}`
-            : "#fff";
+        const textColor = getRouteTextColor(route);
 
         const btn = document.createElement("button");
         btn.className = "line-btn";
