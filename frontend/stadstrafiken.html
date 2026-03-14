@@ -422,21 +422,65 @@
     setInterval(fetchVehicles, RT_POLL_MS);
   }
 
-  // Match each SVG stop circle to the nearest GTFS stop.
+  // Project an SVG (x,y) point onto an SVG polyline path.
+  // Returns {f: fraction_along_path, dist: min_distance_in_SVG_units}
+  function projectSvgPointOntoPath(cx, cy, pts, cumDist) {
+    const total = cumDist[cumDist.length - 1];
+    if (total === 0) return {f: 0, dist: Infinity};
+    let bestF = 0, bestDist = Infinity, cumD = 0;
+    for (let i = 0; i < pts.length - 1; i++) {
+      const ax = pts[i][0], ay = pts[i][1];
+      const bx = pts[i+1][0], by = pts[i+1][1];
+      const abx = bx-ax, aby = by-ay, len2 = abx*abx + aby*aby;
+      let t = len2 > 0 ? ((cx-ax)*abx + (cy-ay)*aby) / len2 : 0;
+      t = t < 0 ? 0 : t > 1 ? 1 : t;
+      const nearX = ax+t*abx, nearY = ay+t*aby;
+      const d = Math.sqrt((cx-nearX)**2 + (cy-nearY)**2);
+      if (d < bestDist) {
+        bestDist = d;
+        const segLen = cumDist[i+1] - cumDist[i];
+        bestF = (cumD + t * segLen) / total;
+      }
+      cumD += cumDist[i+1] - cumDist[i];
+    }
+    return {f: bestF, dist: bestDist};
+  }
+
+  // Match each SVG stop circle to the nearest GTFS stop using route-fraction mapping.
+  // For each SVG circle:
+  //   1. Find nearest SVG line path (in SVG space) → fraction f_svg
+  //   2. Map f_svg → geographic position via canonical GTFS shape
+  //   3. Find nearest GTFS stop to that geographic position
   function matchCirclesToStops() {
     svgCircleStops = [];
-    const used = new Set();
     for (const [cx, cy] of SVG_STOP_CIRCLES) {
-      const geo = svgToLonLat(cx, cy);
-      // Find nearest GTFS stop by geographic distance
-      let bestStop = null, bestDist = Infinity;
-      for (const s of gtfsStops) {
-        const d = Math.sqrt((s.stop_lat - geo.lat)**2 + (s.stop_lon - geo.lon)**2);
-        if (d < bestDist) { bestDist = d; bestStop = s; }
+      // 1. Find nearest line path in SVG space
+      let bestLine = null, bestF = 0, bestSvgDist = Infinity;
+      for (const [lineNum, svgPath] of Object.entries(SVG_LINE_PATHS)) {
+        if (!canonicalShapes[lineNum]) continue;
+        const {f, dist} = projectSvgPointOntoPath(cx, cy, svgPath, svgPathDists[lineNum]);
+        if (dist < bestSvgDist) {
+          bestSvgDist = dist;
+          bestLine = lineNum;
+          bestF = f;
+        }
       }
-      if (bestStop && bestDist < 0.015) { // ~1.5km max match distance
+      if (!bestLine || bestSvgDist > 120) continue; // >120 SVG units from any route
+
+      // 2. Convert SVG fraction → GTFS geographic position
+      const f_gtfs = shapeIsForward[bestLine] ? bestF : (1 - bestF);
+      const shape = canonicalShapes[bestLine];
+      const geoPos = getPosAtFraction(shape, canonicalDists[bestLine], f_gtfs);
+      // geoPos.x = lat, geoPos.y = lon (GTFS shapes are [lat, lon] pairs)
+
+      // 3. Find nearest GTFS stop to that geographic position
+      let bestStop = null, bestStopDist = Infinity;
+      for (const s of gtfsStops) {
+        const d = Math.sqrt((s.stop_lat - geoPos.x)**2 + (s.stop_lon - geoPos.y)**2);
+        if (d < bestStopDist) { bestStopDist = d; bestStop = s; }
+      }
+      if (bestStop && bestStopDist < 0.005) { // ~500m max
         svgCircleStops.push({cx, cy, stop_id: bestStop.stop_id, stop_name: bestStop.stop_name});
-        if (!used.has(bestStop.stop_id)) used.add(bestStop.stop_id);
       }
     }
   }
