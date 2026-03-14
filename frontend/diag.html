@@ -583,12 +583,14 @@ function buildMatching(m, vehicles) {
   if (m.sample_without_route && m.sample_without_route.length > 0) {
     const h = document.createElement('div');
     h.style.cssText = 'color:#f0a030;font-weight:600;margin:14px 0 6px;font-size:12px';
-    h.textContent = 'Exempel: fordon utan rutt-ID';
+    h.textContent = 'Fordon utan rutt-ID (med deras trip_id från flödet)';
     body.appendChild(h);
     const ul = document.createElement('ul');
     ul.className = 'sample-list';
-    for (const vid of m.sample_without_route) {
-      ul.innerHTML += `<li>${esc(vid)}</li>`;
+    for (const item of m.sample_without_route) {
+      const vid = typeof item === 'object' ? item.vehicle_id : item;
+      const tripId = typeof item === 'object' ? (item.trip_id || '–') : '–';
+      ul.innerHTML += `<li>vehicle <b>${esc(vid)}</b> · trip_id: <span style="color:#f0a030">${esc(tripId)}</span></li>`;
     }
     body.appendChild(ul);
   }

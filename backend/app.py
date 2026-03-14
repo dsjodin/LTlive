@@ -153,9 +153,10 @@ def poll_realtime():
             vehicle_trips = _data.get("vehicle_trips", {})
 
     for v in vehicles:
+        vid = v.get("vehicle_id", "")
+        tu = vehicle_trips.get(vid, {})
+
         if not v.get("trip_id") and not v.get("route_id"):
-            vid = v.get("vehicle_id", "")
-            tu = vehicle_trips.get(vid, {})
             if tu:
                 v["trip_id"] = tu.get("trip_id", "")
                 v["route_id"] = tu.get("route_id", "")
@@ -169,6 +170,22 @@ def poll_realtime():
             if static_trip:
                 v["route_id"] = static_trip.get("route_id", "")
                 v["direction_id"] = v.get("direction_id") or static_trip.get("direction_id")
+
+        # Last resort: if route_id is still missing, use TripUpdate data directly.
+        # This handles the case where the VehiclePositions trip_id doesn't match
+        # the static GTFS (e.g. different version/format) but TripUpdates has
+        # the correct route_id or a trip_id that does match.
+        if not v.get("route_id") and tu:
+            if tu.get("route_id"):
+                v["route_id"] = tu["route_id"]
+                if not v.get("trip_id"):
+                    v["trip_id"] = tu.get("trip_id", "")
+            elif tu.get("trip_id") and tu["trip_id"] != trip_id:
+                static_trip2 = static_trips.get(tu["trip_id"], {})
+                if static_trip2:
+                    v["route_id"] = static_trip2.get("route_id", "")
+                    v["trip_id"] = tu["trip_id"]
+                    v["direction_id"] = v.get("direction_id") or static_trip2.get("direction_id")
 
     with _lock:
         _data["vehicles"] = vehicles
@@ -243,7 +260,11 @@ def debug_matching():
                 "route_long_name": route_info.get("route_long_name", ""),
             })
         else:
-            without_route.append(vid)
+            without_route.append({
+                "vehicle_id": vid,
+                "trip_id": trip_id,
+                "route_id_raw": route_id,
+            })
 
     # Show a sample TripUpdate mapping with static trip lookup
     sample_mappings = []
@@ -270,7 +291,7 @@ def debug_matching():
         "trip_id_match_fail": trip_match_fail,
         "total_trip_update_mappings": len(vehicle_trips),
         "sample_with_route": with_route[:5],
-        "sample_without_route": without_route[:5],
+        "sample_without_route": without_route[:10],
         "sample_trip_update_mappings": sample_mappings,
         "sample_static_trip_keys": list(trips.keys())[:3],
     })
