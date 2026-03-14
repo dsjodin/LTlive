@@ -620,7 +620,7 @@ function renderStopsSVG() {
       const ln = lines[0] || activeLine;
       const c = LINE_COLORS[ln] || LINE_COLORS["1"];
       el("circle", { cx: s.x, cy: s.y, r: RT, fill: c.bg, stroke: "#fff", "stroke-width": SW }, sg);
-      el("text", { x: s.x, y: s.y, dy: "0.35em", "text-anchor": "middle",
+      el("text", { x: s.x, y: s.y, "text-anchor": "middle", "dominant-baseline": "middle",
         "font-size": FZS, "font-weight": "800", fill: c.fg, "pointer-events": "none" }, sg).textContent = ln;
     } else if (isHub) {
       el("circle", { cx: s.x, cy: s.y, r: RH, fill: "#1565C0", stroke: "#fff", "stroke-width": SW }, sg);
@@ -630,12 +630,15 @@ function renderStopsSVG() {
       el("circle", { cx: s.x, cy: s.y, r: R, fill: fillC, stroke: strokeC, "stroke-width": SW }, sg);
     }
 
-    // Name label — offset by 8px to the right in screen space
-    el("text", {
-      x: s.x + 8 * uPx, y: s.y, dy: "0.35em",
-      "font-size": FZ, fill: "#fff", "pointer-events": "none",
-      style: "text-shadow: 0 0 3px #000, 0 0 5px #000; paint-order: stroke; stroke: #000; stroke-width: 3px;",
-    }, sg).textContent = s.name;
+    // Name label — two-pass (dark shadow then white fill), avoids paint-order entirely
+    const lx = s.x + 8 * uPx, ly = s.y;
+    el("text", { x: lx, y: ly, "dominant-baseline": "middle",
+      "font-size": FZ, fill: "rgba(0,0,0,0.75)", "stroke": "rgba(0,0,0,0.75)",
+      "stroke-width": (3 * uPx).toFixed(3), "stroke-linejoin": "round",
+      "pointer-events": "none" }, sg).textContent = s.name;
+    el("text", { x: lx, y: ly, "dominant-baseline": "middle",
+      "font-size": FZ, fill: "#fff",
+      "pointer-events": "none" }, sg).textContent = s.name;
   }
 }
 
