@@ -229,23 +229,7 @@
     [2174.1,2515.0],
   ];
 
-  // Rough affine transform: SVG(x,y) ↔ geographic(lat,lon)
-  // Calibrated from 2 known terminals (Brickebacken and Vivalla).
-  // Used ONLY for direction detection and stop→GTFS matching.
-  const GEO_A = 17429, GEO_B = -263861;   // lon = (svgX - GEO_B) / GEO_A
-  const GEO_C = -25113, GEO_D = 1490955;  // lat = (svgY - GEO_D) / GEO_C
-  function svgToLonLat(svgX, svgY) {
-    return {
-      lon: (svgX - GEO_B) / GEO_A,
-      lat: (svgY - GEO_D) / GEO_C,
-    };
-  }
-  function lonLatToSvg(lat, lon) {
-    return {
-      x: GEO_A * lon + GEO_B,
-      y: GEO_C * lat + GEO_D,
-    };
-  }
+
 
   // ── STATE ──────────────────────────────────────────────────────────────────
   let canonicalShapes = {};    // lineNum → [[lat,lon],...]
@@ -328,15 +312,37 @@
   }
 
   // Determine if a GTFS shape runs in the same direction as the SVG path.
-  // Compare shape's start geographic position to both SVG path endpoints.
+  //
+  // Uses pure N/S/E/W reasoning — no affine transform needed:
+  //   SVG y increases downward  → larger y = more south
+  //   SVG x increases rightward → larger x = more east
+  //   GTFS lat increases upward → larger lat = more north
+  //   GTFS lon increases right  → larger lon = more east
+  //
+  // If the SVG path start is more-south than its end, and the GTFS shape
+  // start is also more-south (smaller lat) than its end → same direction.
+  // We vote on both N-S and E-W axes; majority wins.
   function isShapeForward(lineNum, shapePts) {
     const svgPath = SVG_LINE_PATHS[lineNum];
-    const svgStart = svgPath[0], svgEnd = svgPath[svgPath.length - 1];
-    // Project shape start to approximate SVG coords
-    const {x: px, y: py} = lonLatToSvg(shapePts[0][0], shapePts[0][1]);
-    const dStart = (px-svgStart[0])**2 + (py-svgStart[1])**2;
-    const dEnd   = (px-svgEnd[0])**2   + (py-svgEnd[1])**2;
-    return dStart <= dEnd; // forward if shape start is closer to SVG start
+    const svgSY = svgPath[0][1], svgEY = svgPath[svgPath.length-1][1];
+    const svgSX = svgPath[0][0], svgEX = svgPath[svgPath.length-1][0];
+
+    const gSLat = shapePts[0][0], gELat = shapePts[shapePts.length-1][0];
+    const gSLon = shapePts[0][1], gELon = shapePts[shapePts.length-1][1];
+
+    // N-S: SVG start more south ↔ GTFS start has smaller lat
+    const svgStartSouth  = svgSY > svgEY;
+    const shapeStartSouth = gSLat < gELat;
+    const nsAgree = svgStartSouth === shapeStartSouth;
+
+    // E-W: SVG start more east ↔ GTFS start has larger lon
+    const svgStartEast  = svgSX > svgEX;
+    const shapeStartEast = gSLon > gELon;
+    const ewAgree = svgStartEast === shapeStartEast;
+
+    // Prefer N-S when they disagree (latitude spread is larger in Örebro)
+    if (nsAgree !== ewAgree) return nsAgree;
+    return nsAgree; // both agree
   }
 
   // Get SVG position for a vehicle/stop on a given line at geographic (lat,lon).
@@ -446,44 +452,36 @@
     return {f: bestF, dist: bestDist};
   }
 
-  // Match SVG stop circles to GTFS stops.
-  //
-  // Strategy: project every GTFS stop onto every canonical GTFS shape (both
-  // directions), compute the resulting SVG position, then for each SVG circle
-  // find the nearest projected stop IN SVG SPACE.
-  //
-  // This completely avoids relying on shapeIsForward — the correct direction
-  // simply produces a SVG projection that is closest to the actual circle.
+  // Match each SVG stop circle to the nearest GTFS stop using route-fraction.
+  // 1. Find the nearest SVG line path → fraction f_svg
+  // 2. Apply shapeIsForward to get f_gtfs
+  // 3. Interpolate canonical GTFS shape at f_gtfs → geographic (lat, lon)
+  // 4. Find nearest GTFS stop to that position
   function matchCirclesToStops() {
     svgCircleStops = [];
-
-    // Build list of (stop, svgX, svgY) by projecting each GTFS stop onto
-    // each line's canonical shape in both directions.
-    const projections = []; // {stop, svgX, svgY}
-    for (const s of gtfsStops) {
-      for (const [lineNum, shape] of Object.entries(canonicalShapes)) {
-        const {f, dist} = projectOntoShape(
-          s.stop_lat, s.stop_lon, shape, canonicalDists[lineNum]);
-        if (dist > 0.004) continue; // stop is >~400m from this shape, skip
-
-        const svgPath = SVG_LINE_PATHS[lineNum];
-        const cumDist  = svgPathDists[lineNum];
-        // Try both directions — we don't trust shapeIsForward here
-        for (const fFinal of [f, 1 - f]) {
-          const pos = getPosAtFraction(svgPath, cumDist, fFinal);
-          projections.push({stop: s, svgX: pos.x, svgY: pos.y});
-        }
-      }
-    }
-
-    // For each SVG circle, find the nearest projected GTFS stop in SVG space.
     for (const [cx, cy] of SVG_STOP_CIRCLES) {
-      let bestStop = null, bestDist = Infinity;
-      for (const {stop, svgX, svgY} of projections) {
-        const d = (cx - svgX) ** 2 + (cy - svgY) ** 2; // squared distance, no sqrt needed
-        if (d < bestDist) { bestDist = d; bestStop = stop; }
+      // 1. Nearest SVG path
+      let bestLine = null, bestF = 0, bestSvgDist = Infinity;
+      for (const [lineNum, svgPath] of Object.entries(SVG_LINE_PATHS)) {
+        if (!canonicalShapes[lineNum]) continue;
+        const {f, dist} = projectSvgPointOntoPath(cx, cy, svgPath, svgPathDists[lineNum]);
+        if (dist < bestSvgDist) { bestSvgDist = dist; bestLine = lineNum; bestF = f; }
       }
-      if (bestStop && bestDist < 80 * 80) { // within 80 SVG units
+      if (!bestLine || bestSvgDist > 120) continue;
+
+      // 2-3. SVG fraction → GTFS geographic position
+      const f_gtfs = shapeIsForward[bestLine] ? bestF : (1 - bestF);
+      const geoPos = getPosAtFraction(
+        canonicalShapes[bestLine], canonicalDists[bestLine], f_gtfs);
+      // geoPos.x = lat, geoPos.y = lon
+
+      // 4. Nearest GTFS stop
+      let bestStop = null, bestStopDist = Infinity;
+      for (const s of gtfsStops) {
+        const d = (s.stop_lat - geoPos.x) ** 2 + (s.stop_lon - geoPos.y) ** 2;
+        if (d < bestStopDist) { bestStopDist = d; bestStop = s; }
+      }
+      if (bestStop && bestStopDist < 0.003 * 0.003) { // ~330 m
         svgCircleStops.push({cx, cy, stop_id: bestStop.stop_id, stop_name: bestStop.stop_name});
       }
     }
