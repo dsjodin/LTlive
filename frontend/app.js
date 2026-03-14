@@ -388,12 +388,13 @@ function loadRoutes() {
 
 function isShapeInKommun(coords) {
     if (!coords || coords.length === 0) return false;
-    const inside = coords.filter(([lat, lon]) =>
+    // Show shape if any point passes through the Örebro area.
+    // This allows regional routes (Länsbuss) that start/end or pass through
+    // Örebro but spend most of their journey outside the municipality.
+    return coords.some(([lat, lon]) =>
         lat >= KOMMUN_BOUNDS.south && lat <= KOMMUN_BOUNDS.north &&
         lon >= KOMMUN_BOUNDS.west && lon <= KOMMUN_BOUNDS.east
     );
-    // Shape is "in kommun" if at least 70% of points are within bounds
-    return inside.length / coords.length >= 0.7;
 }
 
 function loadRouteShapes(routeId) {
