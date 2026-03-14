@@ -8,13 +8,13 @@ import config
 
 
 def fetch_vehicle_positions():
-    """Fetch GTFS-RT VehiclePositions feed and return list of vehicle dicts."""
+    """Fetch GTFS-RT VehiclePositions feed and return (vehicles, error_str)."""
     try:
         resp = requests.get(config.VEHICLE_POSITIONS_URL, timeout=10)
         resp.raise_for_status()
     except requests.RequestException as e:
         print(f"Error fetching vehicle positions: {e}")
-        return []
+        return [], str(e)
 
     feed = gtfs_realtime_pb2.FeedMessage()
     feed.ParseFromString(resp.content)
@@ -52,7 +52,7 @@ def fetch_vehicle_positions():
         }
         vehicles.append(vehicle)
 
-    return vehicles
+    return vehicles, None
 
 
 def fetch_trip_updates():

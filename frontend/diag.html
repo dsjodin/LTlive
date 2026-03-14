@@ -357,7 +357,10 @@ function buildSysStatus(s, vehicleCount) {
   ];
 
   if (s.gtfs_error) {
-    pills.push(pill('err', 'Fel', esc(s.gtfs_error)));
+    pills.push(pill('err', 'GTFS-fel', esc(s.gtfs_error)));
+  }
+  if (s.last_rt_error) {
+    pills.push(pill('err', 'RT-fel', esc(s.last_rt_error.slice(0, 60))));
   }
 
   const wrap = document.createElement('div');
@@ -632,51 +635,53 @@ function buildMatching(m, vehicles) {
 // ── RT feed raw debug ─────────────────────────────────────────────
 
 function buildRtFeedCard(f) {
-  const card = makeCard('RT-flöde rådata (live hämtning)');
+  const card = makeCard('RT-flöde rådata');
   const hdr = card.querySelector('.card-header');
-  hdr.querySelector('.meta').textContent = 'hämtas direkt från Trafiklab';
+  hdr.querySelector('.meta').textContent = 'cachad data – ingen extra Trafiklab-förfrågan';
   const body = card.querySelector('.card-body');
 
-  if (!f || f.error) {
-    body.innerHTML = `<span style="color:#f05050">Fel: ${esc(f?.error || 'okänt')}</span>`;
+  if (!f) {
+    body.innerHTML = '<span style="color:#f05050">Kunde inte nå /api/debug/rt-feed</span>';
     return card;
   }
 
-  const httpColor = f.http_status === 200 ? '#5de895' : '#f05050';
   const grid = document.createElement('div');
   grid.className = 'stats-grid';
   grid.innerHTML = `
-    <div class="stat-box"><div class="sval" style="color:${httpColor}">${f.http_status ?? '–'}</div><div class="slabel">HTTP-status</div></div>
-    <div class="stat-box"><div class="sval">${f.raw_entity_count}</div><div class="slabel">Entiteter i flödet</div></div>
-    <div class="stat-box"><div class="sval">${f.vehicle_entities}</div><div class="slabel">Fordons-entiteter</div></div>
-    <div class="stat-box ${f.filtered_no_position > 0 ? 'warn' : 'good'}"><div class="sval">${f.filtered_no_position}</div><div class="slabel">Filtrerade (ingen pos)</div></div>
-    <div class="stat-box ${f.parsed_vehicles > 0 ? 'good' : 'warn'}"><div class="sval">${f.parsed_vehicles}</div><div class="slabel">Fordon med position</div></div>
+    <div class="stat-box ${(f.cached_vehicles ?? 0) > 0 ? 'good' : 'warn'}">
+      <div class="sval">${f.cached_vehicles ?? '–'}</div><div class="slabel">Fordon i cache</div>
+    </div>
+    <div class="stat-box">
+      <div class="sval">${f.trip_update_mappings ?? '–'}</div><div class="slabel">TripUpdate-mappningar</div>
+    </div>
+    <div class="stat-box ${(f.last_poll_count ?? 0) > 0 ? 'good' : 'warn'}">
+      <div class="sval">${f.last_poll_count ?? '–'}</div><div class="slabel">Fordon vid senaste poll</div>
+    </div>
   `;
   body.appendChild(grid);
 
-  if (f.error) {
+  if (f.last_error) {
     const err = document.createElement('div');
-    err.style.cssText = 'color:#f05050;margin-top:10px;font-size:12px';
-    err.textContent = 'Parse-fel: ' + f.error;
+    err.style.cssText = 'color:#f05050;margin:10px 0 4px;font-size:12px;font-weight:600';
+    err.textContent = 'Senaste RT-fel:';
     body.appendChild(err);
+    const errMsg = document.createElement('div');
+    errMsg.style.cssText = 'color:#f07070;font-size:11px;font-family:monospace;background:#2a1010;padding:6px 10px;border-radius:4px';
+    errMsg.textContent = f.last_error;
+    body.appendChild(errMsg);
   }
 
   if (f.sample_vehicles && f.sample_vehicles.length > 0) {
     const h = document.createElement('div');
     h.style.cssText = 'color:#7eb8f7;font-weight:600;margin:14px 0 6px;font-size:12px';
-    h.textContent = 'Exempelfordon från flödet:';
+    h.textContent = 'Exempelfordon (cache):';
     body.appendChild(h);
     const ul = document.createElement('ul');
     ul.className = 'sample-list';
     for (const v of f.sample_vehicles) {
-      ul.innerHTML += `<li>id:<b>${esc(v.id)}</b>  vehicle_id:<b>${esc(v.vehicle_id)}</b>  lat:${v.lat?.toFixed(4)}  trip_id:<span style="color:#f0a030">${esc(v.trip_id||'–')}</span>  route_id:<span style="color:#7eb8f7">${esc(v.route_id||'–')}</span></li>`;
+      ul.innerHTML += `<li>vehicle_id:<b>${esc(v.vehicle_id)}</b>  lat:${v.lat?.toFixed(4)}  trip_id:<span style="color:#f0a030">${esc(v.trip_id||'–')}</span>  route_id:<span style="color:#7eb8f7">${esc(v.route_id||'–')}</span></li>`;
     }
     body.appendChild(ul);
-  } else if (f.parsed_vehicles === 0) {
-    const note = document.createElement('div');
-    note.style.cssText = 'color:#778;margin-top:10px;font-size:12px';
-    note.textContent = 'Inga fordon med giltig position i flödet just nu.';
-    body.appendChild(note);
   }
 
   return card;

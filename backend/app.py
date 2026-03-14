@@ -29,6 +29,7 @@ _data = {
     "last_vehicle_update": 0,
     "last_rt_poll": 0,
     "last_rt_poll_count": None,
+    "last_rt_error": None,
     "gtfs_loaded": False,
     "gtfs_error": None,
 }
@@ -136,12 +137,13 @@ def refresh_gtfs_static():
 
 def poll_realtime():
     """Poll GTFS-RT vehicle positions + trip updates."""
-    vehicles = gtfs_rt.fetch_vehicle_positions()
+    vehicles, rt_error = gtfs_rt.fetch_vehicle_positions()
 
     # Always record that we polled, even if the feed is empty
     with _lock:
         _data["last_rt_poll"] = int(time.time())
         _data["last_rt_poll_count"] = len(vehicles)
+        _data["last_rt_error"] = rt_error
 
     # Don't overwrite with empty data on fetch failure
     if not vehicles:
@@ -227,6 +229,7 @@ def status():
             "last_vehicle_update": _data["last_vehicle_update"],
             "last_rt_poll": _data["last_rt_poll"],
             "last_rt_poll_count": _data["last_rt_poll_count"],
+            "last_rt_error": _data["last_rt_error"],
             "operator": config.OPERATOR,
             "has_static_key": bool(config.TRAFIKLAB_GTFS_STATIC_KEY),
             "has_rt_key": bool(config.TRAFIKLAB_GTFS_RT_KEY),
@@ -483,57 +486,34 @@ def debug_routes():
 
 @app.route("/api/debug/rt-feed")
 def debug_rt_feed():
-    """Fetch VehiclePositions raw and return stats for diagnosis."""
-    import requests
-    from google.transit import gtfs_realtime_pb2
+    """Return cached RT feed stats (no extra Trafiklab request)."""
+    with _lock:
+        vehicles = list(_data["vehicles"])
+        vehicle_trips = _data.get("vehicle_trips", {})
+        last_poll = _data["last_rt_poll"]
+        last_count = _data["last_rt_poll_count"]
+        last_error = _data["last_rt_error"]
 
-    result = {
+    sample = []
+    for v in vehicles[:5]:
+        sample.append({
+            "id": v.get("id", ""),
+            "vehicle_id": v.get("vehicle_id", ""),
+            "lat": v.get("lat"),
+            "lon": v.get("lon"),
+            "trip_id": v.get("trip_id", ""),
+            "route_id": v.get("route_id", ""),
+        })
+
+    return jsonify({
         "url_prefix": config.VEHICLE_POSITIONS_URL.split("?")[0],
-        "http_status": None,
-        "error": None,
-        "raw_entity_count": 0,
-        "vehicle_entities": 0,
-        "filtered_no_position": 0,
-        "parsed_vehicles": 0,
-        "sample_vehicles": [],
-    }
-
-    try:
-        resp = requests.get(config.VEHICLE_POSITIONS_URL, timeout=10)
-        result["http_status"] = resp.status_code
-        resp.raise_for_status()
-    except requests.RequestException as e:
-        result["error"] = str(e)
-        return jsonify(result)
-
-    try:
-        feed = gtfs_realtime_pb2.FeedMessage()
-        feed.ParseFromString(resp.content)
-        result["raw_entity_count"] = len(feed.entity)
-
-        for entity in feed.entity:
-            if not entity.HasField("vehicle"):
-                continue
-            result["vehicle_entities"] += 1
-            v = entity.vehicle
-            pos = v.position
-            if not pos.latitude or not pos.longitude:
-                result["filtered_no_position"] += 1
-                continue
-            result["parsed_vehicles"] += 1
-            if len(result["sample_vehicles"]) < 5:
-                result["sample_vehicles"].append({
-                    "id": entity.id,
-                    "vehicle_id": v.vehicle.id,
-                    "lat": pos.latitude,
-                    "lon": pos.longitude,
-                    "trip_id": v.trip.trip_id if v.HasField("trip") else "",
-                    "route_id": v.trip.route_id if v.HasField("trip") else "",
-                })
-    except Exception as e:
-        result["error"] = f"Parse error: {e}"
-
-    return jsonify(result)
+        "last_poll": last_poll,
+        "last_poll_count": last_count,
+        "last_error": last_error,
+        "cached_vehicles": len(vehicles),
+        "sample_vehicles": sample,
+        "trip_update_mappings": len(vehicle_trips),
+    })
 
 
 @app.route("/api/alerts")
