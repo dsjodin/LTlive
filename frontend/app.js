@@ -420,9 +420,13 @@ function loadRouteShapes(routeId) {
             const color = getRouteColor(route);
             const layerGroup = L.layerGroup();
 
+            // Configured routes always display regardless of geography.
+            // The bbox filter only excludes unconfigured routes that happen
+            // to pass through the data but aren't in our LINE_CONFIG.
+            const isConfigured = ALLOWED_LINE_NUMBERS.has(route.route_short_name);
+
             Object.values(data.shapes).forEach((coords) => {
-                // Skip shapes outside kommun if filter is active
-                if (filterKommun && !isShapeInKommun(coords)) {
+                if (filterKommun && !isConfigured && !isShapeInKommun(coords)) {
                     return;
                 }
                 const polyline = L.polyline(coords, {
