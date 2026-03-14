@@ -437,6 +437,49 @@
     ],
   };
 
+  // ── ROUTE PATHS (extracted from official PDF map) ──────────────────────────
+  // Calibration: SVG(110,402)→(153,330), SVG(196,374)→(506,282),
+  //              SVG(265,207)→(740,63), SVG(461,721)→(1566,836)
+  const ROUTE_PATHS = {
+    "1": {
+      color: "#421e55",
+      paths: [
+        "M 1557.4 826.4 L 1557.4 588.9 L 773.7 589.0 L 773.7 545.0 L 777.7 545.0 L 778.2 513.7 L 778.2 512.4 L 780.2 430.2 L 624.1 430.2 L 626.6 299.3 L 490.5 299.3",
+      ]
+    },
+    "2": {
+      color: "#57aa35",
+      paths: [
+        "M 1568.0 681.1 L 1568.0 584.8 L 806.6 585.3 L 806.3 544.8 L 788.8 545.4 L 789.2 502.2 L 791.1 425.4 L 438.2 425.4 L 214.1 340.6 L 146.8 340.6",
+      ]
+    },
+    "3": {
+      color: "#f04752",
+      paths: [
+        "M 241.1 547.9 L 324.3 579.1 L 840.0 579.1 L 840.0 544.9 L 810.2 545.0 L 810.2 491.5 L 801.8 491.5 L 801.5 421.1 L 637.0 421.0 L 638.4 295.6 L 490.5 295.6",
+      ]
+    },
+    "4": {
+      color: "#456670",
+      paths: [
+        "M 1411.7 357.3 L 1411.8 365.0 L 1234.8 390.2 L 1234.8 420.7 L 1235.0 436.6 L 1235.8 459.4 L 1316.0 459.4 L 1315.3 436.6 L 1196.9 436.7 L 835.9 437.1 L 835.9 484.6 L 821.8 484.6 L 821.8 545.0 L 870.4 545.0 L 870.4 599.5 L 768.4 599.5 L 768.8 624.7 L 768.5 677.8 L 420.9 677.2 L 420.9 875.4",
+      ]
+    },
+    "5": {
+      color: "#26538f",
+      paths: [
+        "M 770.5 45.4 L 907.1 45.4 L 907.1 358.3 L 858.9 392.5 L 858.9 475.5 L 1000.4 475.5 L 1000.4 491.5 L 1000.8 580.3 L 1001.0 582.4 L 1001.1 628.2 L 1081.4 645.5 L 1081.8 646.7 L 1082.0 731.9 L 1082.0 736.0 L 1103.8 736.0 L 1197.8 736.4 L 1445.2 688.3 L 1445.4 687.6",
+      ]
+    },
+    "7": {
+      color: "#b27ac3",
+      paths: [
+        "M 884.1 792.9 L 883.7 767.2 L 921.1 767.2 L 921.1 650.3 L 990.1 628.2 L 989.9 600.9 L 989.9 600.0 L 988.4 556.8 L 988.0 490.3 L 988.4 479.4 L 823.9 479.4 L 823.9 446.6 L 1015.2 446.5 L 1015.2 389.2 L 1042.3 368.4 L 1042.3 275.9 L 1094.5 275.9 L 1094.5 204.8 L 1040.1 204.8",
+        "M 494.1 947.8 L 494.3 915.6 L 515.2 915.5 L 515.1 894.5 L 472.5 894.6 L 473.1 878.8 L 515.1 878.8 L 515.1 827.6 L 515.0 813.9 L 435.1 813.8 L 435.1 767.2 L 865.4 767.2 L 883.9 767.3 L 883.9 803.8",
+      ]
+    },
+  };
+
   // ── GLOBALS ────────────────────────────────────────────────────────────────
   const RT_POLL_MS = (window.__RT_POLL_SECONDS || 180) * 1000;
   let stopNameToId = {};   // GTFS name → stop_id
@@ -476,25 +519,36 @@
     const gStops   = document.getElementById("g-stops");
     const gLabels  = document.getElementById("g-labels");
 
-    // Draw lines
-    for (const [lineNum, stopIds] of Object.entries(LINE_PATHS)) {
-      const color = C[lineNum].bg;
-      const coords = stopIds.map(id => resolveStop(id)).filter(Boolean);
-      if (coords.length < 2) continue;
-
-      // Build smooth path using straight segments with rounded corners at bends
-      let d = `M ${coords[0].x} ${coords[0].y}`;
-      for (let i = 1; i < coords.length; i++) {
-        const p = coords[i];
-        d += ` L ${p.x} ${p.y}`;
+    // Draw lines from PDF route geometry (lines 1-5, 7)
+    for (const [lineNum, info] of Object.entries(ROUTE_PATHS)) {
+      for (const pathD of info.paths) {
+        el("path", {
+          d: pathD, class: "line-path",
+          stroke: info.color, "stroke-width": "7",
+          "stroke-linecap": "round", "stroke-linejoin": "round",
+          fill: "none",
+          "data-line": lineNum,
+        }, gLines);
       }
-      el("path", {
-        d, class: "line-path",
-        stroke: color, "stroke-width": "7",
-        "stroke-linecap": "round", "stroke-linejoin": "round",
-        fill: "none",
-        "data-line": lineNum,
-      }, gLines);
+    }
+
+    // Draw line 6 by connecting stops (not extracted from PDF)
+    {
+      const lineNum = "6";
+      const color = C[lineNum].bg;
+      const stopIds = LINE_PATHS[lineNum];
+      const coords = stopIds.map(id => resolveStop(id)).filter(Boolean);
+      if (coords.length >= 2) {
+        let d = `M ${coords[0].x} ${coords[0].y}`;
+        for (let i = 1; i < coords.length; i++) d += ` L ${coords[i].x} ${coords[i].y}`;
+        el("path", {
+          d, class: "line-path",
+          stroke: color, "stroke-width": "7",
+          "stroke-linecap": "round", "stroke-linejoin": "round",
+          fill: "none",
+          "data-line": lineNum,
+        }, gLines);
+      }
     }
 
     // Draw stops
