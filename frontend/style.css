@@ -344,10 +344,6 @@ body.panel-open #map {
     letter-spacing: 0.6px;
     color: var(--muted);
 }
-.lp-trip-divider {
-    margin: 6px 14px;
-    border-top: 1px dashed rgba(255,255,255,0.1);
-}
 .lp-empty, .lp-loading {
     padding: 24px 14px;
     color: var(--muted);

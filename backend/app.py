@@ -670,57 +670,57 @@ def line_departures(route_id):
 
     directions_out = []
     for dir_id in sorted(dir_trips.keys()):
-        # Sort: most past stops first (furthest along), then earliest next stop
-        sorted_trips = sorted(dir_trips[dir_id])
+        all_tids = [tid for _, _, tid in dir_trips[dir_id]]
 
-        # Build static stop sequence once per direction for ordering
+        # Merge all trips: for each stop keep the earliest upcoming departure
+        # across all active buses in this direction → complete merged timetable.
+        merged = {}  # stop_id -> (unix_t, is_rt)
+        headsign = ""
+        for tid in all_tids:
+            if not headsign:
+                headsign = trip_headsigns.get(tid, "")
+            for sid, (t, is_rt) in trip_rt[tid]["stop_times"].items():
+                if t < now:
+                    continue
+                if sid not in merged or t < merged[sid][0]:
+                    merged[sid] = (t, is_rt)
+
+        if not merged:
+            continue
+
+        # Build static stop sequence for canonical ordering and stop names
         seq = _get_stop_sequence(route_id, dir_id)
-        stop_pos = {ss["stop_id"]: i for i, ss in enumerate(seq)} if seq else {}
-        stop_names = {ss["stop_id"]: ss["stop_name"] for ss in seq} if seq else {}
+        if seq:
+            stops_out = []
+            for ss in seq:
+                sid = ss["stop_id"]
+                if sid not in merged:
+                    continue
+                t, is_rt = merged[sid]
+                stops_out.append({
+                    "stop_id": sid,
+                    "stop_name": ss["stop_name"],
+                    "time": t,
+                    "minutes": max(0, round((t - now) / 60)),
+                    "is_realtime": is_rt,
+                })
+        else:
+            stops_out = [
+                {
+                    "stop_id": sid,
+                    "stop_name": stops.get(sid, {}).get("stop_name", sid),
+                    "time": t,
+                    "minutes": max(0, round((t - now) / 60)),
+                    "is_realtime": is_rt,
+                }
+                for sid, (t, is_rt) in sorted(merged.items(), key=lambda x: x[1][0])
+            ]
 
-        trips_out = []
-        seen_headsign = None
-        for _, _, tid in sorted_trips:
-            rt_times = trip_rt[tid]["stop_times"]  # stop_id -> (unix_t, is_rt)
-
-            if seq:
-                stops_out = []
-                for sid, (t, is_rt) in sorted(
-                    rt_times.items(),
-                    key=lambda x: stop_pos.get(x[0], 999999),
-                ):
-                    if t < now:
-                        continue
-                    stops_out.append({
-                        "stop_id": sid,
-                        "stop_name": stop_names.get(sid) or stops.get(sid, {}).get("stop_name", sid),
-                        "time": t,
-                        "minutes": max(0, round((t - now) / 60)),
-                        "is_realtime": is_rt,
-                    })
-            else:
-                stops_out = [
-                    {
-                        "stop_id": sid,
-                        "stop_name": stops.get(sid, {}).get("stop_name", sid),
-                        "time": t,
-                        "minutes": max(0, round((t - now) / 60)),
-                        "is_realtime": is_rt,
-                    }
-                    for sid, (t, is_rt) in sorted(rt_times.items(), key=lambda x: x[1][0])
-                    if t >= now
-                ]
-
-            if stops_out:
-                trips_out.append({"trip_id": tid, "stops": stops_out})
-                if seen_headsign is None:
-                    seen_headsign = trip_headsigns.get(tid, "")
-
-        if trips_out:
+        if stops_out:
             directions_out.append({
                 "direction_id": dir_id,
-                "headsign": seen_headsign or "",
-                "trips": trips_out,
+                "headsign": headsign,
+                "stops": stops_out,
             })
 
     route_info = routes.get(route_id, {})
