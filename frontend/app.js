@@ -566,7 +566,11 @@ function buildLineButtons(routes) {
                 toggleRouteShapes(true);
             }
 
-            openLinePanel(route);
+            if (activePanelRouteId === route.route_id) {
+                closeLinePanel();
+            } else {
+                openLinePanel(route);
+            }
         });
 
         container.appendChild(btn);
