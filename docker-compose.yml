@@ -19,14 +19,27 @@ services:
   nginx:
     image: nginx:alpine
     container_name: ltlive-nginx
-    ports:
-      - "8080:80"
     volumes:
       - ./frontend:/usr/share/nginx/html:ro
       - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
     depends_on:
       - backend
     restart: unless-stopped
+    networks:
+      - proxy
+      - default
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.ltlive.rule=Host(`ltlive.storavalla.se`)
+      - traefik.http.routers.ltlive.entrypoints=websecure
+      - traefik.http.routers.ltlive.tls=true
+      - traefik.http.routers.ltlive.tls.certresolver=le
+      - traefik.http.services.ltlive.loadbalancer.server.port=80
 
 volumes:
   gtfs-data:
+
+networks:
+  proxy:
+    name: proxy
+    external: true
