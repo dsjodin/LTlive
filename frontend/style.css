@@ -238,11 +238,11 @@ body.ticker-collapsed #map {
     transform: translateY(-50%);
     font-size: 0.88em;
     color: #ccc;
-    animation: ticker-scroll 60s linear infinite;
     will-change: left;
 }
 .ticker-move.has-alerts {
     color: #ffcc5c;
+    animation: ticker-scroll var(--ticker-dur, 60s) linear infinite;
 }
 .ticker-move.no-alerts {
     animation: none;
@@ -250,8 +250,8 @@ body.ticker-collapsed #map {
     color: var(--muted);
 }
 @keyframes ticker-scroll {
-    0%   { left: 100%; }
-    100% { left: -200%; }
+    0%   { left: var(--ticker-from, 100%); }
+    100% { left: var(--ticker-to, -200%); }
 }
 
 /* Ticker collapse/reopen buttons */

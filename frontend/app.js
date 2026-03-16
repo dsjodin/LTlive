@@ -560,7 +560,20 @@ function updateAlerts(alerts) {
     }
     const text = alerts.map((a) => `⚠  ${a.header}${a.description ? " — " + a.description : ""}`).join("          ◆          ");
     el.textContent = text;
+    // Measure after content is set; restart animation with exact pixel positions
+    // so the text fully exits before looping.
+    el.style.animation = "none";
     el.className = "ticker-move has-alerts";
+    requestAnimationFrame(() => {
+        const wrapW = el.parentElement.offsetWidth;
+        const textW = el.scrollWidth;
+        const px_per_sec = 80;
+        const dur = (wrapW + textW) / px_per_sec;
+        el.style.setProperty("--ticker-from", `${wrapW}px`);
+        el.style.setProperty("--ticker-to", `${-textW}px`);
+        el.style.setProperty("--ticker-dur", `${dur}s`);
+        el.style.animation = "";
+    });
 }
 
 // --- Status banner ---
