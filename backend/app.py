@@ -576,13 +576,29 @@ def line_departures(route_id):
         stop_departures = dict(_data.get("stop_departures", {}))
         trip_headsigns = _data["trip_headsigns"]
         routes = _data["routes"]
+        trips = _data["trips"]
         now = int(time.time())
+
+    # Build a fast cache: trip_id -> resolved static route_id
+    _trip_route_cache = {}
+
+    def trip_matches(dep):
+        dep_route = dep.get("route_id", "")
+        if dep_route == route_id:
+            return True
+        # RT route_id may differ from static — resolve via trip_id
+        tid = dep.get("trip_id", "")
+        if not tid:
+            return False
+        if tid not in _trip_route_cache:
+            _trip_route_cache[tid] = trips.get(tid, {}).get("route_id", dep_route)
+        return _trip_route_cache[tid] == route_id
 
     # Earliest future departure time per trip_id for this route
     trips_earliest = {}
     for deps in stop_departures.values():
         for dep in deps:
-            if dep.get("route_id") != route_id:
+            if not trip_matches(dep):
                 continue
             t = dep.get("time", 0)
             if t < now:
@@ -621,6 +637,7 @@ def stops_next_departure():
     with _lock:
         stop_departures = dict(_data.get("stop_departures", {}))
         routes = _data["routes"]
+        trips = _data["trips"]
         now = int(time.time())
     horizon = now + 3 * 3600  # only look 3 hours ahead
 
@@ -632,7 +649,12 @@ def stops_next_departure():
             if t < now or t > horizon:
                 continue
             if best is None or t < best["time"]:
-                ri = routes.get(dep.get("route_id", ""), {})
+                # Resolve route via static trips if RT route_id is missing/wrong
+                dep_route_id = dep.get("route_id", "")
+                ri = routes.get(dep_route_id, {})
+                if not ri:
+                    static_route_id = trips.get(dep.get("trip_id", ""), {}).get("route_id", "")
+                    ri = routes.get(static_route_id, {})
                 best = {
                     "time": t,
                     "minutes": max(0, round((t - now) / 60)),
