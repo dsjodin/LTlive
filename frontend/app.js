@@ -370,7 +370,10 @@ function showVehiclePopup(vehicle, marker) {
             </div>
         </div>
     `;
-    marker.bindPopup(html, { maxWidth: 250 }).openPopup();
+    L.popup({ maxWidth: 250 })
+        .setLatLng(marker.getLatLng())
+        .setContent(html)
+        .openOn(map);
 }
 
 // --- Stops ---
