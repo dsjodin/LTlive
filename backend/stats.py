@@ -6,8 +6,7 @@ import sqlite3
 import threading
 import time
 
-_DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data", "stats", "stats.db")
-_DB_PATH = os.path.normpath(_DB_PATH)
+_DB_PATH = os.environ.get("STATS_DB_PATH", "/app/data/stats/stats.db")
 _lock = threading.Lock()
 
 
