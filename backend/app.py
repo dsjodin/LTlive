@@ -622,51 +622,54 @@ def line_departures(route_id):
             _trip_route_cache[tid] = trips.get(tid, {}).get("route_id", dep_route)
         return _trip_route_cache[tid]
 
-    # Collect: (direction_id, stop_id) -> soonest future departure time
-    dir_stop_best = {}   # (dir_id, stop_id) -> {"time", "is_realtime"}
-    # Also collect headsign per direction
-    dir_headsign = {}
-
+    # Collect per-trip stop times: trip_id -> {dir_id, [(time, stop_id, is_realtime)]}
+    trip_stops_rt = {}
     for stop_id, deps in stop_departures.items():
         for dep in deps:
             tid = dep.get("trip_id", "")
             dep_route = dep.get("route_id", "")
-            if static_route_for(tid, dep_route) != route_id:
+            if not tid or static_route_for(tid, dep_route) != route_id:
                 continue
             t = dep.get("time", 0)
             if t < now:
                 continue
-            trip_info = trips.get(tid, {})
-            dir_id = str(trip_info.get("direction_id", "0") or "0")
-            key = (dir_id, stop_id)
-            if key not in dir_stop_best or t < dir_stop_best[key]["time"]:
-                dir_stop_best[key] = {"time": t, "is_realtime": dep.get("is_realtime", False)}
-            if dir_id not in dir_headsign:
-                hs = trip_headsigns.get(tid, "")
-                if hs:
-                    dir_headsign[dir_id] = hs
+            dir_id = str(trips.get(tid, {}).get("direction_id", "0") or "0")
+            if tid not in trip_stops_rt:
+                trip_stops_rt[tid] = {"dir": dir_id, "entries": []}
+            trip_stops_rt[tid]["entries"].append((t, stop_id, dep.get("is_realtime", False)))
 
-    # Build per-direction result using canonical stop order
+    # Sort each trip's entries by time (= stop order for a single trip)
+    for td in trip_stops_rt.values():
+        td["entries"].sort()
+
+    # Per direction: pick the next upcoming trip (earliest first-stop time)
+    dir_next_trip = {}  # dir_id -> trip_id with earliest start
+    for tid, td in trip_stops_rt.items():
+        if not td["entries"]:
+            continue
+        dir_id = td["dir"]
+        first_t = td["entries"][0][0]
+        if dir_id not in dir_next_trip or first_t < trip_stops_rt[dir_next_trip[dir_id]]["entries"][0][0]:
+            dir_next_trip[dir_id] = tid
+
     directions_out = []
-    for dir_id in sorted(dir_headsign.keys()):
-        seq = _get_stop_sequence(route_id, dir_id)
-        stops_out = []
-        for s in seq:
-            key = (dir_id, s["stop_id"])
-            if key not in dir_stop_best:
-                continue
-            info = dir_stop_best[key]
-            stops_out.append({
-                "stop_id": s["stop_id"],
-                "stop_name": s["stop_name"],
-                "time": info["time"],
-                "minutes": max(0, round((info["time"] - now) / 60)),
-                "is_realtime": info["is_realtime"],
-            })
+    for dir_id in sorted(dir_next_trip.keys()):
+        tid = dir_next_trip[dir_id]
+        entries = trip_stops_rt[tid]["entries"]
+        stops_out = [
+            {
+                "stop_id": stop_id,
+                "stop_name": stops.get(stop_id, {}).get("stop_name", stop_id),
+                "time": t,
+                "minutes": max(0, round((t - now) / 60)),
+                "is_realtime": is_rt,
+            }
+            for (t, stop_id, is_rt) in entries
+        ]
         if stops_out:
             directions_out.append({
                 "direction_id": dir_id,
-                "headsign": dir_headsign.get(dir_id, ""),
+                "headsign": trip_headsigns.get(tid, ""),
                 "stops": stops_out,
             })
 
