@@ -657,72 +657,81 @@ def line_departures(route_id):
             if existing is None or t < existing[0]:
                 trip_rt[tid]["stop_times"][stop_id] = (t, dep.get("is_realtime", False))
 
-    # Per direction: pick the most-active trip — the one furthest along its route.
-    # The RT feed includes already-departed stops, so a trip with many past stops is
-    # the bus currently running. This prevents flickering: the active trip stays
-    # selected until it finishes, then naturally hands over to the next trip.
-    # Tie-break: earliest next upcoming stop (soonest to next stop).
-    dir_best = {}  # dir_id -> (trip_id, score)
+    # Per direction: collect ALL active trips, sorted by progress (furthest along first).
+    # A trip with many already-departed stops is the one currently in service.
+    dir_trips = {}  # dir_id -> [(past_count, min_future, tid)]
     for tid, td in trip_rt.items():
         future = [t for t, _ in td["stop_times"].values() if t >= now]
         if not future:
             continue
         past_count = sum(1 for t, _ in td["stop_times"].values() if t < now)
         dir_id = td["dir"]
-        # Lower score = better: prefer more past stops, then earliest next stop
-        score = (-past_count, min(future))
-        if dir_id not in dir_best or score < dir_best[dir_id][1]:
-            dir_best[dir_id] = (tid, score)
+        dir_trips.setdefault(dir_id, []).append((-past_count, min(future), tid))
 
     directions_out = []
-    for dir_id in sorted(dir_best.keys()):
-        tid, _ = dir_best[dir_id]
-        rt_times = trip_rt[tid]["stop_times"]  # stop_id -> (unix_t, is_rt)
+    for dir_id in sorted(dir_trips.keys()):
+        # Sort: most past stops first (furthest along), then earliest next stop
+        sorted_trips = sorted(dir_trips[dir_id])
 
-        # Get static stop sequence (cached per route+direction) for canonical stop order.
-        # We only use it for ordering — NOT for scheduled times, because the representative
-        # trip in the cache may differ from the actual RT trip and have wrong times.
+        # Build static stop sequence once per direction for ordering
         seq = _get_stop_sequence(route_id, dir_id)
+        stop_pos = {ss["stop_id"]: i for i, ss in enumerate(seq)} if seq else {}
+        stop_names = {ss["stop_id"]: ss["stop_name"] for ss in seq} if seq else {}
 
-        if seq:
-            # Build a position map so we can sort RT stops by their static sequence index
-            stop_pos = {ss["stop_id"]: i for i, ss in enumerate(seq)}
-            stop_names = {ss["stop_id"]: ss["stop_name"] for ss in seq}
+        trips_out = []
+        seen_headsign = None
+        for _, _, tid in sorted_trips:
+            rt_times = trip_rt[tid]["stop_times"]  # stop_id -> (unix_t, is_rt)
 
-            stops_out = []
-            for sid, (t, is_rt) in sorted(
-                rt_times.items(),
-                key=lambda x: stop_pos.get(x[0], 999999),
-            ):
-                if t < now:
-                    continue
-                stops_out.append({
-                    "stop_id": sid,
-                    "stop_name": stop_names.get(sid) or stops.get(sid, {}).get("stop_name", sid),
-                    "time": t,
-                    "minutes": max(0, round((t - now) / 60)),
-                    "is_realtime": is_rt,
-                })
-        else:
-            # No static sequence: sort RT stops by departure time
-            stops_out = [
-                {
-                    "stop_id": sid,
-                    "stop_name": stops.get(sid, {}).get("stop_name", sid),
-                    "time": t,
-                    "minutes": max(0, round((t - now) / 60)),
-                    "is_realtime": is_rt,
-                }
-                for sid, (t, is_rt) in sorted(rt_times.items(), key=lambda x: x[1][0])
-                if t >= now
-            ]
+            if seq:
+                stops_out = []
+                for sid, (t, is_rt) in sorted(
+                    rt_times.items(),
+                    key=lambda x: stop_pos.get(x[0], 999999),
+                ):
+                    if t < now:
+                        continue
+                    stops_out.append({
+                        "stop_id": sid,
+                        "stop_name": stop_names.get(sid) or stops.get(sid, {}).get("stop_name", sid),
+                        "time": t,
+                        "minutes": max(0, round((t - now) / 60)),
+                        "is_realtime": is_rt,
+                    })
+            else:
+                stops_out = [
+                    {
+                        "stop_id": sid,
+                        "stop_name": stops.get(sid, {}).get("stop_name", sid),
+                        "time": t,
+                        "minutes": max(0, round((t - now) / 60)),
+                        "is_realtime": is_rt,
+                    }
+                    for sid, (t, is_rt) in sorted(rt_times.items(), key=lambda x: x[1][0])
+                    if t >= now
+                ]
 
-        if stops_out:
+            if stops_out:
+                trips_out.append({"trip_id": tid, "stops": stops_out})
+                if seen_headsign is None:
+                    seen_headsign = trip_headsigns.get(tid, "")
+
+        if trips_out:
             directions_out.append({
                 "direction_id": dir_id,
-                "headsign": trip_headsigns.get(tid, ""),
-                "stops": stops_out,
+                "headsign": seen_headsign or "",
+                "trips": trips_out,
             })
+
+    route_info = routes.get(route_id, {})
+    return jsonify({
+        "route_id": route_id,
+        "route_short_name": route_info.get("route_short_name", ""),
+        "route_long_name": route_info.get("route_long_name", ""),
+        "route_color": route_info.get("route_color", "0074D9"),
+        "route_text_color": route_info.get("route_text_color", "FFFFFF"),
+        "directions": directions_out,
+    })
 
     route_info = routes.get(route_id, {})
     return jsonify({

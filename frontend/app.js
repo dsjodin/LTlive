@@ -625,8 +625,8 @@ function fetchLineDepartures(routeId) {
             }
 
             const now = Date.now() / 1000;
-            content.innerHTML = data.directions.map(dir => {
-                const rows = dir.stops.map(s => {
+            function renderStops(stopsList) {
+                return stopsList.map(s => {
                     const dt = new Date(s.time * 1000);
                     const clock = dt.toLocaleTimeString("sv-SE", { hour: "2-digit", minute: "2-digit" });
                     const min = Math.max(0, Math.round((s.time - now) / 60));
@@ -640,9 +640,16 @@ function fetchLineDepartures(routeId) {
                         ${rt}
                     </div>`;
                 }).join("");
+            }
+            content.innerHTML = data.directions.map(dir => {
+                const trips = dir.trips || [];
+                const busBlocks = trips.map((trip, idx) => {
+                    const divider = idx > 0 ? `<div class="lp-trip-divider"></div>` : "";
+                    return divider + renderStops(trip.stops);
+                }).join("");
                 return `<div class="lp-section">
                     <div class="lp-section-header">mot ${dir.headsign}</div>
-                    ${rows}
+                    ${busBlocks}
                 </div>`;
             }).join("");
         })
