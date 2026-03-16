@@ -8,22 +8,26 @@
         * { margin: 0; padding: 0; box-sizing: border-box; }
 
         :root {
-            --bg: #0a0a0f;
-            --bg2: #13131a;
-            --border: rgba(255,255,255,0.08);
-            --text: #f0f0f0;
-            --muted: #6e6e7a;
-            --accent: #e8a020;
-            --green: #34c759;
-            --orange: #ff9f0a;
-            --red: #ff3b30;
+            --bg: #e9f7fe;
+            --bg2: #ffffff;
+            --border: #cfe9f3;
+            --text: #0b101e;
+            --muted: #4d6e77;
+            --accent: #0073b9;
+            --accent-dark: #104f85;
+            --green: #6fae43;
+            --green-light: #9dcc77;
+            --orange: #e07b00;
+            --red: #c0392b;
+            --header-bg: #00303c;
+            --header-text: #ffffff;
         }
 
         html, body {
             height: 100%;
             background: var(--bg);
             color: var(--text);
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace, sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
             overflow: hidden;
         }
 
@@ -33,15 +37,15 @@
             align-items: center;
             justify-content: space-between;
             padding: 14px 24px;
-            background: var(--bg2);
-            border-bottom: 1px solid var(--border);
+            background: var(--header-bg);
+            border-bottom: none;
             gap: 16px;
         }
 
         #stop-title {
             font-size: clamp(1.1rem, 3vw, 1.8rem);
             font-weight: 800;
-            color: var(--text);
+            color: var(--header-text);
             letter-spacing: -0.3px;
             white-space: nowrap;
             overflow: hidden;
@@ -50,7 +54,7 @@
 
         #stop-subtitle {
             font-size: 0.78rem;
-            color: var(--muted);
+            color: rgba(255,255,255,0.6);
             margin-top: 2px;
         }
 
@@ -58,16 +62,16 @@
             font-size: clamp(1.4rem, 4vw, 2.6rem);
             font-weight: 700;
             font-variant-numeric: tabular-nums;
-            color: var(--accent);
+            color: var(--green-light);
             letter-spacing: 1px;
             flex-shrink: 0;
             font-family: monospace;
         }
 
         #back-btn {
-            background: none;
-            border: 1px solid var(--border);
-            color: var(--muted);
+            background: rgba(255,255,255,0.1);
+            border: 1px solid rgba(255,255,255,0.25);
+            color: rgba(255,255,255,0.85);
             padding: 6px 12px;
             border-radius: 8px;
             cursor: pointer;
@@ -77,9 +81,9 @@
             display: flex;
             align-items: center;
             gap: 6px;
-            transition: color 0.15s, border-color 0.15s;
+            transition: background 0.15s, border-color 0.15s;
         }
-        #back-btn:hover { color: var(--text); border-color: var(--accent); }
+        #back-btn:hover { background: rgba(255,255,255,0.18); border-color: rgba(255,255,255,0.5); color: #fff; }
 
         /* Stop search / selector */
         #search-bar {
@@ -89,20 +93,21 @@
             padding: 10px 24px;
             background: var(--bg2);
             border-bottom: 1px solid var(--border);
+            box-shadow: 0 1px 4px rgba(0,115,185,0.07);
         }
 
         #stop-search {
             flex: 1;
-            background: rgba(255,255,255,0.06);
+            background: var(--bg);
             border: 1px solid var(--border);
             border-radius: 8px;
             color: var(--text);
             padding: 8px 12px;
             font-size: 0.9rem;
             outline: none;
-            transition: border-color 0.15s;
+            transition: border-color 0.15s, box-shadow 0.15s;
         }
-        #stop-search:focus { border-color: var(--accent); }
+        #stop-search:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(0,115,185,0.15); }
         #stop-search::placeholder { color: var(--muted); }
 
         #search-results {
@@ -115,7 +120,7 @@
             max-height: 280px;
             overflow-y: auto;
             z-index: 100;
-            box-shadow: 0 8px 32px rgba(0,0,0,0.6);
+            box-shadow: 0 8px 24px rgba(0,48,60,0.15);
             display: none;
         }
         #search-results.open { display: block; }
@@ -127,7 +132,7 @@
             transition: background 0.1s;
         }
         .search-result-item:last-child { border-bottom: none; }
-        .search-result-item:hover { background: rgba(255,255,255,0.07); }
+        .search-result-item:hover { background: var(--bg); color: var(--accent); }
         .search-result-dir { display: block; font-size: 0.75rem; color: var(--muted); margin-top: 2px; }
 
         #search-wrap { position: relative; flex: 1; }
@@ -152,10 +157,11 @@
             gap: 0 16px;
             padding: 14px 24px;
             border-bottom: 1px solid var(--border);
+            background: var(--bg2);
             transition: background 0.2s;
         }
-        .dep-row:hover { background: rgba(255,255,255,0.03); }
-        .dep-row.dep-now { background: rgba(52, 199, 89, 0.07); }
+        .dep-row:hover { background: #f0f8fd; }
+        .dep-row.dep-now { background: #edfbf0; border-left: 3px solid var(--green); }
 
         .dep-badge {
             display: inline-flex;
@@ -198,12 +204,12 @@
         }
         .dep-eta.eta-now    { color: var(--green); }
         .dep-eta.eta-soon   { color: var(--orange); }
-        .dep-eta.eta-normal { color: var(--text); }
+        .dep-eta.eta-normal { color: var(--accent); }
 
         .dep-rt-badge {
             display: inline-block;
             font-size: 0.65rem;
-            background: #1a4d2e;
+            background: #dff2cc;
             color: var(--green);
             border-radius: 4px;
             padding: 1px 4px;
@@ -220,11 +226,12 @@
             height: 200px;
             color: var(--muted);
             font-size: 1rem;
+            background: var(--bg2);
         }
 
         /* Refresh indicator */
         #refresh-bar {
-            height: 2px;
+            height: 3px;
             background: var(--accent);
             width: 100%;
             transform-origin: left;
@@ -235,17 +242,17 @@
 
         /* Fullscreen hint */
         #fs-btn {
-            background: none;
-            border: 1px solid var(--border);
-            color: var(--muted);
+            background: rgba(255,255,255,0.1);
+            border: 1px solid rgba(255,255,255,0.25);
+            color: rgba(255,255,255,0.85);
             padding: 6px 10px;
             border-radius: 8px;
             cursor: pointer;
             font-size: 0.82rem;
             flex-shrink: 0;
-            transition: color 0.15s, border-color 0.15s;
+            transition: background 0.15s, border-color 0.15s;
         }
-        #fs-btn:hover { color: var(--text); border-color: var(--accent); }
+        #fs-btn:hover { background: rgba(255,255,255,0.18); border-color: rgba(255,255,255,0.5); color: #fff; }
     </style>
 </head>
 <body>
