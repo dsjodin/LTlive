@@ -35,6 +35,7 @@ let geoWatchId = null;
 let nearbyPanelOpen = false;
 let nearbyTimer = null;
 let lastNearbyPos = null;
+let nearbyRadius = 400;
 
 // Stop departure badges
 let stopMarkerMap = {};   // stop_id -> L.marker
@@ -721,6 +722,8 @@ async function checkStatus() {
         const resp = await fetch(`${API_BASE}/status`);
         const data = await resp.json();
 
+        if (data.nearby_radius_meters) nearbyRadius = data.nearby_radius_meters;
+
         if (data.gtfs_error) {
             showStatusBanner(`GTFS-data kunde inte laddas: ${data.gtfs_error}`);
             return;
@@ -930,12 +933,12 @@ function fetchNearbyDepartures(lat, lon) {
     if (!body.hasChildNodes()) {
         body.innerHTML = `<div class="nearby-loading">Söker hållplatser…</div>`;
     }
-    fetch(`${API_BASE}/nearby-departures?lat=${lat}&lon=${lon}&radius=400`)
+    fetch(`${API_BASE}/nearby-departures?lat=${lat}&lon=${lon}&radius=${nearbyRadius}`)
         .then(r => r.json())
         .then(data => {
             if (!nearbyPanelOpen) return;
             if (!data.stops || data.stops.length === 0) {
-                body.innerHTML = `<div class="nearby-empty">Inga hållplatser inom 400 m</div>`;
+                body.innerHTML = `<div class="nearby-empty">Inga hållplatser inom ${nearbyRadius} m</div>`;
                 return;
             }
             const now = Date.now() / 1000;

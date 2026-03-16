@@ -247,6 +247,7 @@ def status():
             "last_rt_poll": _data["last_rt_poll"],
             "last_rt_poll_count": _data["last_rt_poll_count"],
             "last_rt_error": _data["last_rt_error"],
+            "nearby_radius_meters": config.NEARBY_RADIUS_METERS,
             "operator": config.OPERATOR,
             "has_static_key": bool(config.TRAFIKLAB_GTFS_STATIC_KEY),
             "has_rt_key": bool(config.TRAFIKLAB_GTFS_RT_KEY),
