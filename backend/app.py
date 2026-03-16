@@ -1,5 +1,6 @@
 """Flask backend for LTlive - Live bus tracking for Örebro."""
 
+import math
 import os
 import threading
 import time
@@ -407,6 +408,70 @@ def stops():
         ]
 
     return jsonify({"stops": stop_list, "count": len(stop_list)})
+
+
+@app.route("/api/nearby-departures")
+def nearby_departures():
+    """Return upcoming departures for stops within radius of a lat/lon position."""
+    try:
+        lat = float(request.args.get("lat", 0))
+        lon = float(request.args.get("lon", 0))
+        radius = min(float(request.args.get("radius", 400)), 1000)
+    except ValueError:
+        return jsonify({"error": "Invalid params"}), 400
+
+    with _lock:
+        all_stops = dict(_data["stops"])
+        stop_departures = dict(_data.get("stop_departures", {}))
+        routes = dict(_data["routes"])
+        trips = dict(_data["trips"])
+        trip_headsigns = dict(_data.get("trip_headsigns", {}))
+
+    now = int(time.time())
+    lat_r = math.radians(lat)
+    cos_lat = math.cos(lat_r)
+
+    nearby = []
+    for stop_id, stop in all_stops.items():
+        slat = stop.get("stop_lat")
+        slon = stop.get("stop_lon")
+        if not slat or not slon:
+            continue
+        dlat = math.radians(slat - lat)
+        dlon = math.radians(slon - lon)
+        a = math.sin(dlat / 2) ** 2 + cos_lat * math.cos(math.radians(slat)) * math.sin(dlon / 2) ** 2
+        dist = 2 * 6371000 * math.asin(math.sqrt(a))
+        if dist <= radius:
+            nearby.append((dist, stop_id, stop))
+
+    nearby.sort()
+
+    result = []
+    for dist, stop_id, stop in nearby[:12]:
+        raw = stop_departures.get(stop_id, [])
+        upcoming = sorted([d for d in raw if d["time"] >= now - 60], key=lambda d: d["time"])[:5]
+        deps = []
+        for d in upcoming:
+            route_id = d["route_id"] or trips.get(d["trip_id"], {}).get("route_id", "")
+            route = routes.get(route_id, {})
+            headsign = trip_headsigns.get(d["trip_id"], "") or route.get("route_long_name", "")
+            deps.append({
+                "route_short_name": route.get("route_short_name", "?"),
+                "route_color": route.get("route_color", "555555"),
+                "route_text_color": route.get("route_text_color", "ffffff"),
+                "headsign": headsign,
+                "departure_time": d["time"],
+                "minutes": max(0, round((d["time"] - now) / 60)),
+                "is_realtime": d.get("is_realtime", False),
+            })
+        result.append({
+            "stop_id": stop_id,
+            "stop_name": stop.get("stop_name", stop_id),
+            "distance_m": round(dist),
+            "departures": deps,
+        })
+
+    return jsonify({"stops": result})
 
 
 @app.route("/api/departures/<stop_id>")

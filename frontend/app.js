@@ -28,6 +28,14 @@ let routesLoaded = false;
 let activePanelRouteId = null;
 let linePanelTimer = null;
 
+// Nearby panel / GPS
+let userMarker = null;
+let userAccCircle = null;
+let geoWatchId = null;
+let nearbyPanelOpen = false;
+let nearbyTimer = null;
+let lastNearbyPos = null;
+
 // Stop departure badges
 let stopMarkerMap = {};   // stop_id -> L.marker
 let stopNextDep = {};     // stop_id -> {minutes, route_short_name, route_color, route_text_color}
@@ -801,6 +809,171 @@ function updateStopBadges() {
     });
 }
 
+// --- GPS / Nearby panel ---
+function initGps() {
+    document.getElementById("gps-btn").addEventListener("click", toggleGps);
+    document.getElementById("nearby-panel-close").addEventListener("click", closeNearbyPanel);
+}
+
+function toggleGps() {
+    if (nearbyPanelOpen) {
+        closeNearbyPanel();
+        return;
+    }
+    if (!navigator.geolocation) {
+        alert("Din enhet stödjer inte GPS-positionering.");
+        return;
+    }
+    const btn = document.getElementById("gps-btn");
+    btn.classList.add("locating");
+    navigator.geolocation.getCurrentPosition(
+        (pos) => {
+            btn.classList.remove("locating");
+            btn.classList.add("active");
+            onPosition(pos);
+            openNearbyPanel();
+            // Watch for position updates
+            if (geoWatchId !== null) navigator.geolocation.clearWatch(geoWatchId);
+            geoWatchId = navigator.geolocation.watchPosition(onPosition, null, {
+                enableHighAccuracy: true, maximumAge: 10000,
+            });
+        },
+        () => {
+            btn.classList.remove("locating");
+            alert("Kunde inte hämta din position. Kontrollera att platsåtkomst är tillåten.");
+        },
+        { enableHighAccuracy: true, timeout: 10000 }
+    );
+}
+
+function onPosition(pos) {
+    const { latitude: lat, longitude: lon, accuracy } = pos.coords;
+
+    // Update or create user marker
+    const latlng = [lat, lon];
+    if (!userMarker) {
+        userMarker = L.marker(latlng, {
+            icon: L.divIcon({
+                className: "",
+                html: `<div class="user-location-dot"><div class="user-location-pulse"></div></div>`,
+                iconSize: [16, 16],
+                iconAnchor: [8, 8],
+            }),
+            zIndexOffset: 2000,
+        }).addTo(map);
+    } else {
+        userMarker.setLatLng(latlng);
+    }
+
+    if (!userAccCircle) {
+        userAccCircle = L.circle(latlng, {
+            radius: accuracy,
+            color: "#3b82f6",
+            fillColor: "#3b82f6",
+            fillOpacity: 0.08,
+            weight: 1,
+            opacity: 0.4,
+        }).addTo(map);
+    } else {
+        userAccCircle.setLatLng(latlng).setRadius(accuracy);
+    }
+
+    // Only zoom on first fix
+    if (!lastNearbyPos) {
+        map.setView(latlng, 16);
+    }
+
+    // Refresh nearby if moved > 30m
+    const moved = lastNearbyPos
+        ? map.distance(lastNearbyPos, latlng)
+        : Infinity;
+    lastNearbyPos = latlng;
+    if (moved > 30 && nearbyPanelOpen) {
+        fetchNearbyDepartures(lat, lon);
+    }
+}
+
+function openNearbyPanel() {
+    nearbyPanelOpen = true;
+    document.getElementById("nearby-panel").classList.add("open");
+    document.body.classList.add("nearby-open");
+    map.invalidateSize();
+    if (lastNearbyPos) {
+        fetchNearbyDepartures(lastNearbyPos[0], lastNearbyPos[1]);
+    }
+    clearInterval(nearbyTimer);
+    nearbyTimer = setInterval(() => {
+        if (nearbyPanelOpen && lastNearbyPos) {
+            fetchNearbyDepartures(lastNearbyPos[0], lastNearbyPos[1]);
+        }
+    }, 30000);
+}
+
+function closeNearbyPanel() {
+    nearbyPanelOpen = false;
+    document.getElementById("nearby-panel").classList.remove("open");
+    document.body.classList.remove("nearby-open");
+    document.getElementById("gps-btn").classList.remove("active");
+    clearInterval(nearbyTimer);
+    if (geoWatchId !== null) {
+        navigator.geolocation.clearWatch(geoWatchId);
+        geoWatchId = null;
+    }
+    if (userMarker) { map.removeLayer(userMarker); userMarker = null; }
+    if (userAccCircle) { map.removeLayer(userAccCircle); userAccCircle = null; }
+    lastNearbyPos = null;
+    map.invalidateSize();
+}
+
+function fetchNearbyDepartures(lat, lon) {
+    const body = document.getElementById("nearby-panel-body");
+    if (!body.hasChildNodes()) {
+        body.innerHTML = `<div class="nearby-loading">Söker hållplatser…</div>`;
+    }
+    fetch(`${API_BASE}/nearby-departures?lat=${lat}&lon=${lon}&radius=400`)
+        .then(r => r.json())
+        .then(data => {
+            if (!nearbyPanelOpen) return;
+            if (!data.stops || data.stops.length === 0) {
+                body.innerHTML = `<div class="nearby-empty">Inga hållplatser inom 400 m</div>`;
+                return;
+            }
+            const now = Date.now() / 1000;
+            body.innerHTML = data.stops.map(stop => {
+                const distStr = stop.distance_m < 1000
+                    ? `${stop.distance_m} m`
+                    : `${(stop.distance_m / 1000).toFixed(1)} km`;
+                const deps = stop.departures.map(d => {
+                    const custom = getLineStyle(d.route_short_name);
+                    const bg = custom ? `#${custom.bg}` : `#${d.route_color}`;
+                    const fg = custom ? `#${custom.text}` : `#${d.route_text_color}`;
+                    const min = Math.max(0, Math.round((d.departure_time - now) / 60));
+                    const minStr = min === 0 ? "Nu" : `${min} min`;
+                    const minClass = min <= 2 ? "nearby-min soon" : "nearby-min";
+                    const rt = d.is_realtime ? `<span class="lp-rt">RT</span>` : "";
+                    return `<div class="nearby-dep">
+                        <span class="dep-badge" style="background:${bg};color:${fg}">${d.route_short_name}</span>
+                        <span class="nearby-headsign">${d.headsign}</span>
+                        <span class="${minClass}">${minStr}</span>
+                        ${rt}
+                    </div>`;
+                }).join("") || `<div class="nearby-nodep">Inga avgångar</div>`;
+                return `<div class="nearby-stop">
+                    <div class="nearby-stop-header">
+                        <span class="nearby-stop-name">${stop.stop_name}</span>
+                        <span class="nearby-dist">${distStr}</span>
+                    </div>
+                    ${deps}
+                </div>`;
+            }).join("");
+        })
+        .catch(() => {
+            if (!nearbyPanelOpen) return;
+            document.getElementById("nearby-panel-body").innerHTML =
+                `<div class="nearby-empty">Kunde inte hämta avgångar</div>`;
+        });
+}
+
 // --- Controls ---
 function initControls() {
     document.getElementById("toggle-stops").addEventListener("change", (e) => {
@@ -870,6 +1043,7 @@ function initControls() {
 async function init() {
     initMap();
     initControls();
+    initGps();
 
     // Check status first — loads stops/routes when GTFS is ready
     await checkStatus();
