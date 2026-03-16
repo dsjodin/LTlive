@@ -642,12 +642,12 @@ def line_departures(route_id):
             if r != route_id:
                 continue
             t = dep.get("time", 0)
-            # direction_id: prefer RT-provided (always int, 0 is valid), fall back to static
-            rt_dir = dep.get("direction_id")
-            if rt_dir is not None:
-                dir_id = str(rt_dir)
-            else:
+            # Static direction_id is authoritative when available (RT feed often leaves it 0).
+            # Fall back to RT direction_id only when no static match exists.
+            if static:
                 dir_id = str(static.get("direction_id", "0") or "0")
+            else:
+                dir_id = str(dep.get("direction_id") or "0")
             if tid not in trip_rt:
                 trip_rt[tid] = {"dir": dir_id, "stop_times": {}}
             existing = trip_rt[tid]["stop_times"].get(stop_id)
@@ -670,52 +670,32 @@ def line_departures(route_id):
         tid, _ = dir_best[dir_id]
         rt_times = trip_rt[tid]["stop_times"]  # stop_id -> (unix_t, is_rt)
 
-        # Get full static stop sequence (cached) for correct order + scheduled times
+        # Get static stop sequence (cached per route+direction) for canonical stop order.
+        # We only use it for ordering — NOT for scheduled times, because the representative
+        # trip in the cache may differ from the actual RT trip and have wrong times.
         seq = _get_stop_sequence(route_id, dir_id)
 
         if seq:
-            # Compute service midnight: find a stop with both RT time and static time
-            service_midnight = None
-            for ss in seq:
-                sid = ss["stop_id"]
-                if sid in rt_times:
-                    rt_t = rt_times[sid][0]
-                    static_secs = _parse_gtfs_time_secs(ss.get("departure_time", ""))
-                    if static_secs is not None:
-                        approx = rt_t - static_secs
-                        service_midnight = round(approx / 86400) * 86400
-                        break
+            # Build a position map so we can sort RT stops by their static sequence index
+            stop_pos = {ss["stop_id"]: i for i, ss in enumerate(seq)}
+            stop_names = {ss["stop_id"]: ss["stop_name"] for ss in seq}
 
             stops_out = []
-            for ss in seq:
-                sid = ss["stop_id"]
-                if sid in rt_times:
-                    t, is_rt = rt_times[sid]
-                    if t < now:
-                        continue
-                    stops_out.append({
-                        "stop_id": sid,
-                        "stop_name": ss["stop_name"],
-                        "time": t,
-                        "minutes": max(0, round((t - now) / 60)),
-                        "is_realtime": is_rt,
-                    })
-                elif service_midnight is not None:
-                    static_secs = _parse_gtfs_time_secs(ss.get("departure_time", ""))
-                    if static_secs is None:
-                        continue
-                    t = service_midnight + static_secs
-                    if t < now:
-                        continue
-                    stops_out.append({
-                        "stop_id": sid,
-                        "stop_name": ss["stop_name"],
-                        "time": t,
-                        "minutes": max(0, round((t - now) / 60)),
-                        "is_realtime": False,
-                    })
+            for sid, (t, is_rt) in sorted(
+                rt_times.items(),
+                key=lambda x: stop_pos.get(x[0], 999999),
+            ):
+                if t < now:
+                    continue
+                stops_out.append({
+                    "stop_id": sid,
+                    "stop_name": stop_names.get(sid) or stops.get(sid, {}).get("stop_name", sid),
+                    "time": t,
+                    "minutes": max(0, round((t - now) / 60)),
+                    "is_realtime": is_rt,
+                })
         else:
-            # No static sequence: sort RT stops by time
+            # No static sequence: sort RT stops by departure time
             stops_out = [
                 {
                     "stop_id": sid,
