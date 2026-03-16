@@ -19,7 +19,7 @@ TRIP_UPDATES_URL = f"{GTFS_RT_BASE}/TripUpdates.pb?key={TRAFIKLAB_GTFS_RT_KEY}"
 SERVICE_ALERTS_URL = f"{GTFS_RT_BASE}/ServiceAlerts.pb?key={TRAFIKLAB_GTFS_RT_KEY}"
 
 GTFS_DATA_DIR = os.environ.get("GTFS_DATA_DIR", "/app/data/gtfs")
-GTFS_REFRESH_HOURS = int(os.environ.get("GTFS_REFRESH_HOURS", "24"))
+GTFS_REFRESH_HOURS = int(os.environ.get("GTFS_REFRESH_HOURS", "48"))
 
 RT_POLL_SECONDS = int(os.environ.get("RT_POLL_SECONDS", "180"))
 

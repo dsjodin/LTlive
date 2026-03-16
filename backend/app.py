@@ -42,6 +42,8 @@ _data = {
     "gtfs_error": None,
 }
 _lock = threading.Lock()
+_gtfs_retry_count = 0
+_gtfs_next_retry_at = 0  # epoch seconds; 0 = retry immediately
 
 
 def _gtfs_data_valid():
@@ -876,12 +878,29 @@ def start_background_tasks():
 
 
 def _retry_gtfs_if_needed():
-    """Retry loading GTFS static if it previously failed."""
+    """Retry loading GTFS static with exponential backoff, max 5 attempts."""
+    global _gtfs_retry_count, _gtfs_next_retry_at
     with _lock:
         if _data["gtfs_loaded"] and _data["routes"]:
             return  # Already loaded successfully
-    print("GTFS static data not loaded yet, retrying...")
+
+    MAX_RETRIES = 5
+    if _gtfs_retry_count >= MAX_RETRIES:
+        return  # Give up until the next scheduled 48-hour refresh
+
+    now = time.time()
+    if now < _gtfs_next_retry_at:
+        return  # Not time yet
+
+    _gtfs_retry_count += 1
+    delay = min(60 * (2 ** (_gtfs_retry_count - 1)), 3600)  # 60s, 120s, 240s, 480s, 960s
+    _gtfs_next_retry_at = now + delay
+    print(f"GTFS static not loaded, retry {_gtfs_retry_count}/{MAX_RETRIES} "
+          f"(next attempt in {delay}s if this fails)...")
     init_gtfs_static()
+    with _lock:
+        if _data["gtfs_loaded"]:
+            _gtfs_retry_count = 0  # reset on success
 
 
 start_background_tasks()
