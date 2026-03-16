@@ -7,6 +7,7 @@ import queue as _queue
 import threading
 import time
 import traceback
+from functools import wraps
 
 from dotenv import load_dotenv
 load_dotenv()
@@ -21,7 +22,25 @@ import gtfs_rt
 import stats as _stats
 
 app = Flask(__name__)
-CORS(app)
+
+# Restrict CORS to explicitly configured origins (default: none — all traffic is same-origin in prod).
+# Set ALLOWED_ORIGINS=https://yourdomain.com for dev/multi-origin setups.
+_allowed_origins = [o.strip() for o in os.environ.get("ALLOWED_ORIGINS", "").split(",") if o.strip()]
+CORS(app, resources={r"/api/*": {"origins": _allowed_origins or [], "methods": ["GET", "POST"]}})
+
+# Debug endpoints are disabled by default; set ENABLE_DEBUG_ENDPOINTS=true to enable locally.
+_DEBUG_ENDPOINTS = os.environ.get("ENABLE_DEBUG_ENDPOINTS", "false").lower() in ("true", "1", "yes")
+
+
+def _debug_only(f):
+    """Decorator: return 404 unless ENABLE_DEBUG_ENDPOINTS=true."""
+    @wraps(f)
+    def wrapper(*args, **kwargs):
+        if not _DEBUG_ENDPOINTS:
+            return jsonify({"error": "Not found"}), 404
+        return f(*args, **kwargs)
+    return wrapper
+
 
 _stats.init_db()
 
@@ -53,6 +72,11 @@ _gtfs_next_retry_at = 0  # epoch seconds; 0 = retry immediately
 # SSE client registry: each connected client has a Queue
 _sse_clients = []
 _sse_clients_lock = threading.Lock()
+
+# Per-IP SSE connection counter (DoS protection)
+_sse_ip_counts: dict[str, int] = {}
+_sse_ip_lock = threading.Lock()
+_MAX_SSE_PER_IP = 4
 
 # Response cache: key -> (payload_dict, last_vehicle_update_when_cached)
 _api_cache = {}
@@ -366,6 +390,7 @@ def status():
 
 
 @app.route("/api/debug/matching")
+@_debug_only
 def debug_matching():
     """Debug: show how well vehicle->trip->route matching works."""
     with _lock:
@@ -476,7 +501,7 @@ def routes_all():
 @app.route("/api/stops")
 def stops():
     """Return stops, optionally filtered by route_ids query param."""
-    route_ids_param = request.args.get("route_ids", "")
+    route_ids_param = request.args.get("route_ids", "")[:500]  # cap length
     with _lock:
         stop_list = list(_data["stops"].values())
         stop_route_map = _data.get("stop_route_map", {})
@@ -497,7 +522,7 @@ def nearby_departures():
     try:
         lat = float(request.args.get("lat", 0))
         lon = float(request.args.get("lon", 0))
-        radius = min(float(request.args.get("radius", config.NEARBY_RADIUS_METERS)), 5000)
+        radius = max(50.0, min(float(request.args.get("radius", config.NEARBY_RADIUS_METERS)), 5000))
     except ValueError:
         return jsonify({"error": "Invalid params"}), 400
 
@@ -558,7 +583,7 @@ def nearby_departures():
 @app.route("/api/departures/<stop_id>")
 def departures_for_stop(stop_id):
     """Return upcoming departures for a stop, enriched with route info."""
-    limit = min(int(request.args.get("limit", 10)), 30)
+    limit = max(1, min(int(request.args.get("limit", 10)), 30))
     cache_key = ("dep", stop_id, limit)
     cached = _cache_get(cache_key)
     if cached:
@@ -633,6 +658,7 @@ def shapes_for_route(route_id):
 
 
 @app.route("/api/debug/routes")
+@_debug_only
 def debug_routes():
     """Debug: show all unique route_short_names in loaded GTFS data."""
     with _lock:
@@ -655,6 +681,7 @@ def debug_routes():
 
 
 @app.route("/api/debug/rt-feed")
+@_debug_only
 def debug_rt_feed():
     """Return cached RT feed stats (no extra Trafiklab request)."""
     with _lock:
@@ -726,6 +753,13 @@ def alerts():
 @app.route("/api/stream")
 def sse_stream():
     """Server-Sent Events stream: pushes vehicle and alert updates in real time."""
+    client_ip = request.headers.get("X-Forwarded-For", request.remote_addr or "").split(",")[0].strip() or "unknown"
+
+    with _sse_ip_lock:
+        if _sse_ip_counts.get(client_ip, 0) >= _MAX_SSE_PER_IP:
+            return jsonify({"error": "Too many SSE connections from this IP"}), 429
+        _sse_ip_counts[client_ip] = _sse_ip_counts.get(client_ip, 0) + 1
+
     def generate():
         q = _queue.Queue(maxsize=20)
         with _sse_clients_lock:
@@ -756,6 +790,12 @@ def sse_stream():
                     _sse_clients.remove(q)
                 except ValueError:
                     pass
+            with _sse_ip_lock:
+                remaining = _sse_ip_counts.get(client_ip, 1) - 1
+                if remaining <= 0:
+                    _sse_ip_counts.pop(client_ip, None)
+                else:
+                    _sse_ip_counts[client_ip] = remaining
 
     return Response(
         stream_with_context(generate()),

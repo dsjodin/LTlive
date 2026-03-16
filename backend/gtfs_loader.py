@@ -52,6 +52,12 @@ def download_gtfs_static():
         f.write(resp.content)
 
     with zipfile.ZipFile(zip_path, "r") as zf:
+        # Guard against zip path-traversal attacks before extracting
+        safe_root = os.path.realpath(config.GTFS_DATA_DIR)
+        for member in zf.namelist():
+            dest = os.path.realpath(os.path.join(safe_root, member))
+            if not dest.startswith(safe_root + os.sep) and dest != safe_root:
+                raise ValueError(f"Unsafe path in GTFS zip: {member!r}")
         zf.extractall(config.GTFS_DATA_DIR)
 
     print(f"GTFS static data extracted to {config.GTFS_DATA_DIR}")
