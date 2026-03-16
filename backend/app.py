@@ -130,6 +130,9 @@ def refresh_gtfs_static():
             _data["trips"] = trips
             _data["shapes"] = shapes
             _data["gtfs_error"] = None
+        # Invalidate stop-sequence cache so it is rebuilt with fresh trip data
+        with _stop_seq_lock:
+            _stop_seq_cache.clear()
 
         print("GTFS static data refreshed.")
     except Exception as e:
@@ -654,16 +657,22 @@ def line_departures(route_id):
             if existing is None or t < existing[0]:
                 trip_rt[tid]["stop_times"][stop_id] = (t, dep.get("is_realtime", False))
 
-    # Per direction: pick trip with earliest upcoming stop
-    dir_best = {}  # dir_id -> (trip_id, earliest_future_t)
+    # Per direction: pick the most-active trip — the one furthest along its route.
+    # The RT feed includes already-departed stops, so a trip with many past stops is
+    # the bus currently running. This prevents flickering: the active trip stays
+    # selected until it finishes, then naturally hands over to the next trip.
+    # Tie-break: earliest next upcoming stop (soonest to next stop).
+    dir_best = {}  # dir_id -> (trip_id, score)
     for tid, td in trip_rt.items():
         future = [t for t, _ in td["stop_times"].values() if t >= now]
         if not future:
             continue
-        first_t = min(future)
+        past_count = sum(1 for t, _ in td["stop_times"].values() if t < now)
         dir_id = td["dir"]
-        if dir_id not in dir_best or first_t < dir_best[dir_id][1]:
-            dir_best[dir_id] = (tid, first_t)
+        # Lower score = better: prefer more past stops, then earliest next stop
+        score = (-past_count, min(future))
+        if dir_id not in dir_best or score < dir_best[dir_id][1]:
+            dir_best[dir_id] = (tid, score)
 
     directions_out = []
     for dir_id in sorted(dir_best.keys()):
