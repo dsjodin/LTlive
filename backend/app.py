@@ -24,6 +24,7 @@ _data = {
     "shapes": {},
     "vehicles": [],
     "vehicle_trips": {},
+    "vehicle_next_stop": {},
     "alerts": [],
     "trip_headsigns": {},
     "last_vehicle_update": 0,
@@ -150,7 +151,7 @@ def poll_realtime():
         return
 
     # Fetch trip updates and alerts (non-critical — use cached on failure)
-    vehicle_trips, stop_departures = gtfs_rt.fetch_trip_updates()
+    vehicle_trips, vehicle_next_stop, stop_departures = gtfs_rt.fetch_trip_updates()
     alerts = gtfs_rt.fetch_service_alerts()
 
     # Merge TripUpdates into vehicles that lack trip info,
@@ -160,6 +161,8 @@ def poll_realtime():
         # Keep previous trip mappings if new fetch failed
         if not vehicle_trips:
             vehicle_trips = _data.get("vehicle_trips", {})
+        if not vehicle_next_stop:
+            vehicle_next_stop = _data.get("vehicle_next_stop", {})
 
     for v in vehicles:
         vid = v.get("vehicle_id", "")
@@ -196,9 +199,16 @@ def poll_realtime():
                     v["trip_id"] = tu["trip_id"]
                     v["direction_id"] = v.get("direction_id") or static_trip2.get("direction_id")
 
+    # Attach next stop id from TripUpdates (more reliable than VehiclePositions stop_id)
+    for v in vehicles:
+        vid = v.get("vehicle_id", "")
+        ns = vehicle_next_stop.get(vid, "") or v.get("current_stop_id", "")
+        v["current_stop_id"] = ns
+
     with _lock:
         _data["vehicles"] = vehicles
         _data["vehicle_trips"] = vehicle_trips
+        _data["vehicle_next_stop"] = vehicle_next_stop
         if stop_departures:
             _data["stop_departures"] = stop_departures
         if alerts:

@@ -74,6 +74,7 @@ def fetch_trip_updates():
     feed.ParseFromString(resp.content)
 
     vehicle_trips = {}
+    vehicle_next_stop = {}  # vehicle_id -> stop_id of first upcoming stop
     stop_departures = {}  # stop_id -> list of departure dicts
 
     for entity in feed.entity:
@@ -94,6 +95,9 @@ def fetch_trip_updates():
                 "direction_id": direction_id,
                 "start_date": start_date,
             }
+            # First stop_time_update is the next/current stop for this vehicle
+            if tu.stop_time_update and tu.stop_time_update[0].stop_id:
+                vehicle_next_stop[vehicle_id] = tu.stop_time_update[0].stop_id
 
         # Extract per-stop departure times for the departure board
         for stu in tu.stop_time_update:
@@ -117,7 +121,7 @@ def fetch_trip_updates():
                 "is_realtime": is_realtime,
             })
 
-    return vehicle_trips, stop_departures
+    return vehicle_trips, vehicle_next_stop, stop_departures
 
 
 def fetch_service_alerts():
