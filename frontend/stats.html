@@ -60,37 +60,43 @@
     return new Date(epoch * 1000).toLocaleString('sv-SE');
   }
 
-  fetch('/api/stats').then(r => r.json()).then(data => {
-    const periods = [
-      { key: 'today',    label: 'Idag' },
-      { key: 'week',     label: '7 dagar' },
-      { key: 'month',    label: '30 dagar' },
-      { key: 'all_time', label: 'Totalt' },
-    ];
-    const summary = document.getElementById('summary');
-    periods.forEach(p => {
-      const d = data[p.key];
-      summary.insertAdjacentHTML('beforeend', `
-        <div class="card">
-          <div class="card-label">${p.label}</div>
-          <div class="card-value">${d.visits}</div>
-          <div class="card-sub">${d.unique} unika · avg ${fmt(d.avg_duration)}</div>
-        </div>
-      `);
-    });
+  fetch('/api/stats')
+    .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+    .then(data => {
+      const periods = [
+        { key: 'today',    label: 'Idag' },
+        { key: 'week',     label: '7 dagar' },
+        { key: 'month',    label: '30 dagar' },
+        { key: 'all_time', label: 'Totalt' },
+      ];
+      const summary = document.getElementById('summary');
+      periods.forEach(p => {
+        const d = data[p.key];
+        summary.insertAdjacentHTML('beforeend', `
+          <div class="card">
+            <div class="card-label">${p.label}</div>
+            <div class="card-value">${d.visits}</div>
+            <div class="card-sub">${d.unique} unika · avg ${fmt(d.avg_duration)}</div>
+          </div>
+        `);
+      });
 
-    const pagesTbody = document.querySelector('#pages-table tbody');
-    data.top_pages.forEach(r => {
-      pagesTbody.insertAdjacentHTML('beforeend',
-        `<tr><td class="page">${r.page}</td><td>${r.visits}</td></tr>`);
-    });
+      const pagesTbody = document.querySelector('#pages-table tbody');
+      data.top_pages.forEach(r => {
+        pagesTbody.insertAdjacentHTML('beforeend',
+          `<tr><td class="page">${r.page}</td><td>${r.visits}</td></tr>`);
+      });
 
-    const recentTbody = document.querySelector('#recent-table tbody');
-    data.recent.forEach(r => {
-      recentTbody.insertAdjacentHTML('beforeend',
-        `<tr><td class="page">${r.page}</td><td>${fmtTime(r.started_at)}</td><td class="dur">${fmt(r.duration)}</td></tr>`);
+      const recentTbody = document.querySelector('#recent-table tbody');
+      data.recent.forEach(r => {
+        recentTbody.insertAdjacentHTML('beforeend',
+          `<tr><td class="page">${r.page}</td><td>${fmtTime(r.started_at)}</td><td class="dur">${fmt(r.duration)}</td></tr>`);
+      });
+    })
+    .catch(err => {
+      document.getElementById('summary').innerHTML =
+        `<p style="color:red">Kunde inte hämta statistik: ${err.message}</p>`;
     });
-  });
   </script>
 </body>
 </html>
