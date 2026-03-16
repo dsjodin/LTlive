@@ -95,9 +95,18 @@ def fetch_trip_updates():
                 "direction_id": direction_id,
                 "start_date": start_date,
             }
-            # First stop_time_update is the next/current stop for this vehicle
-            if tu.stop_time_update and tu.stop_time_update[0].stop_id:
-                vehicle_next_stop[vehicle_id] = tu.stop_time_update[0].stop_id
+            # Find the first stop_time_update that hasn't been passed yet.
+            # The feed may include already-departed stops, so filter by time >= now.
+            now = int(time.time())
+            for stu in tu.stop_time_update:
+                if not stu.stop_id:
+                    continue
+                dep = stu.departure.time if stu.HasField("departure") and stu.departure.time else None
+                arr = stu.arrival.time if stu.HasField("arrival") and stu.arrival.time else None
+                t = dep or arr
+                if t and t >= now:
+                    vehicle_next_stop[vehicle_id] = stu.stop_id
+                    break
 
         # Extract per-stop departure times for the departure board
         for stu in tu.stop_time_update:
