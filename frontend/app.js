@@ -994,6 +994,10 @@ function openNearbyPanel() {
     document.getElementById("nearby-panel").classList.add("open");
     document.body.classList.add("nearby-open");
     map.invalidateSize();
+    setTimeout(() => {
+        map.invalidateSize();
+        if (lastNearbyPos) map.panTo(lastNearbyPos);
+    }, 320);
     if (lastNearbyPos) {
         fetchNearbyDepartures(lastNearbyPos[0], lastNearbyPos[1]);
     }
