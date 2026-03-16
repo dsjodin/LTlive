@@ -720,6 +720,7 @@ function closeLinePanel() {
     });
     clearInterval(linePanelTimer);
     map.invalidateSize();
+    setTimeout(() => map.invalidateSize(), 310);
 }
 
 function fetchLineDepartures(routeId) {
