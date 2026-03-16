@@ -46,6 +46,10 @@ const BADGE_MIN_ZOOM = 15;
 const vehicleAnim = {};   // vehicle_id -> {fromLat, fromLon, toLat, toLon, startTime, duration}
 let animFrameId = null;
 
+// SSE stream
+let sseSource = null;
+let sseFallbackTimer = null;
+
 // Vehicle trails (breadcrumbs)
 const vehicleTrailPoints = {};  // vehicle_id -> [[lat,lon], ...]
 const vehicleTrails = {};       // vehicle_id -> L.polyline
@@ -1140,6 +1144,53 @@ function initControls() {
 
 }
 
+function initSSE() {
+    if (sseSource) {
+        sseSource.close();
+        sseSource = null;
+    }
+    sseSource = new EventSource(`${API_BASE}/stream`);
+
+    sseSource.addEventListener("vehicles", (e) => {
+        try {
+            const data = JSON.parse(e.data);
+            updateVehicles(data.vehicles);
+            // SSE working — cancel any active fallback poll
+            if (sseFallbackTimer) {
+                clearInterval(sseFallbackTimer);
+                sseFallbackTimer = null;
+            }
+        } catch (err) {
+            console.error("SSE vehicles parse error:", err);
+        }
+    });
+
+    sseSource.addEventListener("alerts", (e) => {
+        try {
+            const data = JSON.parse(e.data);
+            updateAlerts(data.alerts);
+        } catch (err) {
+            console.error("SSE alerts parse error:", err);
+        }
+    });
+
+    sseSource.onerror = () => {
+        // Start fallback polling while SSE is down
+        if (!sseFallbackTimer) {
+            console.warn("SSE unavailable, falling back to polling");
+            sseFallbackTimer = setInterval(pollVehicles, POLL_INTERVAL);
+        }
+    };
+
+    sseSource.onopen = () => {
+        // SSE (re)connected — stop fallback polling
+        if (sseFallbackTimer) {
+            clearInterval(sseFallbackTimer);
+            sseFallbackTimer = null;
+        }
+    };
+}
+
 // --- Init ---
 async function init() {
     initMap();
@@ -1152,8 +1203,8 @@ async function init() {
     await pollVehicles();
     await pollAlerts();
 
-    // Start polling
-    setInterval(pollVehicles, POLL_INTERVAL);
+    // Real-time updates via SSE (automatic fallback to polling on error)
+    initSSE();
     setInterval(pollAlerts, 30000);
     setInterval(pollStopDepartures, 60000);
     // Keep checking if GTFS data has loaded (retry every 10s until loaded)

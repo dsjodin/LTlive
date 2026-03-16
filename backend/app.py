@@ -1,7 +1,9 @@
 """Flask backend for LTlive - Live bus tracking for Örebro."""
 
+import json
 import math
 import os
+import queue as _queue
 import threading
 import time
 import traceback
@@ -10,7 +12,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from apscheduler.schedulers.background import BackgroundScheduler
-from flask import Flask, jsonify, request
+from flask import Flask, Response, jsonify, request, stream_with_context
 from flask_cors import CORS
 
 import config
@@ -47,6 +49,97 @@ _data = {
 _lock = threading.Lock()
 _gtfs_retry_count = 0
 _gtfs_next_retry_at = 0  # epoch seconds; 0 = retry immediately
+
+# SSE client registry: each connected client has a Queue
+_sse_clients = []
+_sse_clients_lock = threading.Lock()
+
+# Response cache: key -> (payload_dict, last_vehicle_update_when_cached)
+_api_cache = {}
+_api_cache_lock = threading.Lock()
+
+
+def _cache_get(key):
+    with _api_cache_lock:
+        entry = _api_cache.get(key)
+    if entry is None:
+        return None
+    payload, cached_at = entry
+    with _lock:
+        if _data["last_vehicle_update"] != cached_at:
+            return None
+    return payload
+
+
+def _cache_set(key, payload):
+    with _lock:
+        ts = _data["last_vehicle_update"]
+    with _api_cache_lock:
+        _api_cache[key] = (payload, ts)
+
+
+def _invalidate_cache():
+    with _api_cache_lock:
+        _api_cache.clear()
+
+
+def _enrich_vehicles(vehicle_list):
+    """Enrich vehicle list with route/trip/stop info (extracted for reuse by SSE + HTTP)."""
+    with _lock:
+        routes = _data["routes"]
+        stops = _data["stops"]
+        trips = _data["trips"]
+        trip_headsigns = _data["trip_headsigns"]
+
+    enriched = []
+    for v in vehicle_list:
+        route_info = {}
+        trip_id = v.get("trip_id", "")
+        trip_info = trips.get(trip_id, {})
+        route_id = v.get("route_id") or trip_info.get("route_id", "")
+        if route_id:
+            route_info = routes.get(route_id, {})
+
+        headsign = trip_info.get("trip_headsign", "")
+        if not headsign and trip_id:
+            headsign = trip_headsigns.get(trip_id, "")
+        if not headsign:
+            headsign = route_info.get("route_long_name", "")
+
+        stop_id = v.get("current_stop_id", "")
+        next_stop_name = stops.get(stop_id, {}).get("stop_name", "") if stop_id else ""
+
+        enriched.append({
+            **v,
+            "route_id": route_id,
+            "route_short_name": route_info.get("route_short_name", ""),
+            "route_long_name": route_info.get("route_long_name", ""),
+            "route_color": route_info.get("route_color", "0074D9"),
+            "route_text_color": route_info.get("route_text_color", "FFFFFF"),
+            "trip_headsign": headsign,
+            "next_stop_name": next_stop_name,
+        })
+    return enriched
+
+
+def _push_sse(event_type, data):
+    """Push an SSE event to all connected clients."""
+    msg = f"event: {event_type}\ndata: {json.dumps(data, separators=(',', ':'))}\n\n"
+    dead = []
+    with _sse_clients_lock:
+        clients = list(_sse_clients)
+    for q in clients:
+        try:
+            q.put_nowait(msg)
+        except _queue.Full:
+            dead.append(q)
+    if dead:
+        with _sse_clients_lock:
+            for q in dead:
+                try:
+                    _sse_clients.remove(q)
+                except ValueError:
+                    pass
 
 
 def _gtfs_data_valid():
@@ -230,6 +323,15 @@ def poll_realtime():
             _data["alerts"] = alerts
         _data["last_vehicle_update"] = int(time.time())
 
+    _invalidate_cache()
+
+    enriched = _enrich_vehicles(vehicles)
+    _push_sse("vehicles", {"vehicles": enriched,
+                            "timestamp": _data["last_vehicle_update"],
+                            "count": len(enriched)})
+    if alerts:
+        _push_sse("alerts", {"alerts": alerts, "count": len(alerts)})
+
 
 # --- API Routes ---
 
@@ -339,49 +441,18 @@ def debug_matching():
 @app.route("/api/vehicles")
 def vehicles():
     """Return current vehicle positions with route info."""
+    cached = _cache_get("vehicles")
+    if cached:
+        return jsonify(cached)
+
     with _lock:
         vehicle_list = list(_data["vehicles"])
-        routes = _data["routes"]
-        stops = _data["stops"]
-        trips = _data["trips"]
-        trip_headsigns = _data["trip_headsigns"]
+        ts = _data["last_vehicle_update"]
 
-    enriched = []
-    for v in vehicle_list:
-        route_info = {}
-        trip_id = v.get("trip_id", "")
-        trip_info = trips.get(trip_id, {})
-        route_id = v.get("route_id") or trip_info.get("route_id", "")
-        if route_id:
-            route_info = routes.get(route_id, {})
-
-        # Build headsign: trips.txt -> last stop name -> route_long_name
-        headsign = trip_info.get("trip_headsign", "")
-        if not headsign and trip_id:
-            headsign = trip_headsigns.get(trip_id, "")
-        if not headsign:
-            headsign = route_info.get("route_long_name", "")
-
-        # Resolve next/current stop name from stop_id in the RT feed
-        stop_id = v.get("current_stop_id", "")
-        next_stop_name = stops.get(stop_id, {}).get("stop_name", "") if stop_id else ""
-
-        enriched.append({
-            **v,
-            "route_id": route_id,
-            "route_short_name": route_info.get("route_short_name", ""),
-            "route_long_name": route_info.get("route_long_name", ""),
-            "route_color": route_info.get("route_color", "0074D9"),
-            "route_text_color": route_info.get("route_text_color", "FFFFFF"),
-            "trip_headsign": headsign,
-            "next_stop_name": next_stop_name,
-        })
-
-    return jsonify({
-        "vehicles": enriched,
-        "timestamp": _data["last_vehicle_update"],
-        "count": len(enriched),
-    })
+    enriched = _enrich_vehicles(vehicle_list)
+    result = {"vehicles": enriched, "timestamp": ts, "count": len(enriched)}
+    _cache_set("vehicles", result)
+    return jsonify(result)
 
 
 @app.route("/api/routes")
@@ -487,9 +558,13 @@ def nearby_departures():
 @app.route("/api/departures/<stop_id>")
 def departures_for_stop(stop_id):
     """Return upcoming departures for a stop, enriched with route info."""
-    now = int(time.time())
     limit = min(int(request.args.get("limit", 10)), 30)
+    cache_key = ("dep", stop_id, limit)
+    cached = _cache_get(cache_key)
+    if cached:
+        return jsonify(cached)
 
+    now = int(time.time())
     with _lock:
         stop_departures = _data.get("stop_departures", {})
         routes = _data["routes"]
@@ -502,19 +577,15 @@ def departures_for_stop(stop_id):
         key=lambda d: d["time"],
     )[:limit]
 
-    result = []
+    deps = []
     for d in upcoming:
         route_id = d["route_id"]
         trip_id = d["trip_id"]
-
-        # Try to resolve route from static trips if not in TripUpdate
         if not route_id:
             route_id = trips.get(trip_id, {}).get("route_id", "")
-
         route = routes.get(route_id, {})
         headsign = trip_headsigns.get(trip_id, "") or route.get("route_long_name", "")
-
-        result.append({
+        deps.append({
             "route_short_name": route.get("route_short_name", "?"),
             "route_color": route.get("route_color", "0074D9"),
             "route_text_color": route.get("route_text_color", "FFFFFF"),
@@ -523,7 +594,9 @@ def departures_for_stop(stop_id):
             "is_realtime": d["is_realtime"],
         })
 
-    return jsonify({"stop_id": stop_id, "departures": result, "count": len(result)})
+    result = {"stop_id": stop_id, "departures": deps, "count": len(deps)}
+    _cache_set(cache_key, result)
+    return jsonify(result)
 
 
 @app.route("/api/stops/stations")
@@ -648,6 +721,51 @@ def alerts():
     with _lock:
         alert_list = _data["alerts"]
     return jsonify({"alerts": alert_list, "count": len(alert_list)})
+
+
+@app.route("/api/stream")
+def sse_stream():
+    """Server-Sent Events stream: pushes vehicle and alert updates in real time."""
+    def generate():
+        q = _queue.Queue(maxsize=20)
+        with _sse_clients_lock:
+            _sse_clients.append(q)
+        try:
+            # Send current state immediately on connect
+            with _lock:
+                vehicle_list = list(_data["vehicles"])
+                alerts_list = list(_data["alerts"])
+                ts = _data["last_vehicle_update"]
+            enriched = _enrich_vehicles(vehicle_list)
+            yield (f"event: vehicles\ndata: "
+                   f"{json.dumps({'vehicles': enriched, 'timestamp': ts, 'count': len(enriched)}, separators=(',', ':'))}"
+                   f"\n\n")
+            if alerts_list:
+                yield (f"event: alerts\ndata: "
+                       f"{json.dumps({'alerts': alerts_list, 'count': len(alerts_list)}, separators=(',', ':'))}"
+                       f"\n\n")
+            while True:
+                try:
+                    msg = q.get(timeout=25)
+                    yield msg
+                except _queue.Empty:
+                    yield ": keepalive\n\n"
+        finally:
+            with _sse_clients_lock:
+                try:
+                    _sse_clients.remove(q)
+                except ValueError:
+                    pass
+
+    return Response(
+        stream_with_context(generate()),
+        mimetype="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+            "Connection": "keep-alive",
+        },
+    )
 
 
 @app.route("/api/line/<route_id>")
@@ -857,13 +975,17 @@ def line_departures(route_id):
 @app.route("/api/stops/next-departure")
 def stops_next_departure():
     """Return the soonest upcoming departure per stop (used for map badges)."""
+    cached = _cache_get("next_dep")
+    if cached:
+        return jsonify(cached)
+
     with _lock:
         stop_departures = dict(_data.get("stop_departures", {}))
         routes = _data["routes"]
         trips = _data["trips"]
         trip_headsigns = _data.get("trip_headsigns", {})
         now = int(time.time())
-    horizon = now + 3 * 3600  # only look 3 hours ahead
+    horizon = now + 3 * 3600
 
     result = {}
     for stop_id, deps in stop_departures.items():
@@ -874,7 +996,6 @@ def stops_next_departure():
                 continue
             if best is None or t < best["time"]:
                 trip_id = dep.get("trip_id", "")
-                # Resolve route via static trips if RT route_id is missing/wrong
                 dep_route_id = dep.get("route_id", "")
                 ri = routes.get(dep_route_id, {})
                 if not ri:
@@ -892,6 +1013,7 @@ def stops_next_departure():
         if best:
             result[stop_id] = best
 
+    _cache_set("next_dep", result)
     return jsonify(result)
 
 
