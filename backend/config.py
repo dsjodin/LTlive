@@ -22,5 +22,7 @@ GTFS_DATA_DIR = os.environ.get("GTFS_DATA_DIR", "/app/data/gtfs")
 GTFS_REFRESH_HOURS = int(os.environ.get("GTFS_REFRESH_HOURS", "24"))
 
 RT_POLL_SECONDS = int(os.environ.get("RT_POLL_SECONDS", "180"))
+
+NEARBY_RADIUS_METERS = int(os.environ.get("NEARBY_RADIUS_METERS", "400"))
 # Bronze: max ~180s (30 000 req/30 days ÷ 2 feeds)
 # Silver: ok med 5s (2 000 000 req/30 days)

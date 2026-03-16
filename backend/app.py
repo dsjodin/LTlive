@@ -416,7 +416,7 @@ def nearby_departures():
     try:
         lat = float(request.args.get("lat", 0))
         lon = float(request.args.get("lon", 0))
-        radius = min(float(request.args.get("radius", 400)), 1000)
+        radius = min(float(request.args.get("radius", config.NEARBY_RADIUS_METERS)), 1000)
     except ValueError:
         return jsonify({"error": "Invalid params"}), 400
 
