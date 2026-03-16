@@ -626,7 +626,7 @@ def stats_visit():
 
 @app.route("/api/stats/leave", methods=["POST"])
 def stats_leave():
-    data = request.get_json(silent=True) or {}
+    data = request.get_json(silent=True, force=True) or {}
     session_id = str(data.get("session_id", ""))[:64]
     try:
         duration = int(data.get("duration", 0))
