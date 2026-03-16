@@ -369,7 +369,7 @@ searchInput.addEventListener("input", () => {
     const q = searchInput.value.trim().toLowerCase();
     if (q.length < 2) { searchResults.classList.remove("open"); return; }
     const matches = allStops
-        .filter(s => s.stop_name.toLowerCase().includes(q))
+        .filter(s => s.stop_name.toLowerCase().includes(q) && s.location_type !== 1)
         .slice(0, 12);
     if (matches.length === 0) { searchResults.classList.remove("open"); return; }
     searchResults.innerHTML = matches.map(s =>
