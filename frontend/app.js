@@ -165,9 +165,11 @@ function updateBusIconBearing(marker, bearing) {
     const el = marker.getElement();
     const g = el && el.querySelector("svg > g");
     if (!g) return;
-    const R = getIconR();
-    const TIP = Math.round(R * 0.65);
-    const CX = R + TIP;
+    // Read actual SVG size from DOM so CX is always correct regardless of label length
+    const svg = el.querySelector("svg");
+    const W = svg ? parseFloat(svg.getAttribute("width")) : 0;
+    if (!W) return;
+    const CX = W / 2;
     g.setAttribute("transform", `rotate(${bearing},${CX},${CX})`);
 }
 
