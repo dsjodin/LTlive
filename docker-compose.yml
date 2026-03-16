@@ -14,6 +14,7 @@ services:
       - FRONTEND_POLL_INTERVAL_MS=${FRONTEND_POLL_INTERVAL_MS:-5000}
     volumes:
       - gtfs-data:/app/data/gtfs
+      - stats-data:/app/data/stats
     restart: unless-stopped
 
   nginx:
@@ -38,6 +39,7 @@ services:
 
 volumes:
   gtfs-data:
+  stats-data:
 
 networks:
   proxy:
