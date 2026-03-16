@@ -612,6 +612,7 @@ def line_departures(route_id):
         stop_departures = dict(_data.get("stop_departures", {}))
         trip_headsigns = _data["trip_headsigns"]
         routes = _data["routes"]
+        stops = _data["stops"]
         trips = _data["trips"]
         now = int(time.time())
 
