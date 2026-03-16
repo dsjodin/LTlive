@@ -44,6 +44,7 @@ def fetch_vehicle_positions():
             "bearing": pos.bearing if pos.bearing else None,
             "speed": pos.speed if pos.speed else None,
             "current_status": current_status,
+            "current_stop_id": v.stop_id if v.stop_id else "",
             "trip_id": v.trip.trip_id if v.HasField("trip") else "",
             "route_id": v.trip.route_id if v.HasField("trip") else "",
             "direction_id": v.trip.direction_id if v.HasField("trip") else None,

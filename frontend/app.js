@@ -353,14 +353,19 @@ function showVehiclePopup(vehicle, marker) {
         ? new Date(vehicle.timestamp * 1000).toLocaleTimeString("sv-SE")
         : new Date().toLocaleTimeString("sv-SE");
 
+    const nextStop = vehicle.next_stop_name || "";
+    const nextStopLabel = vehicle.current_status === "Vid hållplats"
+        ? "Vid hållplats"
+        : "Nästa hållplats";
+
     const html = `
         <div class="popup-vehicle">
             <div class="popup-title" style="color:${color}">
                 ${title}
             </div>
             <div class="popup-details">
+                ${nextStop ? `${nextStopLabel}: ${nextStop}<br/>` : ""}
                 ${speed ? `Hastighet: ${speed}<br/>` : ""}
-                Status: ${status}<br/>
                 Uppdaterad: ${updatedAt}
             </div>
         </div>

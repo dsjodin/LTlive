@@ -315,6 +315,7 @@ def vehicles():
     with _lock:
         vehicle_list = list(_data["vehicles"])
         routes = _data["routes"]
+        stops = _data["stops"]
         trips = _data["trips"]
         trip_headsigns = _data["trip_headsigns"]
 
@@ -334,6 +335,10 @@ def vehicles():
         if not headsign:
             headsign = route_info.get("route_long_name", "")
 
+        # Resolve next/current stop name from stop_id in the RT feed
+        stop_id = v.get("current_stop_id", "")
+        next_stop_name = stops.get(stop_id, {}).get("stop_name", "") if stop_id else ""
+
         enriched.append({
             **v,
             "route_id": route_id,
@@ -342,6 +347,7 @@ def vehicles():
             "route_color": route_info.get("route_color", "0074D9"),
             "route_text_color": route_info.get("route_text_color", "FFFFFF"),
             "trip_headsign": headsign,
+            "next_stop_name": next_stop_name,
         })
 
     return jsonify({
