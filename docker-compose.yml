@@ -11,6 +11,7 @@ services:
       - RT_POLL_SECONDS=5
       - GTFS_REFRESH_HOURS=24
       - NEARBY_RADIUS_METERS=${NEARBY_RADIUS_METERS:-400}
+      - FRONTEND_POLL_INTERVAL_MS=${FRONTEND_POLL_INTERVAL_MS:-5000}
     volumes:
       - gtfs-data:/app/data/gtfs
     restart: unless-stopped

@@ -4,7 +4,7 @@
  */
 
 const API_BASE = "/api";
-const POLL_INTERVAL = 5000; // 5 seconds
+let POLL_INTERVAL = 5000; // default, overridden by backend config
 const OREBRO_CENTER = [59.2753, 15.2134];
 const DEFAULT_ZOOM = 13;
 
@@ -723,6 +723,7 @@ async function checkStatus() {
         const data = await resp.json();
 
         if (data.nearby_radius_meters) nearbyRadius = data.nearby_radius_meters;
+        if (data.frontend_poll_interval_ms) POLL_INTERVAL = data.frontend_poll_interval_ms;
 
         if (data.gtfs_error) {
             showStatusBanner(`GTFS-data kunde inte laddas: ${data.gtfs_error}`);
