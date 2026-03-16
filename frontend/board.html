@@ -128,6 +128,7 @@
         }
         .search-result-item:last-child { border-bottom: none; }
         .search-result-item:hover { background: rgba(255,255,255,0.07); }
+        .search-result-dir { display: block; font-size: 0.75rem; color: var(--muted); margin-top: 2px; }
 
         #search-wrap { position: relative; flex: 1; }
 
@@ -353,10 +354,17 @@ function startCountdown() {
 }
 
 // Load stops for search
+let stopHeadsigns = {}; // stop_id -> headsign string
 async function loadStops() {
     try {
-        const data = await fetch(`${API}/stops`).then(r => r.json());
-        allStops = data.stops || [];
+        const [stopsData, nextDep] = await Promise.all([
+            fetch(`${API}/stops`).then(r => r.json()),
+            fetch(`${API}/stops/next-departure`).then(r => r.json()),
+        ]);
+        allStops = stopsData.stops || [];
+        for (const [sid, info] of Object.entries(nextDep)) {
+            if (info.headsign) stopHeadsigns[sid] = info.headsign;
+        }
     } catch {}
 }
 loadStops();
@@ -372,9 +380,11 @@ searchInput.addEventListener("input", () => {
         .filter(s => s.stop_name.toLowerCase().includes(q) && s.location_type !== 1)
         .slice(0, 12);
     if (matches.length === 0) { searchResults.classList.remove("open"); return; }
-    searchResults.innerHTML = matches.map(s =>
-        `<div class="search-result-item" data-id="${s.stop_id}" data-name="${s.stop_name}">${s.stop_name}</div>`
-    ).join("");
+    searchResults.innerHTML = matches.map(s => {
+        const dir = stopHeadsigns[s.stop_id];
+        const sub = dir ? `<span class="search-result-dir">mot ${dir}</span>` : "";
+        return `<div class="search-result-item" data-id="${s.stop_id}" data-name="${s.stop_name}">${s.stop_name}${sub}</div>`;
+    }).join("");
     // Position dropdown below the input
     const rect = searchInput.getBoundingClientRect();
     searchResults.style.top = (searchInput.offsetHeight + 4) + "px";

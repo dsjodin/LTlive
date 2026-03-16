@@ -861,6 +861,7 @@ def stops_next_departure():
         stop_departures = dict(_data.get("stop_departures", {}))
         routes = _data["routes"]
         trips = _data["trips"]
+        trip_headsigns = _data.get("trip_headsigns", {})
         now = int(time.time())
     horizon = now + 3 * 3600  # only look 3 hours ahead
 
@@ -872,18 +873,21 @@ def stops_next_departure():
             if t < now or t > horizon:
                 continue
             if best is None or t < best["time"]:
+                trip_id = dep.get("trip_id", "")
                 # Resolve route via static trips if RT route_id is missing/wrong
                 dep_route_id = dep.get("route_id", "")
                 ri = routes.get(dep_route_id, {})
                 if not ri:
-                    static_route_id = trips.get(dep.get("trip_id", ""), {}).get("route_id", "")
+                    static_route_id = trips.get(trip_id, {}).get("route_id", "")
                     ri = routes.get(static_route_id, {})
+                headsign = trip_headsigns.get(trip_id, "")
                 best = {
                     "time": t,
                     "minutes": max(0, round((t - now) / 60)),
                     "route_short_name": ri.get("route_short_name", ""),
                     "route_color": ri.get("route_color", "0074D9"),
                     "route_text_color": ri.get("route_text_color", "FFFFFF"),
+                    "headsign": headsign,
                 }
         if best:
             result[stop_id] = best
