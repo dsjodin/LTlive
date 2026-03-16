@@ -6,6 +6,9 @@ import threading
 import time
 import traceback
 
+from dotenv import load_dotenv
+load_dotenv()
+
 from apscheduler.schedulers.background import BackgroundScheduler
 from flask import Flask, jsonify, request
 from flask_cors import CORS

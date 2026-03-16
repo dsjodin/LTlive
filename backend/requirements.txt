@@ -5,3 +5,4 @@ protobuf==5.29.3
 requests==2.32.3
 apscheduler==3.11.0
 gunicorn==23.0.0
+python-dotenv==1.0.1
