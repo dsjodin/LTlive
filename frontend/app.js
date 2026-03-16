@@ -15,10 +15,10 @@ let vehicleMarkers = {};
 let routeLayers = {};
 let routeData = {};
 let activeFilters = new Set();
-let showStops = false;
-let showRoutes = false;
+let showStops = true;
+let showRoutes = true;
 let showLabels = true;
-let darkMode = true;
+let darkMode = false;
 let tileLayer = null;
 let stopsLayer = null;
 let stopsLoaded = false;
@@ -102,6 +102,7 @@ function initMap() {
     });
 
     setTileLayer(darkMode);
+    document.body.classList.toggle("light-mode", !darkMode);
 
     map.on("popupopen", () => startEtaCountdown());
     map.on("popupclose", () => { clearInterval(etaTimer); etaTimer = null; });
@@ -556,6 +557,9 @@ function loadRoutes() {
             buildLineButtons(filtered);
             routesLoaded = true;
             console.log(`Loaded ${filtered.length} / ${data.count} routes (filtered by config)`);
+
+            // Draw route shapes if enabled by default
+            if (showRoutes) toggleRouteShapes(true);
 
             // Load stops now that we know which route_ids to filter on
             if (!stopsLoaded) {
