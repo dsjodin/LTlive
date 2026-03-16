@@ -623,8 +623,22 @@ function fetchLineDepartures(routeId) {
                 content.innerHTML = `<div class="lp-empty">Inga kommande avgångar</div>`;
                 return;
             }
+
+            // Group by direction_id; within each group keep time order.
+            // Use headsign of first entry in each group as section title.
+            const groups = {};
+            const groupOrder = [];
+            data.departures.forEach(dep => {
+                const dir = dep.direction_id ?? "0";
+                if (!groups[dir]) {
+                    groups[dir] = { headsign: dep.headsign || "—", deps: [] };
+                    groupOrder.push(dir);
+                }
+                groups[dir].deps.push(dep);
+            });
+
             const now = Date.now() / 1000;
-            content.innerHTML = data.departures.map(dep => {
+            const renderDep = dep => {
                 const dt = new Date(dep.time * 1000);
                 const clock = dt.toLocaleTimeString("sv-SE", { hour: "2-digit", minute: "2-digit" });
                 const min = Math.max(0, Math.round((dep.time - now) / 60));
@@ -634,8 +648,15 @@ function fetchLineDepartures(routeId) {
                 return `<div class="lp-dep">
                     <span class="lp-time">${clock}</span>
                     <span class="lp-min ${minClass}">${minStr}</span>
-                    <span class="lp-headsign">${dep.headsign || "—"}</span>
                     ${rt}
+                </div>`;
+            };
+
+            content.innerHTML = groupOrder.map(dir => {
+                const g = groups[dir];
+                return `<div class="lp-section">
+                    <div class="lp-section-header">mot ${g.headsign}</div>
+                    ${g.deps.map(renderDep).join("")}
                 </div>`;
             }).join("");
         })

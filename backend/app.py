@@ -612,9 +612,11 @@ def line_departures(route_id):
     route_info = routes.get(route_id, {})
     result = []
     for tid, info in trips_earliest.items():
+        direction_id = trips.get(tid, {}).get("direction_id", "0")
         result.append({
             "trip_id": tid,
             "headsign": trip_headsigns.get(tid, ""),
+            "direction_id": str(direction_id) if direction_id is not None else "0",
             "time": info["time"],
             "minutes": max(0, round((info["time"] - now) / 60)),
             "is_realtime": info["is_realtime"],
