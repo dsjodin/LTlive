@@ -42,6 +42,18 @@ let stopMarkerMap = {};   // stop_id -> L.marker
 let stopNextDep = {};     // stop_id -> {minutes, route_short_name, route_color, route_text_color}
 const BADGE_MIN_ZOOM = 15;
 
+// Vehicle animation
+const vehicleAnim = {};   // vehicle_id -> {fromLat, fromLon, toLat, toLon, startTime, duration}
+let animFrameId = null;
+
+// Vehicle trails (breadcrumbs)
+const vehicleTrailPoints = {};  // vehicle_id -> [[lat,lon], ...]
+const vehicleTrails = {};       // vehicle_id -> L.polyline
+const TRAIL_MAX_POINTS = 10;
+
+// Live ETA countdown
+let etaTimer = null;
+
 const TILES = {
     dark: "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
     light: "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png",
@@ -90,6 +102,9 @@ function initMap() {
     });
 
     setTileLayer(darkMode);
+
+    map.on("popupopen", () => startEtaCountdown());
+    map.on("popupclose", () => { clearInterval(etaTimer); etaTimer = null; });
 
     // Rescale icons when zoom changes
     map.on("zoomend", () => {
@@ -203,6 +218,31 @@ function haversineDistance(lat1, lon1, lat2, lon2) {
     return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
+// Smooth cubic ease-in-out
+function easeInOut(t) {
+    return t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
+}
+
+function startAnimLoop() {
+    if (animFrameId) return;
+    function frame(ts) {
+        let hasActive = false;
+        Object.entries(vehicleAnim).forEach(([id, anim]) => {
+            const marker = vehicleMarkers[id];
+            if (!marker) { delete vehicleAnim[id]; return; }
+            const raw = Math.min(1, (ts - anim.startTime) / anim.duration);
+            const t = easeInOut(raw);
+            const lat = anim.fromLat + (anim.toLat - anim.fromLat) * t;
+            const lon = anim.fromLon + (anim.toLon - anim.fromLon) * t;
+            marker.setLatLng([lat, lon]);
+            if (raw < 1) hasActive = true;
+            else delete vehicleAnim[id];
+        });
+        animFrameId = hasActive ? requestAnimationFrame(frame) : null;
+    }
+    animFrameId = requestAnimationFrame(frame);
+}
+
 function updateVehicles(vehicles) {
     const currentIds = new Set();
     const now = Date.now() / 1000;
@@ -244,7 +284,31 @@ function updateVehicles(vehicles) {
         v._localTime = now;
 
         if (vehicleMarkers[id]) {
-            vehicleMarkers[id].setLatLng(latlng);
+            // Animate to new position instead of jumping
+            const cur = vehicleMarkers[id].getLatLng();
+            const dist = haversineDistance(cur.lat, cur.lng, v.lat, v.lon);
+            if (dist > 1) { // ignore GPS jitter
+                vehicleAnim[id] = {
+                    fromLat: cur.lat, fromLon: cur.lng,
+                    toLat: v.lat, toLon: v.lon,
+                    startTime: performance.now(),
+                    duration: Math.min(POLL_INTERVAL * 0.95, 4000),
+                };
+                startAnimLoop();
+            }
+
+            // Update trail
+            if (!vehicleTrailPoints[id]) vehicleTrailPoints[id] = [];
+            vehicleTrailPoints[id].push([v.lat, v.lon]);
+            if (vehicleTrailPoints[id].length > TRAIL_MAX_POINTS) vehicleTrailPoints[id].shift();
+            const trailColor = getRouteColor({ route_color: v.route_color, route_short_name: v.route_short_name, route_id: v.route_id });
+            if (vehicleTrails[id] && vehicleTrailPoints[id].length >= 2) {
+                vehicleTrails[id].setLatLngs(vehicleTrailPoints[id]);
+            } else if (!vehicleTrails[id] && vehicleTrailPoints[id].length >= 2) {
+                vehicleTrails[id] = L.polyline(vehicleTrailPoints[id], {
+                    color: trailColor, weight: 3, opacity: 0.45, dashArray: "4 5",
+                }).addTo(map);
+            }
 
             const prev = vehicleMarkers[id]._vehicleData;
             const colorChanged = !prev || prev.route_short_name !== v.route_short_name ||
@@ -271,11 +335,14 @@ function updateVehicles(vehicles) {
         vehicleMarkers[id]._vehicleData = v;
     });
 
-    // Remove markers for vehicles no longer in the feed
+    // Remove markers and trails for vehicles no longer in the feed
     Object.keys(vehicleMarkers).forEach((id) => {
         if (!currentIds.has(id)) {
             map.removeLayer(vehicleMarkers[id]);
             delete vehicleMarkers[id];
+            delete vehicleAnim[id];
+            delete vehicleTrailPoints[id];
+            if (vehicleTrails[id]) { map.removeLayer(vehicleTrails[id]); delete vehicleTrails[id]; }
         }
     });
 
@@ -305,8 +372,12 @@ function showStopDepartures(stop, marker) {
             } else {
                 const now = Date.now() / 1000;
                 const rows = data.departures.map((d) => {
-                    const mins = Math.round((d.departure_time - now) / 60);
-                    const timeStr = mins <= 0 ? "Nu" : `${mins} min`;
+                    const secs = Math.round(d.departure_time - now);
+                    const mins = Math.floor(secs / 60);
+                    const remSecs = secs % 60;
+                    const timeStr = secs <= 0 ? "Nu"
+                        : mins > 0 ? `${mins} min ${String(remSecs).padStart(2,"0")} s`
+                        : `${secs} s`;
                     const clock = new Date(d.departure_time * 1000)
                         .toLocaleTimeString("sv-SE", { hour: "2-digit", minute: "2-digit" });
                     const custom = getLineStyle(d.route_short_name);
@@ -319,13 +390,15 @@ function showStopDepartures(stop, marker) {
                         <tr>
                             <td><span class="dep-badge" style="background:${bg};color:${fg}">${d.route_short_name}</span></td>
                             <td class="dep-headsign">${d.headsign}</td>
-                            <td class="dep-time">${timeStr}${rt}</td>
+                            <td class="dep-time"><span class="dep-countdown" data-ts="${d.departure_time}">${timeStr}</span>${rt}</td>
                             <td class="dep-clock">${clock}</td>
                         </tr>`;
                 }).join("");
                 html = `
                     <div class="popup-stop">
-                        <div class="popup-stop-name">${stop.stop_name}</div>
+                        <div class="popup-stop-name">${stop.stop_name}
+                            <a class="board-link" href="/board.html?stop_id=${encodeURIComponent(stop.stop_id)}&stop_name=${encodeURIComponent(stop.stop_name)}" target="_blank" title="Öppna avgångstavla">&#128507;</a>
+                        </div>
                         <table class="dep-table"><tbody>${rows}</tbody></table>
                     </div>`;
             }
@@ -340,6 +413,21 @@ function showStopDepartures(stop, marker) {
                     </div>`);
             }
         });
+}
+
+function startEtaCountdown() {
+    clearInterval(etaTimer);
+    etaTimer = setInterval(() => {
+        const now = Date.now() / 1000;
+        document.querySelectorAll(".dep-countdown").forEach(el => {
+            const ts = parseFloat(el.dataset.ts);
+            const secs = Math.round(ts - now);
+            if (secs <= 0) { el.textContent = "Nu"; return; }
+            const m = Math.floor(secs / 60);
+            const s = secs % 60;
+            el.textContent = m > 0 ? `${m} min ${String(s).padStart(2,"0")} s` : `${secs} s`;
+        });
+    }, 1000);
 }
 
 function showVehiclePopup(vehicle, marker) {

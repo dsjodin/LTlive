@@ -740,6 +740,18 @@ body.ticker-collapsed #ticker-reopener {
     color: #30d158;
     vertical-align: middle;
 }
+.dep-countdown {
+    font-variant-numeric: tabular-nums;
+}
+.board-link {
+    margin-left: 8px;
+    text-decoration: none;
+    font-size: 14px;
+    opacity: 0.6;
+    vertical-align: middle;
+    transition: opacity 0.15s;
+}
+.board-link:hover { opacity: 1; }
 
 /* ===== Light mode ===== */
 .light-mode {
