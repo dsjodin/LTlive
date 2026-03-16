@@ -223,12 +223,16 @@ body {
 /* Bus marker styling */
 .bus-icon-wrapper {
     cursor: pointer;
-    transition: transform 0.2s ease;
 }
 
-.bus-icon-wrapper:hover {
-    transform: scale(1.25) !important;
-    z-index: 10000 !important;
+/* Scale the inner div on hover, NOT the outer Leaflet-positioned div.
+   Scaling the outer div overrides Leaflet's translate3d and moves the marker. */
+.bus-icon-wrapper:hover .bus-icon-inner {
+    transform: scale(1.25);
+}
+
+.bus-icon-inner {
+    transition: transform 0.15s ease;
 }
 
 /* Stop marker */

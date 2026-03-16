@@ -72,6 +72,13 @@ function initMap() {
     });
 
     setTileLayer(darkMode);
+
+    // Rescale icons when zoom changes
+    map.on("zoomend", () => {
+        Object.values(vehicleMarkers).forEach(m => {
+            if (m._vehicleData) m.setIcon(createBusIcon(m._vehicleData));
+        });
+    });
 }
 
 function setTileLayer(isDark) {
@@ -87,6 +94,16 @@ function setTileLayer(isDark) {
 }
 
 // --- Bus markers ---
+
+// Icon size varies with zoom level so buses don't dominate zoomed-out views.
+function getIconR() {
+    const zoom = map ? map.getZoom() : 14;
+    if (zoom <= 12) return 5;
+    if (zoom <= 13) return 8;
+    if (zoom <= 14) return 11;
+    return 13;
+}
+
 function createBusIcon(vehicle) {
     const color = getRouteColor({
         route_color: vehicle.route_color,
@@ -95,51 +112,62 @@ function createBusIcon(vehicle) {
     });
     const textColor = getRouteTextColor(vehicle);
     const label = vehicle.route_short_name || "";
+    const bearing = vehicle.bearing;
+    const hasBearing = bearing != null;
+    const R = getIconR();
 
-    if (!showLabels || !label) {
-        // Small dot, no direction indicator
+    if (!showLabels || !label || R <= 6) {
+        // Tiny dot at low zoom / labels off
+        const d = R * 2;
         return L.divIcon({
             className: "bus-icon-wrapper",
-            html: `<div style="width:12px;height:12px;border-radius:50%;background:${color};border:2px solid white;box-shadow:0 1px 4px rgba(0,0,0,.5)"></div>`,
-            iconSize: [12, 12],
-            iconAnchor: [6, 6],
+            html: `<div class="bus-icon-inner" style="width:${d}px;height:${d}px;border-radius:50%;background:${color};border:2px solid white;box-shadow:0 1px 4px rgba(0,0,0,.5)"></div>`,
+            iconSize: [d, d],
+            iconAnchor: [R, R],
         });
     }
 
-    // Circle with directional arrowhead tip (SVG-based)
-    const R = 17;   // circle radius
-    const TIP = 10; // tip length beyond circle edge
+    // Circle with directional arrowhead (SVG)
+    const TIP = Math.round(R * 0.65);
     const W = (R + TIP) * 2;
     const CX = W / 2, CY = W / 2;
+    const fs = Math.round(R * 1.1);
 
-    const bearing = vehicle.bearing;
-    const hasBearing = bearing != null;
-
-    // Tip points UP (north = 0° bearing) before rotation
     const tipPath = hasBearing
-        ? `<path d="M ${CX},${CY-R-TIP} L ${CX+7},${CY-R+4} L ${CX-7},${CY-R+4} Z"
-                  fill="${color}" stroke="white" stroke-width="2.5" stroke-linejoin="round"/>`
+        ? `<path d="M ${CX},${CY-R-TIP} L ${CX+Math.round(TIP*0.65)},${CY-R+Math.round(TIP*0.45)} L ${CX-Math.round(TIP*0.65)},${CY-R+Math.round(TIP*0.45)} Z"
+                  fill="${color}" stroke="white" stroke-width="2" stroke-linejoin="round"/>`
         : "";
 
     const svg = `
     <svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${W}"
-         style="overflow:visible;display:block;filter:drop-shadow(0 2px 4px rgba(0,0,0,.5))">
+         style="overflow:visible;display:block">
       <g transform="rotate(${hasBearing ? bearing : 0},${CX},${CY})">
         ${tipPath}
-        <circle cx="${CX}" cy="${CY}" r="${R}" fill="${color}" stroke="white" stroke-width="3.5"/>
+        <circle cx="${CX}" cy="${CY}" r="${R}" fill="${color}" stroke="white" stroke-width="2.5"/>
       </g>
       <text x="${CX}" y="${CY}" text-anchor="middle" dominant-baseline="central"
-            font-size="13" font-weight="800" fill="${textColor}"
+            font-size="${fs}" font-weight="800" fill="${textColor}"
             font-family="-apple-system,BlinkMacSystemFont,sans-serif"
             style="user-select:none;pointer-events:none">${label}</text>
     </svg>`;
 
     return L.divIcon({
         className: "bus-icon-wrapper",
-        html: svg,
+        html: `<div class="bus-icon-inner" style="filter:drop-shadow(0 2px 4px rgba(0,0,0,.45))">${svg}</div>`,
         iconSize: [W, W],
         iconAnchor: [CX, CY],
     });
+}
+
+// Update bearing in-place without recreating the DOM element (avoids click flicker).
+function updateBusIconBearing(marker, bearing) {
+    const el = marker.getElement();
+    const g = el && el.querySelector("svg > g");
+    if (!g) return;
+    const R = getIconR();
+    const TIP = Math.round(R * 0.65);
+    const CX = R + TIP;
+    g.setAttribute("transform", `rotate(${bearing},${CX},${CX})`);
 }
 
 // Calculate distance in meters between two lat/lon points (Haversine)
@@ -197,10 +225,13 @@ function updateVehicles(vehicles) {
             vehicleMarkers[id].setLatLng(latlng);
 
             const prev = vehicleMarkers[id]._vehicleData;
-            const bearingChanged = Math.abs((v.bearing ?? 0) - (prev?.bearing ?? 0)) > 10;
-            if (!prev || prev.route_short_name !== v.route_short_name ||
-                prev.route_color !== v.route_color || bearingChanged) {
+            const colorChanged = !prev || prev.route_short_name !== v.route_short_name ||
+                                 prev.route_color !== v.route_color;
+            if (colorChanged) {
                 vehicleMarkers[id].setIcon(createBusIcon(v));
+            } else if (v.bearing != null) {
+                // Rotate the existing SVG in-place — avoids DOM recreation and click flicker
+                updateBusIconBearing(vehicleMarkers[id], v.bearing);
             }
         } else {
             const marker = L.marker(latlng, {
