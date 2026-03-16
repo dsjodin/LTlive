@@ -668,6 +668,18 @@ function initControls() {
         document.body.classList.toggle("light-mode", !darkMode);
     });
 
+    // Ticker collapse / reopen
+    document.getElementById("ticker-toggle").addEventListener("click", () => {
+        document.getElementById("bottom-ticker").classList.add("collapsed");
+        document.body.classList.add("ticker-collapsed");
+        map.invalidateSize();
+    });
+    document.getElementById("ticker-reopener").addEventListener("click", () => {
+        document.getElementById("bottom-ticker").classList.remove("collapsed");
+        document.body.classList.remove("ticker-collapsed");
+        map.invalidateSize();
+    });
+
 }
 
 // --- Init ---

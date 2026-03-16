@@ -8,7 +8,7 @@
     --topbar-h1: 48px;
     --topbar-h2: 36px;
     --topbar-h: calc(var(--topbar-h1) + var(--topbar-h2));
-    --ticker-h: 32px;
+    --ticker-h: 36px;
     --bg: #1c1c1e;
     --bg2: rgba(255,255,255,0.08);
     --text: #f0f0f0;
@@ -202,16 +202,26 @@ body {
     display: flex;
     align-items: center;
     overflow: hidden;
+    transition: transform 0.3s ease;
+}
+#bottom-ticker.collapsed {
+    transform: translateY(100%);
+}
+body.ticker-collapsed #map {
+    bottom: 0;
+    transition: bottom 0.3s ease;
+}
+#map {
+    transition: bottom 0.3s ease;
 }
 .ticker-label {
     flex-shrink: 0;
-    font-size: 0.65em;
+    font-size: 0.7em;
     font-weight: 800;
     letter-spacing: 1px;
     color: var(--accent);
     padding: 0 10px 0 14px;
     border-right: 1px solid var(--border);
-    margin-right: 0;
     white-space: nowrap;
     line-height: var(--ticker-h);
 }
@@ -226,10 +236,10 @@ body {
     white-space: nowrap;
     top: 50%;
     transform: translateY(-50%);
-    font-size: 0.78em;
+    font-size: 0.88em;
     color: #ccc;
-    animation: ticker-scroll 28s linear infinite;
-    will-change: transform;
+    animation: ticker-scroll 60s linear infinite;
+    will-change: left;
 }
 .ticker-move.has-alerts {
     color: #ffcc5c;
@@ -242,6 +252,45 @@ body {
 @keyframes ticker-scroll {
     0%   { left: 100%; }
     100% { left: -200%; }
+}
+
+/* Ticker collapse/reopen buttons */
+#ticker-toggle {
+    flex-shrink: 0;
+    background: none;
+    border: none;
+    color: var(--muted);
+    font-size: 1.1em;
+    line-height: 1;
+    padding: 0 12px;
+    cursor: pointer;
+    height: 100%;
+    transition: color 0.15s;
+}
+#ticker-toggle:hover { color: var(--text); }
+
+#ticker-reopener {
+    display: none;
+    position: fixed;
+    bottom: 0;
+    right: 14px;
+    z-index: 1001;
+    background: rgba(24, 24, 26, 0.96);
+    backdrop-filter: blur(14px);
+    border: 1px solid var(--border);
+    border-bottom: none;
+    border-radius: 6px 6px 0 0;
+    color: var(--accent);
+    font-size: 0.65em;
+    font-weight: 800;
+    letter-spacing: 1px;
+    padding: 4px 10px;
+    cursor: pointer;
+    align-items: center;
+    gap: 4px;
+}
+body.ticker-collapsed #ticker-reopener {
+    display: flex;
 }
 
 /* ===== Status banner ===== */
@@ -357,9 +406,12 @@ body {
     --border: rgba(0,0,0,0.1);
 }
 .light-mode #topbar,
-.light-mode #bottom-ticker {
+.light-mode #bottom-ticker,
+.light-mode #ticker-reopener {
     background: rgba(242, 242, 247, 0.96);
 }
+.light-mode #ticker-toggle { color: #999; }
+.light-mode #ticker-toggle:hover { color: #333; }
 .light-mode .ctrl-pill span {
     color: #555;
 }
