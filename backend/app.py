@@ -572,6 +572,17 @@ def line_detail(route_id):
     })
 
 
+def _parse_gtfs_time_secs(time_str):
+    """Parse GTFS time string 'HH:MM:SS' (may exceed 24h) to seconds from midnight."""
+    if not time_str:
+        return None
+    try:
+        parts = time_str.split(":")
+        return int(parts[0]) * 3600 + int(parts[1]) * 60 + int(parts[2])
+    except (IndexError, ValueError):
+        return None
+
+
 def _get_stop_sequence(route_id, direction_id):
     """Return ordered stops for a route+direction, loading from stop_times if needed."""
     key = (route_id, direction_id)
@@ -595,8 +606,11 @@ def _get_stop_sequence(route_id, direction_id):
 
     trip_data = gtfs_loader.load_stop_times_for_trips({rep_trip})
     seq = [
-        {"stop_id": s["stop_id"],
-         "stop_name": stops.get(s["stop_id"], {}).get("stop_name", s["stop_id"])}
+        {
+            "stop_id": s["stop_id"],
+            "stop_name": stops.get(s["stop_id"], {}).get("stop_name", s["stop_id"]),
+            "departure_time": s.get("departure_time", "") or s.get("arrival_time", ""),
+        }
         for s in trip_data.get(rep_trip, [])
     ]
 
@@ -616,57 +630,104 @@ def line_departures(route_id):
         trips = _data["trips"]
         now = int(time.time())
 
-    # Resolve RT trip_id -> static route_id (cached locally per request)
-    _trip_route_cache = {}
-    def static_route_for(tid, dep_route):
-        if tid not in _trip_route_cache:
-            _trip_route_cache[tid] = trips.get(tid, {}).get("route_id", dep_route)
-        return _trip_route_cache[tid]
-
-    # Collect per-trip stop times: trip_id -> {dir_id, [(time, stop_id, is_realtime)]}
-    trip_stops_rt = {}
+    # Build per-trip RT stop times: trip_id -> {dir, stop_id -> (unix_time, is_rt)}
+    trip_rt = {}
     for stop_id, deps in stop_departures.items():
         for dep in deps:
             tid = dep.get("trip_id", "")
-            dep_route = dep.get("route_id", "")
-            if not tid or static_route_for(tid, dep_route) != route_id:
+            if not tid:
+                continue
+            static = trips.get(tid, {})
+            r = static.get("route_id") or dep.get("route_id", "")
+            if r != route_id:
                 continue
             t = dep.get("time", 0)
-            if t < now:
-                continue
-            dir_id = str(trips.get(tid, {}).get("direction_id", "0") or "0")
-            if tid not in trip_stops_rt:
-                trip_stops_rt[tid] = {"dir": dir_id, "entries": []}
-            trip_stops_rt[tid]["entries"].append((t, stop_id, dep.get("is_realtime", False)))
+            # direction_id: prefer RT-provided (always int, 0 is valid), fall back to static
+            rt_dir = dep.get("direction_id")
+            if rt_dir is not None:
+                dir_id = str(rt_dir)
+            else:
+                dir_id = str(static.get("direction_id", "0") or "0")
+            if tid not in trip_rt:
+                trip_rt[tid] = {"dir": dir_id, "stop_times": {}}
+            existing = trip_rt[tid]["stop_times"].get(stop_id)
+            if existing is None or t < existing[0]:
+                trip_rt[tid]["stop_times"][stop_id] = (t, dep.get("is_realtime", False))
 
-    # Sort each trip's entries by time (= stop order for a single trip)
-    for td in trip_stops_rt.values():
-        td["entries"].sort()
-
-    # Per direction: pick the next upcoming trip (earliest first-stop time)
-    dir_next_trip = {}  # dir_id -> trip_id with earliest start
-    for tid, td in trip_stops_rt.items():
-        if not td["entries"]:
+    # Per direction: pick trip with earliest upcoming stop
+    dir_best = {}  # dir_id -> (trip_id, earliest_future_t)
+    for tid, td in trip_rt.items():
+        future = [t for t, _ in td["stop_times"].values() if t >= now]
+        if not future:
             continue
+        first_t = min(future)
         dir_id = td["dir"]
-        first_t = td["entries"][0][0]
-        if dir_id not in dir_next_trip or first_t < trip_stops_rt[dir_next_trip[dir_id]]["entries"][0][0]:
-            dir_next_trip[dir_id] = tid
+        if dir_id not in dir_best or first_t < dir_best[dir_id][1]:
+            dir_best[dir_id] = (tid, first_t)
 
     directions_out = []
-    for dir_id in sorted(dir_next_trip.keys()):
-        tid = dir_next_trip[dir_id]
-        entries = trip_stops_rt[tid]["entries"]
-        stops_out = [
-            {
-                "stop_id": stop_id,
-                "stop_name": stops.get(stop_id, {}).get("stop_name", stop_id),
-                "time": t,
-                "minutes": max(0, round((t - now) / 60)),
-                "is_realtime": is_rt,
-            }
-            for (t, stop_id, is_rt) in entries
-        ]
+    for dir_id in sorted(dir_best.keys()):
+        tid, _ = dir_best[dir_id]
+        rt_times = trip_rt[tid]["stop_times"]  # stop_id -> (unix_t, is_rt)
+
+        # Get full static stop sequence (cached) for correct order + scheduled times
+        seq = _get_stop_sequence(route_id, dir_id)
+
+        if seq:
+            # Compute service midnight: find a stop with both RT time and static time
+            service_midnight = None
+            for ss in seq:
+                sid = ss["stop_id"]
+                if sid in rt_times:
+                    rt_t = rt_times[sid][0]
+                    static_secs = _parse_gtfs_time_secs(ss.get("departure_time", ""))
+                    if static_secs is not None:
+                        approx = rt_t - static_secs
+                        service_midnight = round(approx / 86400) * 86400
+                        break
+
+            stops_out = []
+            for ss in seq:
+                sid = ss["stop_id"]
+                if sid in rt_times:
+                    t, is_rt = rt_times[sid]
+                    if t < now:
+                        continue
+                    stops_out.append({
+                        "stop_id": sid,
+                        "stop_name": ss["stop_name"],
+                        "time": t,
+                        "minutes": max(0, round((t - now) / 60)),
+                        "is_realtime": is_rt,
+                    })
+                elif service_midnight is not None:
+                    static_secs = _parse_gtfs_time_secs(ss.get("departure_time", ""))
+                    if static_secs is None:
+                        continue
+                    t = service_midnight + static_secs
+                    if t < now:
+                        continue
+                    stops_out.append({
+                        "stop_id": sid,
+                        "stop_name": ss["stop_name"],
+                        "time": t,
+                        "minutes": max(0, round((t - now) / 60)),
+                        "is_realtime": False,
+                    })
+        else:
+            # No static sequence: sort RT stops by time
+            stops_out = [
+                {
+                    "stop_id": sid,
+                    "stop_name": stops.get(sid, {}).get("stop_name", sid),
+                    "time": t,
+                    "minutes": max(0, round((t - now) / 60)),
+                    "is_realtime": is_rt,
+                }
+                for sid, (t, is_rt) in sorted(rt_times.items(), key=lambda x: x[1][0])
+                if t >= now
+            ]
+
         if stops_out:
             directions_out.append({
                 "direction_id": dir_id,

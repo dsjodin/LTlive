@@ -85,7 +85,7 @@ def fetch_trip_updates():
 
         trip_id = tu.trip.trip_id if tu.trip.trip_id else ""
         route_id = tu.trip.route_id if tu.trip.route_id else ""
-        direction_id = tu.trip.direction_id if tu.trip.direction_id else None
+        direction_id = tu.trip.direction_id  # 0 is valid; avoid falsy-check that converts 0 → None
         start_date = tu.trip.start_date if tu.trip.start_date else ""
 
         if vehicle_id:
@@ -126,6 +126,7 @@ def fetch_trip_updates():
             stop_departures[stop_id].append({
                 "trip_id": trip_id,
                 "route_id": route_id,
+                "direction_id": direction_id,
                 "time": t,
                 "is_realtime": is_realtime,
             })
