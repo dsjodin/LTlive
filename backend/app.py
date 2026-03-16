@@ -641,6 +641,36 @@ def shapes():
     return jsonify({"shapes": all_shapes, "count": len(all_shapes)})
 
 
+@app.route("/api/shapes/bulk")
+def shapes_bulk():
+    """Return shapes for multiple routes in one request (avoids burst of parallel HTTP calls)."""
+    route_ids_param = request.args.get("route_ids", "")[:2000]
+    if not route_ids_param:
+        return jsonify({"routes": {}, "count": 0})
+
+    requested = {r.strip() for r in route_ids_param.split(",") if r.strip()}
+
+    with _lock:
+        trips = _data["trips"]
+        all_shapes = _data["shapes"]
+
+    # Build route_id → shape coords list in one pass over trips
+    route_shape_ids: dict[str, set] = {}
+    for trip in trips.values():
+        rid = trip["route_id"]
+        sid = trip.get("shape_id", "")
+        if rid in requested and sid:
+            route_shape_ids.setdefault(rid, set()).add(sid)
+
+    result = {}
+    for route_id in requested:
+        coords_list = [all_shapes[sid] for sid in route_shape_ids.get(route_id, set()) if sid in all_shapes]
+        if coords_list:
+            result[route_id] = coords_list
+
+    return jsonify({"routes": result, "count": len(result)})
+
+
 @app.route("/api/shapes/<route_id>")
 def shapes_for_route(route_id):
     """Return shapes for a specific route."""

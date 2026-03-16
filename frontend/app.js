@@ -606,17 +606,51 @@ function loadRouteShapes(routeId) {
         .catch((err) => console.error(`Error loading shapes for ${routeId}:`, err));
 }
 
-function toggleRouteShapes(visible) {
-    if (visible) {
-        const routeIds = activeFilters.size > 0
-            ? [...activeFilters]
-            : Object.keys(routeData);
+async function toggleRouteShapes(visible) {
+    if (!visible) {
+        Object.values(routeLayers).forEach((layer) => map.removeLayer(layer));
+        return;
+    }
 
-        routeIds.forEach((rid) => loadRouteShapes(rid));
-    } else {
-        Object.values(routeLayers).forEach((layer) => {
-            map.removeLayer(layer);
+    const routeIds = activeFilters.size > 0
+        ? [...activeFilters]
+        : Object.keys(routeData);
+
+    // Show already-cached layers immediately; collect which still need fetching
+    const toFetch = routeIds.filter((rid) => {
+        if (routeLayers[rid]) {
+            if (showRoutes && !map.hasLayer(routeLayers[rid])) routeLayers[rid].addTo(map);
+            return false;
+        }
+        return true;
+    });
+
+    if (toFetch.length === 0) return;
+
+    if (toFetch.length === 1) {
+        // Single route — use per-route endpoint (e.g. from a filter button click)
+        loadRouteShapes(toFetch[0]);
+        return;
+    }
+
+    // Bulk fetch — one request instead of N parallel requests
+    try {
+        const data = await fetch(
+            `${API_BASE}/shapes/bulk?route_ids=${encodeURIComponent(toFetch.join(","))}`
+        ).then((r) => r.json());
+
+        Object.entries(data.routes).forEach(([routeId, shapeCoordsList]) => {
+            const route = routeData[routeId] || {};
+            const color = getRouteColor(route);
+            const layerGroup = L.layerGroup();
+            shapeCoordsList.forEach((coords) => {
+                L.polyline(coords, { color, weight: 3, opacity: 0.7 }).addTo(layerGroup);
+            });
+            routeLayers[routeId] = layerGroup;
+            if (showRoutes) layerGroup.addTo(map);
         });
+    } catch (err) {
+        console.error("Error loading shapes (bulk):", err);
     }
 }
 
