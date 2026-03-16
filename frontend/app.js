@@ -95,17 +95,50 @@ function createBusIcon(vehicle) {
     });
     const textColor = getRouteTextColor(vehicle);
     const label = vehicle.route_short_name || "";
-    const size = showLabels && label ? Math.max(24, label.length * 8 + 12) : 14;
-    const height = showLabels && label ? 24 : 14;
+
+    if (!showLabels || !label) {
+        // Small dot, no direction indicator
+        return L.divIcon({
+            className: "bus-icon-wrapper",
+            html: `<div style="width:12px;height:12px;border-radius:50%;background:${color};border:2px solid white;box-shadow:0 1px 4px rgba(0,0,0,.5)"></div>`,
+            iconSize: [12, 12],
+            iconAnchor: [6, 6],
+        });
+    }
+
+    // Circle with directional arrowhead tip (SVG-based)
+    const R = 17;   // circle radius
+    const TIP = 10; // tip length beyond circle edge
+    const W = (R + TIP) * 2;
+    const CX = W / 2, CY = W / 2;
+
+    const bearing = vehicle.bearing;
+    const hasBearing = bearing != null;
+
+    // Tip points UP (north = 0° bearing) before rotation
+    const tipPath = hasBearing
+        ? `<path d="M ${CX},${CY-R-TIP} L ${CX+7},${CY-R+4} L ${CX-7},${CY-R+4} Z"
+                  fill="${color}" stroke="white" stroke-width="2.5" stroke-linejoin="round"/>`
+        : "";
+
+    const svg = `
+    <svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${W}"
+         style="overflow:visible;display:block;filter:drop-shadow(0 2px 4px rgba(0,0,0,.5))">
+      <g transform="rotate(${hasBearing ? bearing : 0},${CX},${CY})">
+        ${tipPath}
+        <circle cx="${CX}" cy="${CY}" r="${R}" fill="${color}" stroke="white" stroke-width="3.5"/>
+      </g>
+      <text x="${CX}" y="${CY}" text-anchor="middle" dominant-baseline="central"
+            font-size="13" font-weight="800" fill="${textColor}"
+            font-family="-apple-system,BlinkMacSystemFont,sans-serif"
+            style="user-select:none;pointer-events:none">${label}</text>
+    </svg>`;
 
     return L.divIcon({
-        className: "",
-        html: `<div class="bus-marker ${!showLabels || !label ? 'no-label' : ''}"
-                    style="background:${color}; color:${textColor}; width:${size}px; height:${height}px;">
-                    ${showLabels ? label : ""}
-               </div>`,
-        iconSize: [size, height],
-        iconAnchor: [size / 2, height / 2],
+        className: "bus-icon-wrapper",
+        html: svg,
+        iconSize: [W, W],
+        iconAnchor: [CX, CY],
     });
 }
 
@@ -164,8 +197,9 @@ function updateVehicles(vehicles) {
             vehicleMarkers[id].setLatLng(latlng);
 
             const prev = vehicleMarkers[id]._vehicleData;
+            const bearingChanged = Math.abs((v.bearing ?? 0) - (prev?.bearing ?? 0)) > 10;
             if (!prev || prev.route_short_name !== v.route_short_name ||
-                prev.route_color !== v.route_color) {
+                prev.route_color !== v.route_color || bearingChanged) {
                 vehicleMarkers[id].setIcon(createBusIcon(v));
             }
         } else {
