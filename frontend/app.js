@@ -114,7 +114,8 @@ function createBusIcon(vehicle) {
     const label = vehicle.route_short_name || "";
     const bearing = vehicle.bearing;
     const hasBearing = bearing != null;
-    const R = getIconR();
+    // Grow circle radius for longer line numbers so digits don't overflow
+    const R = getIconR() + (label.length >= 3 ? 4 : label.length >= 2 ? 1 : 0);
 
     if (!showLabels || !label || R <= 6) {
         // Tiny dot at low zoom / labels off
@@ -131,7 +132,7 @@ function createBusIcon(vehicle) {
     const TIP = Math.round(R * 0.65);
     const W = (R + TIP) * 2;
     const CX = W / 2, CY = W / 2;
-    const fs = Math.round(R * 1.1);
+    const fs = Math.round(R * (label.length >= 3 ? 0.72 : label.length >= 2 ? 0.9 : 1.1));
 
     const tipPath = hasBearing
         ? `<path d="M ${CX},${CY-R-TIP} L ${CX+Math.round(TIP*0.65)},${CY-R+Math.round(TIP*0.45)} L ${CX-Math.round(TIP*0.65)},${CY-R+Math.round(TIP*0.45)} Z"
