@@ -345,7 +345,8 @@
     return nsAgree; // both agree
   }
 
-  // Get SVG position for a vehicle/stop on a given line at geographic (lat,lon).
+  // Get SVG position + travel direction for a vehicle on a given line.
+  // Returns {x, y, angle} where angle is degrees clockwise from east (SVG convention).
   function getSvgPosForLatLon(lineNum, lat, lon) {
     const shape = canonicalShapes[lineNum];
     const cumDist = canonicalDists[lineNum];
@@ -354,7 +355,16 @@
     if (dist > 0.02) return null; // too far from route (~2km)
     const finalF = shapeIsForward[lineNum] ? f : (1 - f);
     const svgPath = SVG_LINE_PATHS[lineNum];
-    return getPosAtFraction(svgPath, svgPathDists[lineNum], finalF);
+    const svgDists = svgPathDists[lineNum];
+    const pos = getPosAtFraction(svgPath, svgDists, finalF);
+
+    // Tangent angle: sample a small step forward/back along the path
+    const eps = 0.025;
+    const p1 = getPosAtFraction(svgPath, svgDists, Math.max(0, finalF - eps));
+    const p2 = getPosAtFraction(svgPath, svgDists, Math.min(1, finalF + eps));
+    const angle = Math.atan2(p2.y - p1.y, p2.x - p1.x) * 180 / Math.PI;
+
+    return {x: pos.x, y: pos.y, angle};
   }
 
   // ── INITIALIZATION ─────────────────────────────────────────────────────────
@@ -541,17 +551,29 @@
       if (!pos) continue;
 
       const { bg, fg } = LINE_COLORS[ln];
+      // Outer group: positioned + rotated to face direction of travel
       const vg = el("g", {
-        transform: `translate(${pos.x.toFixed(1)},${pos.y.toFixed(1)})`,
+        transform: `translate(${pos.x.toFixed(1)},${pos.y.toFixed(1)}) rotate(${pos.angle.toFixed(1)})`,
         class: "vehicle-marker",
       }, g);
-      el("circle", {cx: 0, cy: 0, r: 28, fill: bg, filter: "url(#shadow)"}, vg);
-      el("circle", {cx: 0, cy: 0, r: 28, fill: bg, stroke: "#fff", "stroke-width": 5}, vg);
+
+      // Drop shadow on the whole shape
+      el("circle", {cx: 0, cy: 0, r: 22, fill: bg, filter: "url(#shadow)"}, vg);
+      // Circle body
+      el("circle", {cx: 0, cy: 0, r: 22, fill: bg, stroke: "#fff", "stroke-width": 4}, vg);
+      // Directional tip pointing right (=direction of travel after rotation)
+      el("path", {
+        d: "M 17,-8 L 30,0 L 17,8 Z",
+        fill: bg, stroke: "#fff", "stroke-width": 3, "stroke-linejoin": "round",
+      }, vg);
+
+      // Line number: counter-rotated so it always reads upright
+      const tg = el("g", {transform: `rotate(${(-pos.angle).toFixed(1)})`}, vg);
       el("text", {
-        x: 0, y: 10, "text-anchor": "middle",
-        "font-size": "26", "font-weight": "800", fill: fg,
+        x: 0, y: 0, "text-anchor": "middle", "dominant-baseline": "central",
+        "font-size": "24", "font-weight": "800", fill: fg,
         "font-family": "sans-serif",
-      }, vg).textContent = ln;
+      }, tg).textContent = ln;
 
       // Tooltip
       const title = document.createElementNS(NS, "title");
