@@ -610,9 +610,13 @@ function openLinePanel(route) {
 
 function closeLinePanel() {
     activePanelRouteId = null;
+    activeFilters.clear();
     document.getElementById("line-panel").classList.remove("open");
     document.body.classList.remove("panel-open");
-    document.querySelectorAll(".line-btn").forEach(b => b.classList.remove("panel-active"));
+    document.querySelectorAll(".line-btn").forEach(b => {
+        b.classList.remove("panel-active");
+        b.classList.remove("inactive");
+    });
     clearInterval(linePanelTimer);
     map.invalidateSize();
 }
