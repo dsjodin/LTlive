@@ -549,24 +549,18 @@ function buildLineButtons(routes) {
     });
 }
 
-// --- Alerts ---
+// --- Alerts → bottom ticker ---
 function updateAlerts(alerts) {
-    const container = document.getElementById("alerts-list");
+    const el = document.getElementById("ticker-content");
+    if (!el) return;
     if (alerts.length === 0) {
-        container.innerHTML = '<p style="color:#8e8e93; font-size:0.85em;">Inga aktiva st\u00f6rningar</p>';
+        el.textContent = "Inga aktiva störningar";
+        el.className = "ticker-move no-alerts";
         return;
     }
-
-    container.innerHTML = alerts
-        .map(
-            (a) => `
-        <div class="alert-item">
-            <h4>${a.header}</h4>
-            <p>${a.description}</p>
-        </div>
-    `
-        )
-        .join("");
+    const text = alerts.map((a) => `⚠ ${a.header}${a.description ? " — " + a.description : ""}`).join("   ·   ");
+    el.textContent = text;
+    el.className = "ticker-move has-alerts";
 }
 
 // --- Status banner ---
@@ -674,12 +668,6 @@ function initControls() {
         document.body.classList.toggle("light-mode", !darkMode);
     });
 
-    const sidebar = document.getElementById("sidebar");
-    const toggleBtn = document.getElementById("sidebar-toggle");
-    toggleBtn.addEventListener("click", () => {
-        sidebar.classList.toggle("hidden");
-        toggleBtn.classList.toggle("shifted");
-    });
 }
 
 // --- Init ---

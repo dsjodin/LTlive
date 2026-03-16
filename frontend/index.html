@@ -8,74 +8,74 @@
     <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-    <div id="map"></div>
 
-    <div id="sidebar">
-        <div class="sidebar-header">
-            <h1>LTlive</h1>
-            <p class="subtitle">Bussar i Örebro - Live</p>
-            <a href="/stadstrafiken.html" style="display:inline-block;margin-top:6px;font-size:12px;color:#1565C0;text-decoration:none;padding:4px 10px;border:1px solid #1565C0;border-radius:6px;">🗺 Stadstrafikskarta</a>
-        </div>
+    <!-- ===== Top bar ===== -->
+    <header id="topbar">
+        <div id="topbar-main">
+            <div class="topbar-brand">
+                <span class="brand-name">LTlive</span>
+                <span class="brand-sub">Örebro</span>
+            </div>
 
-        <div class="controls">
-            <div class="control-group">
-                <label>
+            <div class="topbar-controls">
+                <label class="ctrl-pill" for="toggle-stops" title="Visa hållplatser">
                     <input type="checkbox" id="toggle-stops" />
-                    Visa hållplatser
+                    <span>Hållplatser</span>
                 </label>
-            </div>
-            <div class="control-group">
-                <label>
+                <label class="ctrl-pill" for="toggle-routes" title="Visa linjesträckningar">
                     <input type="checkbox" id="toggle-routes" />
-                    Visa linjesträckningar
+                    <span>Linjer</span>
                 </label>
-            </div>
-            <div class="control-group">
-                <label>
+                <label class="ctrl-pill" for="toggle-labels" title="Visa linjenummer">
                     <input type="checkbox" id="toggle-labels" checked />
-                    Visa linjenummer
+                    <span>Nummer</span>
                 </label>
-            </div>
-            <div class="control-group">
-                <label>
+                <label class="ctrl-pill" for="toggle-darkmode" title="Mörkt tema">
                     <input type="checkbox" id="toggle-darkmode" checked />
-                    Mörkt tema
+                    <span>Mörkt</span>
                 </label>
             </div>
+
+            <div class="topbar-stats">
+                <div class="topbar-stat">
+                    <span class="ts-value" id="vehicle-count">0</span>
+                    <span class="ts-label">fordon</span>
+                </div>
+                <div class="topbar-stat">
+                    <span class="ts-value" id="route-count">0</span>
+                    <span class="ts-label">linjer</span>
+                </div>
+                <div class="topbar-stat wide">
+                    <span class="ts-value" id="last-update">--:--:--</span>
+                    <span class="ts-label">uppdaterad</span>
+                </div>
+            </div>
+
+            <a href="/stadstrafiken.html" class="topbar-map-btn" title="Stadstrafikskarta">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <polygon points="3 6 9 3 15 6 21 3 21 18 15 21 9 18 3 21"/>
+                    <line x1="9" y1="3" x2="9" y2="18"/><line x1="15" y1="6" x2="15" y2="21"/>
+                </svg>
+                Karta
+            </a>
         </div>
 
-        <div class="stats">
-            <div class="stat">
-                <span class="stat-value" id="vehicle-count">0</span>
-                <span class="stat-label">aktiva fordon</span>
-            </div>
-            <div class="stat">
-                <span class="stat-value" id="route-count">0</span>
-                <span class="stat-label">linjer</span>
-            </div>
-            <div class="stat">
-                <span class="stat-value" id="last-update">--:--:--</span>
-                <span class="stat-label">senast uppdaterad</span>
-            </div>
-        </div>
-
-        <div id="line-filter">
-            <h3>Filtrera linjer</h3>
+        <!-- Line filter row -->
+        <div id="topbar-lines">
             <div id="line-buttons"></div>
         </div>
+    </header>
 
-        <div id="alerts-panel">
-            <h3>Störningar</h3>
-            <div id="alerts-list"></div>
-        </div>
+    <!-- ===== Map ===== -->
+    <div id="map"></div>
 
-        <div id="vehicle-info" class="hidden">
-            <h3>Fordonsinformation</h3>
-            <div id="vehicle-detail"></div>
+    <!-- ===== Bottom ticker ===== -->
+    <div id="bottom-ticker">
+        <span class="ticker-label">TRAFIK</span>
+        <div class="ticker-wrap">
+            <div class="ticker-move" id="ticker-content">Laddar trafikinformation…</div>
         </div>
     </div>
-
-    <button id="sidebar-toggle" title="Visa/dölj sidopanel">&#9776;</button>
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="config.js"></script>
