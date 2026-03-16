@@ -597,24 +597,30 @@ def _get_stop_sequence(route_id, direction_id):
         trips = _data["trips"]
         stops = _data["stops"]
 
-    # Find one representative trip for this route+direction
-    rep_trip = next(
-        (tid for tid, t in trips.items()
-         if t.get("route_id") == route_id
-         and str(t.get("direction_id", "0") or "0") == direction_id),
-        None,
-    )
-    if not rep_trip:
+    # Find ALL trips for this route+direction, then pick the one with the most stops
+    # so that short-turn variants don't cause stops to disappear from the sequence.
+    candidate_trips = [
+        tid for tid, t in trips.items()
+        if t.get("route_id") == route_id
+        and str(t.get("direction_id", "0") or "0") == direction_id
+    ]
+    if not candidate_trips:
         return []
 
-    trip_data = gtfs_loader.load_stop_times_for_trips({rep_trip})
+    trip_data = gtfs_loader.load_stop_times_for_trips(set(candidate_trips))
+    if not trip_data:
+        return []
+
+    # Use the trip that covers the most stops as the canonical sequence
+    rep_trip = max(trip_data, key=lambda tid: len(trip_data[tid]))
+
     seq = [
         {
             "stop_id": s["stop_id"],
             "stop_name": stops.get(s["stop_id"], {}).get("stop_name", s["stop_id"]),
             "departure_time": s.get("departure_time", "") or s.get("arrival_time", ""),
         }
-        for s in trip_data.get(rep_trip, [])
+        for s in trip_data[rep_trip]
     ]
 
     with _stop_seq_lock:
