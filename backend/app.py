@@ -16,9 +16,12 @@ from flask_cors import CORS
 import config
 import gtfs_loader
 import gtfs_rt
+import stats as _stats
 
 app = Flask(__name__)
 CORS(app)
+
+_stats.init_db()
 
 # In-memory data store
 _stop_seq_cache = {}   # (route_id, dir_id) -> [{"stop_id", "stop_name"}, ...]
@@ -608,6 +611,35 @@ def debug_rt_feed():
         "sample_vehicles": sample,
         "trip_update_mappings": len(vehicle_trips),
     })
+
+
+@app.route("/api/stats/visit", methods=["POST"])
+def stats_visit():
+    data = request.get_json(silent=True) or {}
+    session_id = str(data.get("session_id", ""))[:64]
+    page = str(data.get("page", "/"))[:200]
+    ip = request.headers.get("X-Forwarded-For", request.remote_addr or "").split(",")[0].strip()
+    if session_id:
+        _stats.record_visit(session_id, page, ip)
+    return "", 204
+
+
+@app.route("/api/stats/leave", methods=["POST"])
+def stats_leave():
+    data = request.get_json(silent=True) or {}
+    session_id = str(data.get("session_id", ""))[:64]
+    try:
+        duration = int(data.get("duration", 0))
+    except (TypeError, ValueError):
+        duration = 0
+    if session_id:
+        _stats.record_leave(session_id, duration)
+    return "", 204
+
+
+@app.route("/api/stats")
+def stats_view():
+    return jsonify(_stats.get_stats())
 
 
 @app.route("/api/alerts")
