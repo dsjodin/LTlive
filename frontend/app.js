@@ -24,6 +24,15 @@ let stopsLayer = null;
 let stopsLoaded = false;
 let routesLoaded = false;
 
+// Line panel
+let activePanelRouteId = null;
+let linePanelTimer = null;
+
+// Stop departure badges
+let stopMarkerMap = {};   // stop_id -> L.marker
+let stopNextDep = {};     // stop_id -> {minutes, route_short_name, route_color, route_text_color}
+const BADGE_MIN_ZOOM = 15;
+
 const TILES = {
     dark: "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
     light: "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png",
@@ -78,6 +87,7 @@ function initMap() {
         Object.values(vehicleMarkers).forEach(m => {
             if (m._vehicleData) m.setIcon(createBusIcon(m._vehicleData));
         });
+        updateStopBadges();
     });
 }
 
@@ -394,6 +404,7 @@ function loadStops() {
             }
 
             stopsLayer = L.layerGroup();
+            stopMarkerMap = {};
 
             data.stops.forEach((stop) => {
                 const isStation = stop.location_type === 1;
@@ -408,8 +419,10 @@ function loadStops() {
                     icon,
                     zIndexOffset: isStation ? 500 : 100,
                 });
+                marker._stopData = stop;
                 marker.on("click", () => showStopDepartures(stop, marker));
                 stopsLayer.addLayer(marker);
+                stopMarkerMap[stop.stop_id] = marker;
             });
 
             stopsLoaded = true;
@@ -417,6 +430,7 @@ function loadStops() {
 
             if (showStops) {
                 stopsLayer.addTo(map);
+                pollStopDepartures();
             }
         })
         .catch((err) => console.error("Error loading stops:", err));
@@ -551,10 +565,85 @@ function buildLineButtons(routes) {
                 Object.values(routeLayers).forEach((l) => map.removeLayer(l));
                 toggleRouteShapes(true);
             }
+
+            openLinePanel(route);
         });
 
         container.appendChild(btn);
     });
+}
+
+// --- Line departure panel ---
+function openLinePanel(route) {
+    activePanelRouteId = route.route_id;
+
+    const color = getRouteColor(route);
+    const textColor = getRouteTextColor(route);
+    document.getElementById("line-panel-title").innerHTML =
+        `<span class="dep-badge" style="background:${color};color:${textColor}">${route.route_short_name}</span>` +
+        `<span class="lp-route-name">${route.route_long_name || ""}</span>`;
+    document.getElementById("line-panel-content").innerHTML =
+        `<div class="lp-loading">Hämtar avgångar…</div>`;
+    document.getElementById("line-panel").classList.add("open");
+    document.body.classList.add("panel-open");
+
+    // Highlight active button
+    document.querySelectorAll(".line-btn").forEach(b => b.classList.remove("panel-active"));
+    document.querySelectorAll(".line-btn").forEach(b => {
+        if (b.textContent.trim() === (route.route_short_name || route.route_id)) {
+            b.classList.add("panel-active");
+        }
+    });
+
+    map.invalidateSize();
+    fetchLineDepartures(route.route_id);
+
+    clearInterval(linePanelTimer);
+    linePanelTimer = setInterval(() => {
+        if (activePanelRouteId) fetchLineDepartures(activePanelRouteId);
+    }, 30000);
+}
+
+function closeLinePanel() {
+    activePanelRouteId = null;
+    document.getElementById("line-panel").classList.remove("open");
+    document.body.classList.remove("panel-open");
+    document.querySelectorAll(".line-btn").forEach(b => b.classList.remove("panel-active"));
+    clearInterval(linePanelTimer);
+    map.invalidateSize();
+}
+
+function fetchLineDepartures(routeId) {
+    fetch(`${API_BASE}/line-departures/${encodeURIComponent(routeId)}`)
+        .then(r => r.json())
+        .then(data => {
+            if (activePanelRouteId !== routeId) return;
+            const content = document.getElementById("line-panel-content");
+            if (!data.departures || data.departures.length === 0) {
+                content.innerHTML = `<div class="lp-empty">Inga kommande avgångar</div>`;
+                return;
+            }
+            const now = Date.now() / 1000;
+            content.innerHTML = data.departures.map(dep => {
+                const dt = new Date(dep.time * 1000);
+                const clock = dt.toLocaleTimeString("sv-SE", { hour: "2-digit", minute: "2-digit" });
+                const min = Math.max(0, Math.round((dep.time - now) / 60));
+                const minStr = min === 0 ? "Nu" : `${min} min`;
+                const minClass = min <= 2 ? "soon" : "";
+                const rt = dep.is_realtime ? `<span class="lp-rt">RT</span>` : "";
+                return `<div class="lp-dep">
+                    <span class="lp-time">${clock}</span>
+                    <span class="lp-min ${minClass}">${minStr}</span>
+                    <span class="lp-headsign">${dep.headsign || "—"}</span>
+                    ${rt}
+                </div>`;
+            }).join("");
+        })
+        .catch(() => {
+            if (activePanelRouteId !== routeId) return;
+            document.getElementById("line-panel-content").innerHTML =
+                `<div class="lp-empty">Kunde inte hämta avgångar</div>`;
+        });
 }
 
 // --- Alerts → bottom ticker ---
@@ -651,6 +740,52 @@ async function pollAlerts() {
     }
 }
 
+async function pollStopDepartures() {
+    if (!stopsLoaded || !showStops) return;
+    try {
+        const data = await fetch(`${API_BASE}/stops/next-departure`).then(r => r.json());
+        stopNextDep = data;
+        updateStopBadges();
+    } catch (err) {
+        console.error("Error polling stop departures:", err);
+    }
+}
+
+function updateStopBadges() {
+    if (!stopsLoaded) return;
+    const zoom = map ? map.getZoom() : 0;
+    const showBadges = showStops && zoom >= BADGE_MIN_ZOOM;
+
+    Object.entries(stopMarkerMap).forEach(([stopId, marker]) => {
+        const stop = marker._stopData;
+        if (!stop) return;
+        const isStation = stop.location_type === 1;
+        const dep = stopNextDep[stopId];
+
+        let iconHtml, iconSize, iconAnchor;
+        if (dep && showBadges) {
+            const min = dep.minutes;
+            const label = min === 0 ? "Nu" : `${min}m`;
+            const bg = dep.route_color || "0074D9";
+            const fg = dep.route_text_color || "FFFFFF";
+            const dotClass = isStation ? "station-marker" : "stop-marker";
+            iconHtml = `<div style="display:flex;align-items:center;gap:3px;pointer-events:none">` +
+                `<div class="${dotClass}" style="flex-shrink:0"></div>` +
+                `<span class="stop-badge-pill" style="background:#${bg};color:#${fg}">${dep.route_short_name}&nbsp;${label}</span>` +
+                `</div>`;
+            iconSize = isStation ? [80, 14] : [72, 10];
+            iconAnchor = isStation ? [6, 7] : [4, 5];
+        } else {
+            const dotClass = isStation ? "station-marker" : "stop-marker";
+            iconHtml = `<div class="${dotClass}"></div>`;
+            iconSize = isStation ? [12, 12] : [8, 8];
+            iconAnchor = isStation ? [6, 6] : [4, 4];
+        }
+
+        marker.setIcon(L.divIcon({ className: "", html: iconHtml, iconSize, iconAnchor }));
+    });
+}
+
 // --- Controls ---
 function initControls() {
     document.getElementById("toggle-stops").addEventListener("change", (e) => {
@@ -660,9 +795,11 @@ function initControls() {
                 loadStops();
             } else if (stopsLayer) {
                 stopsLayer.addTo(map);
+                pollStopDepartures();
             }
         } else if (stopsLayer) {
             map.removeLayer(stopsLayer);
+            updateStopBadges(); // clears badges
         }
     });
 
@@ -687,6 +824,17 @@ function initControls() {
         darkMode = e.target.checked;
         setTileLayer(darkMode);
         document.body.classList.toggle("light-mode", !darkMode);
+    });
+
+    // Line panel close
+    document.getElementById("line-panel-close").addEventListener("click", closeLinePanel);
+
+    // Hamburger (mobile: toggles controls dropdown)
+    document.getElementById("hamburger-btn").addEventListener("click", () => {
+        const ctrl = document.getElementById("topbar-controls");
+        const btn = document.getElementById("hamburger-btn");
+        const open = ctrl.classList.toggle("open");
+        btn.setAttribute("aria-expanded", open ? "true" : "false");
     });
 
     // Ticker collapse / reopen
@@ -717,6 +865,7 @@ async function init() {
     // Start polling
     setInterval(pollVehicles, POLL_INTERVAL);
     setInterval(pollAlerts, 30000);
+    setInterval(pollStopDepartures, 60000);
     // Keep checking if GTFS data has loaded (retry every 10s until loaded)
     const statusInterval = setInterval(async () => {
         await checkStatus();

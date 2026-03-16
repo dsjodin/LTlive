@@ -569,6 +569,83 @@ def line_detail(route_id):
     })
 
 
+@app.route("/api/line-departures/<route_id>")
+def line_departures(route_id):
+    """Return upcoming departures for a route, one entry per trip (earliest stop time)."""
+    with _lock:
+        stop_departures = dict(_data.get("stop_departures", {}))
+        trip_headsigns = _data["trip_headsigns"]
+        routes = _data["routes"]
+        now = int(time.time())
+
+    # Earliest future departure time per trip_id for this route
+    trips_earliest = {}
+    for deps in stop_departures.values():
+        for dep in deps:
+            if dep.get("route_id") != route_id:
+                continue
+            t = dep.get("time", 0)
+            if t < now:
+                continue
+            tid = dep.get("trip_id", "")
+            if not tid:
+                continue
+            if tid not in trips_earliest or t < trips_earliest[tid]["time"]:
+                trips_earliest[tid] = {"time": t, "is_realtime": dep.get("is_realtime", False)}
+
+    route_info = routes.get(route_id, {})
+    result = []
+    for tid, info in trips_earliest.items():
+        result.append({
+            "trip_id": tid,
+            "headsign": trip_headsigns.get(tid, ""),
+            "time": info["time"],
+            "minutes": max(0, round((info["time"] - now) / 60)),
+            "is_realtime": info["is_realtime"],
+        })
+    result.sort(key=lambda x: x["time"])
+
+    return jsonify({
+        "route_id": route_id,
+        "route_short_name": route_info.get("route_short_name", ""),
+        "route_long_name": route_info.get("route_long_name", ""),
+        "route_color": route_info.get("route_color", "0074D9"),
+        "route_text_color": route_info.get("route_text_color", "FFFFFF"),
+        "departures": result[:40],
+    })
+
+
+@app.route("/api/stops/next-departure")
+def stops_next_departure():
+    """Return the soonest upcoming departure per stop (used for map badges)."""
+    with _lock:
+        stop_departures = dict(_data.get("stop_departures", {}))
+        routes = _data["routes"]
+        now = int(time.time())
+    horizon = now + 3 * 3600  # only look 3 hours ahead
+
+    result = {}
+    for stop_id, deps in stop_departures.items():
+        best = None
+        for dep in deps:
+            t = dep.get("time", 0)
+            if t < now or t > horizon:
+                continue
+            if best is None or t < best["time"]:
+                ri = routes.get(dep.get("route_id", ""), {})
+                best = {
+                    "time": t,
+                    "minutes": max(0, round((t - now) / 60)),
+                    "route_short_name": ri.get("route_short_name", ""),
+                    "route_color": ri.get("route_color", "0074D9"),
+                    "route_text_color": ri.get("route_text_color", "FFFFFF"),
+                }
+        if best:
+            result[stop_id] = best
+
+    return jsonify(result)
+
+
 # --- Startup ---
 
 def start_background_tasks():

@@ -17,7 +17,7 @@
                 <span class="brand-sub">Örebro</span>
             </div>
 
-            <div class="topbar-controls">
+            <div class="topbar-controls" id="topbar-controls">
                 <label class="ctrl-pill" for="toggle-stops" title="Visa hållplatser">
                     <input type="checkbox" id="toggle-stops" />
                     <span>Hållplatser</span>
@@ -56,8 +56,12 @@
                     <polygon points="3 6 9 3 15 6 21 3 21 18 15 21 9 18 3 21"/>
                     <line x1="9" y1="3" x2="9" y2="18"/><line x1="15" y1="6" x2="15" y2="21"/>
                 </svg>
-                Karta
+                <span class="map-btn-label">Karta</span>
             </a>
+
+            <button id="hamburger-btn" aria-label="Inställningar" aria-expanded="false">
+                <span></span><span></span><span></span>
+            </button>
         </div>
 
         <!-- Line filter row -->
@@ -68,6 +72,17 @@
 
     <!-- ===== Map ===== -->
     <div id="map"></div>
+
+    <!-- ===== Line departure panel ===== -->
+    <div id="line-panel">
+        <div id="line-panel-header">
+            <div id="line-panel-title"></div>
+            <button id="line-panel-close" aria-label="Stäng">&#x2715;</button>
+        </div>
+        <div id="line-panel-body">
+            <div id="line-panel-content"></div>
+        </div>
+    </div>
 
     <!-- ===== Bottom ticker ===== -->
     <div id="bottom-ticker">
