@@ -886,7 +886,7 @@ function updateStopBadges() {
             const dotClass = isStation ? "station-marker" : "stop-marker";
             iconHtml = `<div style="display:flex;align-items:center;gap:3px;pointer-events:none">` +
                 `<div class="${dotClass}" style="flex-shrink:0"></div>` +
-                `<span class="stop-badge-pill" style="background:#${bg};color:#${fg}">${dep.route_short_name}&nbsp;${label}</span>` +
+                `<span class="stop-badge-pill"><span class="sbp-line" style="background:#${bg};color:#${fg}">${dep.route_short_name}</span><span class="sbp-time">${label}</span></span>` +
                 `</div>`;
             iconSize = isStation ? [80, 14] : [72, 10];
             iconAnchor = isStation ? [6, 7] : [4, 5];
