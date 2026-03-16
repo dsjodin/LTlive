@@ -558,7 +558,7 @@ function updateAlerts(alerts) {
         el.className = "ticker-move no-alerts";
         return;
     }
-    const text = alerts.map((a) => `⚠ ${a.header}${a.description ? " — " + a.description : ""}`).join("   ·   ");
+    const text = alerts.map((a) => `⚠  ${a.header}${a.description ? " — " + a.description : ""}`).join("          ◆          ");
     el.textContent = text;
     el.className = "ticker-move has-alerts";
 }
