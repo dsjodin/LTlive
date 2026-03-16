@@ -17,6 +17,9 @@ app = Flask(__name__)
 CORS(app)
 
 # In-memory data store
+_stop_seq_cache = {}   # (route_id, dir_id) -> [{"stop_id", "stop_name"}, ...]
+_stop_seq_lock = threading.Lock()
+
 _data = {
     "routes": {},
     "stops": {},
@@ -569,9 +572,42 @@ def line_detail(route_id):
     })
 
 
+def _get_stop_sequence(route_id, direction_id):
+    """Return ordered stops for a route+direction, loading from stop_times if needed."""
+    key = (route_id, direction_id)
+    with _stop_seq_lock:
+        if key in _stop_seq_cache:
+            return _stop_seq_cache[key]
+
+    with _lock:
+        trips = _data["trips"]
+        stops = _data["stops"]
+
+    # Find one representative trip for this route+direction
+    rep_trip = next(
+        (tid for tid, t in trips.items()
+         if t.get("route_id") == route_id
+         and str(t.get("direction_id", "0") or "0") == direction_id),
+        None,
+    )
+    if not rep_trip:
+        return []
+
+    trip_data = gtfs_loader.load_stop_times_for_trips({rep_trip})
+    seq = [
+        {"stop_id": s["stop_id"],
+         "stop_name": stops.get(s["stop_id"], {}).get("stop_name", s["stop_id"])}
+        for s in trip_data.get(rep_trip, [])
+    ]
+
+    with _stop_seq_lock:
+        _stop_seq_cache[key] = seq
+    return seq
+
+
 @app.route("/api/line-departures/<route_id>")
 def line_departures(route_id):
-    """Return upcoming departures for a route, one entry per trip (earliest stop time)."""
+    """Return stop-by-stop timetable for each direction of a route."""
     with _lock:
         stop_departures = dict(_data.get("stop_departures", {}))
         trip_headsigns = _data["trip_headsigns"]
@@ -579,57 +615,69 @@ def line_departures(route_id):
         trips = _data["trips"]
         now = int(time.time())
 
-    # Build a fast cache: trip_id -> resolved static route_id
+    # Resolve RT trip_id -> static route_id (cached locally per request)
     _trip_route_cache = {}
-
-    def trip_matches(dep):
-        dep_route = dep.get("route_id", "")
-        if dep_route == route_id:
-            return True
-        # RT route_id may differ from static — resolve via trip_id
-        tid = dep.get("trip_id", "")
-        if not tid:
-            return False
+    def static_route_for(tid, dep_route):
         if tid not in _trip_route_cache:
             _trip_route_cache[tid] = trips.get(tid, {}).get("route_id", dep_route)
-        return _trip_route_cache[tid] == route_id
+        return _trip_route_cache[tid]
 
-    # Earliest future departure time per trip_id for this route
-    trips_earliest = {}
-    for deps in stop_departures.values():
+    # Collect: (direction_id, stop_id) -> soonest future departure time
+    dir_stop_best = {}   # (dir_id, stop_id) -> {"time", "is_realtime"}
+    # Also collect headsign per direction
+    dir_headsign = {}
+
+    for stop_id, deps in stop_departures.items():
         for dep in deps:
-            if not trip_matches(dep):
+            tid = dep.get("trip_id", "")
+            dep_route = dep.get("route_id", "")
+            if static_route_for(tid, dep_route) != route_id:
                 continue
             t = dep.get("time", 0)
             if t < now:
                 continue
-            tid = dep.get("trip_id", "")
-            if not tid:
+            trip_info = trips.get(tid, {})
+            dir_id = str(trip_info.get("direction_id", "0") or "0")
+            key = (dir_id, stop_id)
+            if key not in dir_stop_best or t < dir_stop_best[key]["time"]:
+                dir_stop_best[key] = {"time": t, "is_realtime": dep.get("is_realtime", False)}
+            if dir_id not in dir_headsign:
+                hs = trip_headsigns.get(tid, "")
+                if hs:
+                    dir_headsign[dir_id] = hs
+
+    # Build per-direction result using canonical stop order
+    directions_out = []
+    for dir_id in sorted(dir_headsign.keys()):
+        seq = _get_stop_sequence(route_id, dir_id)
+        stops_out = []
+        for s in seq:
+            key = (dir_id, s["stop_id"])
+            if key not in dir_stop_best:
                 continue
-            if tid not in trips_earliest or t < trips_earliest[tid]["time"]:
-                trips_earliest[tid] = {"time": t, "is_realtime": dep.get("is_realtime", False)}
+            info = dir_stop_best[key]
+            stops_out.append({
+                "stop_id": s["stop_id"],
+                "stop_name": s["stop_name"],
+                "time": info["time"],
+                "minutes": max(0, round((info["time"] - now) / 60)),
+                "is_realtime": info["is_realtime"],
+            })
+        if stops_out:
+            directions_out.append({
+                "direction_id": dir_id,
+                "headsign": dir_headsign.get(dir_id, ""),
+                "stops": stops_out,
+            })
 
     route_info = routes.get(route_id, {})
-    result = []
-    for tid, info in trips_earliest.items():
-        direction_id = trips.get(tid, {}).get("direction_id", "0")
-        result.append({
-            "trip_id": tid,
-            "headsign": trip_headsigns.get(tid, ""),
-            "direction_id": str(direction_id) if direction_id is not None else "0",
-            "time": info["time"],
-            "minutes": max(0, round((info["time"] - now) / 60)),
-            "is_realtime": info["is_realtime"],
-        })
-    result.sort(key=lambda x: x["time"])
-
     return jsonify({
         "route_id": route_id,
         "route_short_name": route_info.get("route_short_name", ""),
         "route_long_name": route_info.get("route_long_name", ""),
         "route_color": route_info.get("route_color", "0074D9"),
         "route_text_color": route_info.get("route_text_color", "FFFFFF"),
-        "departures": result[:40],
+        "directions": directions_out,
     })
 
 
