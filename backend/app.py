@@ -91,27 +91,22 @@ def _merge_rt_static(rt_deps, static_deps):
 
     RT entries take precedence.  A static entry is suppressed if:
       - its trip_id matches an RT entry, OR
-      - it shares the same route_id and its scheduled time is within
-        _RT_STATIC_WINDOW seconds of an RT departure (handles delayed/early trips
-        where the GTFS-RT trip_id differs from the static trip_id).
+      - its scheduled time is within _RT_STATIC_WINDOW seconds of any RT
+        departure (handles delayed/early trips where the GTFS-RT trip_id or
+        route_id format differs from the static GTFS data).
     """
     if not rt_deps:
         return list(static_deps)
 
     rt_trip_ids = {d["trip_id"] for d in rt_deps}
-    # Build (route_id, time) pairs for RT entries to catch time-window duplicates
-    rt_route_times = [(d.get("route_id", ""), d["time"]) for d in rt_deps]
+    rt_times = [d["time"] for d in rt_deps]
 
     filtered_static = []
     for dep in static_deps:
         if dep["trip_id"] in rt_trip_ids:
             continue
-        dep_route = dep.get("route_id", "")
         dep_time = dep["time"]
-        if any(
-            dep_route == rt_route and abs(dep_time - rt_time) <= _RT_STATIC_WINDOW
-            for rt_route, rt_time in rt_route_times
-        ):
+        if any(abs(dep_time - rt_time) <= _RT_STATIC_WINDOW for rt_time in rt_times):
             continue
         filtered_static.append(dep)
 
