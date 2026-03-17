@@ -160,11 +160,14 @@ def load_stop_times_for_trips(trip_ids):
     return dict(trip_stops)
 
 
+_GTFS_WEEKDAYS = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
+
+
 def _active_service_ids_today():
     """Return the set of service_ids active for today from calendar + calendar_dates."""
     today = datetime.date.today()
     today_str = today.strftime("%Y%m%d")
-    weekday = today.strftime("%A").lower()  # monday … sunday
+    weekday = _GTFS_WEEKDAYS[today.weekday()]  # locale-independent, matches GTFS column names
 
     active = set()
     for row in _read_csv("calendar.txt"):

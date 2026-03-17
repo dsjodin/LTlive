@@ -1185,10 +1185,14 @@ def stops_next_departure():
         now = int(time.time())
     horizon = now + 3 * 3600
 
-    # Merge: static as base, RT entries replace static entries for same stop
-    merged = {**static_departures}
-    for stop_id, deps in rt_departures.items():
-        merged[stop_id] = deps
+    # Merge: RT overrides static per trip_id, but keeps static for trips without RT
+    merged = {}
+    all_stops = set(static_departures) | set(rt_departures)
+    for stop_id in all_stops:
+        rt_deps = rt_departures.get(stop_id, [])
+        rt_trip_ids = {d["trip_id"] for d in rt_deps}
+        static_only = [d for d in static_departures.get(stop_id, []) if d["trip_id"] not in rt_trip_ids]
+        merged[stop_id] = rt_deps + static_only
 
     def _best_dep(deps):
         best = None
