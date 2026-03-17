@@ -87,6 +87,7 @@ def fetch_trip_updates():
         route_id = tu.trip.route_id if tu.trip.route_id else ""
         direction_id = tu.trip.direction_id  # 0 is valid; avoid falsy-check that converts 0 → None
         start_date = tu.trip.start_date if tu.trip.start_date else ""
+        rt_trip_short_name = tu.trip.trip_short_name if tu.trip.trip_short_name else ""
 
         if vehicle_id:
             vehicle_trips[vehicle_id] = {
@@ -129,6 +130,7 @@ def fetch_trip_updates():
                 "direction_id": direction_id,
                 "time": t,
                 "is_realtime": is_realtime,
+                "rt_trip_short_name": rt_trip_short_name,
             })
 
     return vehicle_trips, vehicle_next_stop, stop_departures

@@ -773,7 +773,10 @@ def departures_for_stop(stop_id):
         elif tib_agency and route.get("agency_id", "") != tib_agency:
             continue
         headsign = trip_headsigns.get(trip_id, "") or route.get("route_long_name", "")
-        trip_short_name = trips.get(trip_id, {}).get("trip_short_name", "")
+        trip_short_name = (
+            trips.get(trip_id, {}).get("trip_short_name", "")
+            or d.get("rt_trip_short_name", "")
+        )
         rsn = route.get("route_short_name", "?")
         color = config.ROUTE_COLOR_OVERRIDES.get(rsn) or route.get("route_color", "0074D9")
         deps.append({
@@ -855,7 +858,10 @@ def arrivals_for_stop(stop_id):
             continue
         headsign = trip_headsigns.get(trip_id, "") or route.get("route_long_name", "")
         origin = trip_origin_map.get(trip_id, "")
-        trip_short_name = trips.get(trip_id, {}).get("trip_short_name", "")
+        trip_short_name = (
+            trips.get(trip_id, {}).get("trip_short_name", "")
+            or a.get("rt_trip_short_name", "")
+        )
         rsn = route.get("route_short_name", "?")
         color = config.ROUTE_COLOR_OVERRIDES.get(rsn) or route.get("route_color", "0074D9")
         arrs.append({
@@ -1084,6 +1090,38 @@ def debug_routes():
         "unique_short_names": sorted(by_name.keys()),
         "by_short_name": by_name,
     })
+
+
+@app.route("/api/debug/trip-names")
+@_debug_only
+def debug_trip_names():
+    """Debug: inspect trip_short_name values for train routes (sample of 10 per route)."""
+    with _lock:
+        all_routes = _data["routes"]
+        trips = _data["trips"]
+
+    train_route_ids = {
+        rid for rid, r in all_routes.items()
+        if r.get("route_type") == 2 or 100 <= (r.get("route_type") or 0) <= 199
+    }
+
+    by_route: dict = {}
+    for trip in trips.values():
+        rid = trip.get("route_id", "")
+        if rid not in train_route_ids:
+            continue
+        rsn = all_routes.get(rid, {}).get("route_short_name", rid)
+        entry = {
+            "trip_id": trip["trip_id"],
+            "trip_short_name": trip.get("trip_short_name", ""),
+        }
+        by_route.setdefault(rsn, [])
+        if len(by_route[rsn]) < 5:
+            by_route[rsn].append(entry)
+
+    has_names = {rsn: any(e["trip_short_name"] for e in entries)
+                 for rsn, entries in by_route.items()}
+    return jsonify({"by_route": by_route, "has_trip_short_name": has_names})
 
 
 @app.route("/api/debug/rt-feed")
