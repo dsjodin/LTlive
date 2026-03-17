@@ -770,6 +770,7 @@ def departures_for_stop(stop_id):
     tib_agency = config.TIB_AGENCY_ID
     tib_routes = config.TIB_ROUTE_SHORT_NAMES
     deps = []
+    used_tv_dep_keys = set()  # prevent two GTFS trips matching the same TV announcement
     for d in upcoming:
         route_id = d["route_id"]
         trip_id = d["trip_id"]
@@ -819,6 +820,9 @@ def departures_for_stop(stop_id):
                 for tv_dep in tv_ann[loc_sig].get("departures", []):
                     if tv_dep.get("operator", "") not in tv_ops:
                         continue
+                    tv_key = (tv_dep["train_number"], tv_dep["scheduled_time"])
+                    if tv_key in used_tv_dep_keys:
+                        continue
                     diff = abs(tv_dep["scheduled_time"] - dep_time)
                     if diff < best_diff and diff <= 600:
                         best_diff = diff
@@ -828,11 +832,15 @@ def departures_for_stop(stop_id):
             if best_tv is None:
                 best_diff = float("inf")
                 for tv_dep in tv_ann[loc_sig].get("departures", []):
+                    tv_key = (tv_dep["train_number"], tv_dep["scheduled_time"])
+                    if tv_key in used_tv_dep_keys:
+                        continue
                     diff = abs(tv_dep["scheduled_time"] - dep_time)
                     if diff < best_diff and diff <= 180:
                         best_diff = diff
                         best_tv = tv_dep
             if best_tv:
+                used_tv_dep_keys.add((best_tv["train_number"], best_tv["scheduled_time"]))
                 if not trip_short_name:
                     trip_short_name = best_tv["train_number"]
                 tv_track = best_tv["track"]
@@ -923,6 +931,7 @@ def arrivals_for_stop(stop_id):
     tib_agency = config.TIB_AGENCY_ID
     tib_routes = config.TIB_ROUTE_SHORT_NAMES
     arrs = []
+    used_tv_arr_keys = set()  # prevent two GTFS trips matching the same TV announcement
     for a in upcoming:
         route_id = a["route_id"]
         trip_id = a["trip_id"]
@@ -972,6 +981,9 @@ def arrivals_for_stop(stop_id):
                 for tv_arr in tv_ann[loc_sig].get("arrivals", []):
                     if tv_arr.get("operator", "") not in tv_ops:
                         continue
+                    tv_key = (tv_arr["train_number"], tv_arr["scheduled_time"])
+                    if tv_key in used_tv_arr_keys:
+                        continue
                     diff = abs(tv_arr["scheduled_time"] - arr_time)
                     if diff < best_diff and diff <= 600:
                         best_diff = diff
@@ -980,11 +992,15 @@ def arrivals_for_stop(stop_id):
             if best_tv is None:
                 best_diff = float("inf")
                 for tv_arr in tv_ann[loc_sig].get("arrivals", []):
+                    tv_key = (tv_arr["train_number"], tv_arr["scheduled_time"])
+                    if tv_key in used_tv_arr_keys:
+                        continue
                     diff = abs(tv_arr["scheduled_time"] - arr_time)
                     if diff < best_diff and diff <= 180:
                         best_diff = diff
                         best_tv = tv_arr
             if best_tv:
+                used_tv_arr_keys.add((best_tv["train_number"], best_tv["scheduled_time"]))
                 if not trip_short_name:
                     trip_short_name = best_tv["train_number"]
                 tv_track = best_tv["track"]
