@@ -336,6 +336,15 @@ body.nearby-open #map { bottom: calc(44vh + var(--ticker-h)); }
     font-size: 0.86em;
     font-weight: 700;
     color: var(--text);
+    display: flex;
+    align-items: baseline;
+    gap: 5px;
+    flex-wrap: wrap;
+}
+.nearby-platform {
+    font-size: 0.78em;
+    font-weight: 500;
+    color: var(--muted);
 }
 .nearby-dist {
     font-size: 0.72em;

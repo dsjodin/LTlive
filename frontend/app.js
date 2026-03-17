@@ -1097,9 +1097,14 @@ function fetchNearbyDepartures(lat, lon) {
                         ${rt}
                     </div>`;
                 }).join("") || `<div class="nearby-nodep">Inga avgångar</div>`;
+                const platformLabel = stop.platform_code
+                    ? `<span class="nearby-platform">Läge ${stop.platform_code}</span>`
+                    : stop.stop_desc
+                        ? `<span class="nearby-platform">${stop.stop_desc}</span>`
+                        : "";
                 return `<div class="nearby-stop">
                     <div class="nearby-stop-header">
-                        <span class="nearby-stop-name">${stop.stop_name}</span>
+                        <span class="nearby-stop-name">${stop.stop_name}${platformLabel}</span>
                         <span class="nearby-dist">${distStr}</span>
                     </div>
                     ${deps}

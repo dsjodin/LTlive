@@ -597,9 +597,12 @@ def nearby_departures():
                 "minutes": max(0, round((d["time"] - now) / 60)),
                 "is_realtime": d.get("is_realtime", False),
             })
+        s = grp["stop"]
         result.append({
-            "stop_id": grp["stop"]["stop_id"],
-            "stop_name": grp["stop"].get("stop_name", grp["stop"]["stop_id"]),
+            "stop_id": s["stop_id"],
+            "stop_name": s.get("stop_name", s["stop_id"]),
+            "platform_code": s.get("platform_code", ""),
+            "stop_desc": s.get("stop_desc", ""),
             "distance_m": round(grp["dist"]),
             "departures": deps,
         })
