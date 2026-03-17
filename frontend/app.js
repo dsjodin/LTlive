@@ -243,22 +243,29 @@ function createTrainIcon(vehicle) {
     const noseBaseX = lx + lW;          // nose base x     = 68
     const noseTipX  = noseBaseX + noseLen; // nose tip x   = 76
 
-    const rotation = hasBearing ? bearing - 90 : 0;
+    const stationary  = !!vehicle._stationary;
+    const locoFill    = stationary ? "#888888" : color;
+    const carriageFill = stationary ? "#666666" : "#5C3030";
+    const textFill    = stationary ? "#FFFFFF" : textColor;
+    const outline     = stationary ? "#444444" : outlineColor;
+    const rotation    = hasBearing ? bearing - 90 : 0;
     const fs = label.length >= 4 ? 11 : label.length >= 3 ? 13 : 15;
+
+    const noseSvg = stationary ? "" : `
+    <path d="M ${noseTipX},${cy} L ${noseBaseX},${cy - noseHH} L ${noseBaseX},${cy + noseHH} Z"
+          fill="${locoFill}" stroke="${outline}" stroke-width="2" stroke-linejoin="round"/>`;
 
     const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${W}" style="overflow:visible;display:block">
   <g transform="rotate(${rotation},${cx},${cy})">
     <rect x="${c2x}" y="${cy_c}" width="${cW}" height="${cH}" rx="${rx}" ry="${rx}"
-          fill="#5C3030" stroke="${outlineColor}" stroke-width="2"/>
+          fill="${carriageFill}" stroke="${outline}" stroke-width="2"/>
     <rect x="${c1x}" y="${cy_c}" width="${cW}" height="${cH}" rx="${rx}" ry="${rx}"
-          fill="#5C3030" stroke="${outlineColor}" stroke-width="2"/>
+          fill="${carriageFill}" stroke="${outline}" stroke-width="2"/>
     <rect x="${lx}" y="${ly}" width="${lW}" height="${lH}" rx="${rx}" ry="${rx}"
-          fill="${color}" stroke="${outlineColor}" stroke-width="2"/>
-    <path d="M ${noseTipX},${cy} L ${noseBaseX},${cy - noseHH} L ${noseBaseX},${cy + noseHH} Z"
-          fill="${color}" stroke="${outlineColor}" stroke-width="2" stroke-linejoin="round"/>
+          fill="${locoFill}" stroke="${outline}" stroke-width="2"/>${noseSvg}
   </g>
   <text x="${cx}" y="${cy}" text-anchor="middle" dominant-baseline="central"
-        font-size="${fs}" font-weight="800" fill="${textColor}"
+        font-size="${fs}" font-weight="800" fill="${textFill}"
         font-family="-apple-system,BlinkMacSystemFont,sans-serif"
         style="user-select:none;pointer-events:none">${label}</text>
 </svg>`;
@@ -371,14 +378,21 @@ function updateVehicles(vehicles) {
         }
         v._localTime = now;
 
-        // For trains: cache bearing when moving; reuse last known when stopped/null
+        // For trains: determine stationary state and set display bearing
         if (v.vehicle_type === "train") {
             const speed = v.speed ?? v._calculatedSpeed ?? 0;
-            if (v.bearing != null && speed > 0.5) {
+            const moving = speed > 0.5 && v.bearing != null;
+            if (moving) {
                 vehicleLastBearing[id] = v.bearing;
-            }
-            if (v.bearing == null || speed <= 0.5) {
-                v.bearing = vehicleLastBearing[id] ?? v.bearing;
+                v._stationary = false;
+            } else {
+                v._stationary = true;
+                // Snap to nearest track segment when shape data is loaded
+                if (trainShapeCoords.length > 0) {
+                    v.bearing = snapBearingToTrack(v.lat, v.lon);
+                } else {
+                    v.bearing = vehicleLastBearing[id] ?? null;
+                }
             }
         }
 
@@ -688,6 +702,7 @@ function loadRoutes() {
 // Load and draw train route shapes (deduplicated per shape_id, always visible).
 let trainRailLayer = null;
 let trainRoutesLoaded = false;
+let trainShapeCoords = []; // raw [[lat,lon]…] arrays — used for bearing snap
 
 function loadTrainRoutes() {
     if (trainRoutesLoaded) return;
@@ -695,10 +710,9 @@ function loadTrainRoutes() {
         .then(r => r.json())
         .then(data => {
             if (!data.count) return;
-            // Each shape_id is drawn once — no duplicate tracks from shared segments
             const layerGroup = L.layerGroup();
-            // TiB orange rail style regardless of GTFS route color
             Object.values(data.shapes).forEach(coords => {
+                trainShapeCoords.push(coords);
                 L.polyline(coords, { color: "#7A3A00", weight: 6, opacity: 0.6 }).addTo(layerGroup);
                 L.polyline(coords, { color: "#E87722", weight: 3, opacity: 0.9 }).addTo(layerGroup);
             });
@@ -708,6 +722,40 @@ function loadTrainRoutes() {
             console.log(`Loaded ${data.count} deduplicated train shapes`);
         })
         .catch(err => console.error("Error loading train routes:", err));
+}
+
+// Perpendicular distance (in degrees, good enough for small areas) from point to segment.
+function _distToSegment(lat, lon, lat1, lon1, lat2, lon2) {
+    const dx = lat2 - lat1, dy = lon2 - lon1;
+    const lenSq = dx * dx + dy * dy;
+    if (lenSq === 0) return Math.hypot(lat - lat1, lon - lon1);
+    const t = Math.max(0, Math.min(1, ((lat - lat1) * dx + (lon - lon1) * dy) / lenSq));
+    return Math.hypot(lat - (lat1 + t * dx), lon - (lon1 + t * dy));
+}
+
+// True bearing (degrees) from point A to point B.
+function _bearingBetween(lat1, lon1, lat2, lon2) {
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const φ1 = lat1 * Math.PI / 180, φ2 = lat2 * Math.PI / 180;
+    const y = Math.sin(dLon) * Math.cos(φ2);
+    const x = Math.cos(φ1) * Math.sin(φ2) - Math.sin(φ1) * Math.cos(φ2) * Math.cos(dLon);
+    return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
+}
+
+// Find the bearing of the nearest rail segment to (lat, lon).
+function snapBearingToTrack(lat, lon) {
+    let minDist = Infinity, snapBearing = null;
+    for (const coords of trainShapeCoords) {
+        for (let i = 0; i < coords.length - 1; i++) {
+            const [lat1, lon1] = coords[i], [lat2, lon2] = coords[i + 1];
+            const d = _distToSegment(lat, lon, lat1, lon1, lat2, lon2);
+            if (d < minDist) {
+                minDist = d;
+                snapBearing = _bearingBetween(lat1, lon1, lat2, lon2);
+            }
+        }
+    }
+    return snapBearing;
 }
 
 
