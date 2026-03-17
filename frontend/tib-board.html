@@ -771,7 +771,7 @@ async function loadDepartures(board) {
                 <div class="destination-main">${d.headsign || ""}${liveTag}</div>
                 <div class="destination-sub">${rtDot}${d.is_realtime ? "Realtid" : "Tidtabell"}</div>
             </div>
-            <span class="track"><span class="track-num">–</span></span>
+            <span class="track"><span class="track-num">${d.platform || "–"}</span></span>
             <span class="sched-time">${clock}</span>
             <span class="eta-col ${etaCls}" data-ts="${d.departure_time}">${etaText}</span>
         </div>`;

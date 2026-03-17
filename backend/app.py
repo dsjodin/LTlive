@@ -730,9 +730,13 @@ def departures_for_stop(stop_id):
 
         rt_deps = []
         static_deps = []
+        # Tag each dep with its source stop_id so we can look up platform_code
         for qid in query_ids:
-            rt_deps.extend(_data.get("stop_departures", {}).get(qid, []))
-            static_deps.extend(_data.get("static_stop_departures", {}).get(qid, []))
+            platform_code = all_stops_data.get(qid, {}).get("platform_code", "")
+            for dep in _data.get("stop_departures", {}).get(qid, []):
+                rt_deps.append({**dep, "_platform": platform_code})
+            for dep in _data.get("static_stop_departures", {}).get(qid, []):
+                static_deps.append({**dep, "_platform": platform_code})
         routes = _data["routes"]
         trips = _data["trips"]
         trip_headsigns = _data.get("trip_headsigns", {})
@@ -764,6 +768,7 @@ def departures_for_stop(stop_id):
             "departure_time": d["time"],
             "is_realtime": d["is_realtime"],
             "trip_id": trip_id,
+            "platform": d.get("_platform", ""),
         })
         if len(deps) >= limit:
             break

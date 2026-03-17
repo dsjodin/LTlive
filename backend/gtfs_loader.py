@@ -272,6 +272,15 @@ def load_trip_headsigns_and_stop_route_map(stops, trips):
         if name:
             headsigns[tid] = name
 
+    # Remove terminus departures: a train's last stop should not appear as a
+    # departure (the train doesn't depart from its terminus).
+    last_stop_lookup = {(tid, info[1]) for tid, info in trip_last_stop.items()}
+    for sid in list(static_departures.keys()):
+        static_departures[sid] = [
+            d for d in static_departures[sid]
+            if (d["trip_id"], sid) not in last_stop_lookup
+        ]
+
     trip_origin_map = {}
     for tid, (_, stop_id) in trip_first_stop.items():
         stop = stops.get(stop_id, {})
