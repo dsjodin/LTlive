@@ -18,6 +18,7 @@ services:
       - TRAFIKVERKET_OPERATORS=${TRAFIKVERKET_OPERATORS:-}
       - TRAFIKVERKET_POLL_SECONDS=${TRAFIKVERKET_POLL_SECONDS:-60}
       - ENABLE_DEBUG_ENDPOINTS=true
+      - TZ=Europe/Stockholm
     volumes:
       - gtfs-data:/app/data/gtfs
       - stats-data:/app/data/stats
