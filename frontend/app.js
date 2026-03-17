@@ -420,15 +420,21 @@ function updateVehicles(vehicles) {
         vehicleMarkers[id]._vehicleData = v;
     });
 
-    // Remove markers and trails for vehicles no longer in the feed
+    // Remove markers that are no longer in the feed.
+    // Trains report position rarely — keep them for 5 min after last seen.
+    // Buses are removed as soon as they leave the feed (max 60 s grace).
     Object.keys(vehicleMarkers).forEach((id) => {
-        if (!currentIds.has(id)) {
-            map.removeLayer(vehicleMarkers[id]);
-            delete vehicleMarkers[id];
-            delete vehicleAnim[id];
-            delete vehicleTrailPoints[id];
-            if (vehicleTrails[id]) { map.removeLayer(vehicleTrails[id]); delete vehicleTrails[id]; }
-        }
+        if (currentIds.has(id)) return;
+        const data = vehicleMarkers[id]._vehicleData;
+        const isTrain = data && data.vehicle_type === "train";
+        const staleAfter = isTrain ? 300 : 60;
+        const lastSeen = (data && data._localTime) || 0;
+        if (now - lastSeen < staleAfter) return; // keep it a while longer
+        map.removeLayer(vehicleMarkers[id]);
+        delete vehicleMarkers[id];
+        delete vehicleAnim[id];
+        delete vehicleTrailPoints[id];
+        if (vehicleTrails[id]) { map.removeLayer(vehicleTrails[id]); delete vehicleTrails[id]; }
     });
 
     document.getElementById("vehicle-count").textContent = vehicles.length;
