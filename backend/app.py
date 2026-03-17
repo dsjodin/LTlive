@@ -1283,6 +1283,68 @@ def debug_tv_announcements():
     })
 
 
+@app.route("/api/debug/tv-match")
+@_debug_only
+def debug_tv_match():
+    """Find GTFS stop_id ↔ Trafikverket LocationSignature matches by name/proximity.
+
+    Query params:
+        q=örebro  — filter by partial name (case-insensitive)
+        lat=59.27&lon=15.21  — find closest TV station to coordinate
+    """
+    q = request.args.get("q", "").lower()
+    lat = request.args.get("lat", type=float)
+    lon = request.args.get("lon", type=float)
+
+    with _lock:
+        tv_stations = dict(_data["tv_stations"])
+        gtfs_stops = dict(_data["stops"])
+
+    # Search TV stations by name
+    tv_results = []
+    for sig, info in tv_stations.items():
+        name = info.get("name", "")
+        if q and q not in name.lower():
+            continue
+        tv_results.append({"sig": sig, "name": name, "lat": info.get("lat"), "lon": info.get("lon")})
+
+    # If lat/lon given, find nearest TV station
+    nearest_tv = None
+    if lat is not None and lon is not None:
+        best_dist = float("inf")
+        for sig, info in tv_stations.items():
+            slat, slon = info.get("lat"), info.get("lon")
+            if slat is None or slon is None:
+                continue
+            d = ((slat - lat) ** 2 + (slon - lon) ** 2) ** 0.5
+            if d < best_dist:
+                best_dist = d
+                nearest_tv = {"sig": sig, "name": info["name"], "dist_deg": round(d, 4)}
+
+    # Search GTFS stops by name
+    gtfs_results = []
+    for stop_id, s in gtfs_stops.items():
+        name = s.get("stop_name", "")
+        if q and q not in name.lower():
+            continue
+        if s.get("location_type", 0) == 1:  # parent stations first
+            gtfs_results.insert(0, {"stop_id": stop_id, "name": name,
+                                     "lat": s.get("stop_lat"), "lon": s.get("stop_lon"),
+                                     "type": "parent"})
+        else:
+            gtfs_results.append({"stop_id": stop_id, "name": name,
+                                  "lat": s.get("stop_lat"), "lon": s.get("stop_lon"),
+                                  "type": "stop"})
+
+    return jsonify({
+        "query": q or None,
+        "tv_stations": tv_results[:30],
+        "gtfs_stops": gtfs_results[:30],
+        "nearest_tv": nearest_tv,
+        "hint": "Set TRAFIKVERKET_STATIONS=<gtfs_stop_id>:<LocationSig> in .env",
+    })
+
+
 @app.route("/api/debug/trains")
 @_debug_only
 def debug_trains():
