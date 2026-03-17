@@ -83,11 +83,11 @@ def parse_oxyfi_message(msg: str):
     Returns a vehicle dict or None.
     """
     msg = msg.strip()
-    if not msg.startswith("$GPRMC"):
+    if not (msg.startswith("$GPRMC") or msg.startswith("$GNRMC")):
         return None
 
     parts = msg.split(",")
-    if len(parts) < 12:
+    if len(parts) < 15:
         return None
 
     status = parts[2]
@@ -100,18 +100,19 @@ def parse_oxyfi_message(msg: str):
         return None
 
     speed = _knots_to_ms(parts[7]) if len(parts) > 7 and parts[7] else None
-    bearing_str = _strip_checksum(parts[8]) if len(parts) > 8 else ""
+    bearing_str = parts[8] if len(parts) > 8 else ""
     try:
         bearing = float(bearing_str) if bearing_str else None
     except ValueError:
         bearing = None
 
-    vehicle_id = parts[13].strip() if len(parts) > 13 else ""
+    # Field 14: vehicleId (field 12 is mode+checksum, 13 is empty)
+    vehicle_id = parts[14].strip() if len(parts) > 14 else ""
     if not vehicle_id:
         return None
 
-    # Parse public train numbers from field 15
-    train_numbers_raw = parts[15].strip() if len(parts) > 15 else ""
+    # Parse public train numbers from field 16
+    train_numbers_raw = parts[16].strip() if len(parts) > 16 else ""
     public_numbers = []
     for entry in train_numbers_raw.split(";"):
         entry = entry.strip()
