@@ -5,7 +5,10 @@ import datetime
 import io
 import os
 import zipfile
+import zoneinfo
 from collections import defaultdict
+
+_TZ_SWEDEN = zoneinfo.ZoneInfo("Europe/Stockholm")
 
 import requests
 
@@ -180,7 +183,7 @@ _GTFS_WEEKDAYS = ["monday", "tuesday", "wednesday", "thursday", "friday", "satur
 
 def _active_service_ids_today():
     """Return the set of service_ids active for today from calendar + calendar_dates."""
-    today = datetime.date.today()
+    today = datetime.datetime.now(_TZ_SWEDEN).date()
     today_str = today.strftime("%Y%m%d")
     weekday = _GTFS_WEEKDAYS[today.weekday()]  # locale-independent, matches GTFS column names
 
@@ -225,8 +228,8 @@ def load_trip_headsigns_and_stop_route_map(stops, trips):
         if t.get("service_id", "") in active_services:
             active_trip_ids.add(tid)
 
-    today = datetime.date.today()
-    today_midnight = int(datetime.datetime.combine(today, datetime.time.min).timestamp())
+    today = datetime.datetime.now(_TZ_SWEDEN).date()
+    today_midnight = int(datetime.datetime(today.year, today.month, today.day, tzinfo=_TZ_SWEDEN).timestamp())
 
     trip_last_stop = {}   # trip_id -> (max_sequence, stop_id)
     trip_first_stop = {}  # trip_id -> (min_sequence, stop_id)
