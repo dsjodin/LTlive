@@ -744,17 +744,43 @@ def stations():
 
 @app.route("/api/shapes/trains")
 def train_shapes():
-    """Return deduplicated rail geometries (one entry per shape_id, not per route)."""
+    """Return one representative rail shape per (route_id, direction_id).
+
+    Picks the shape with the most points for each direction so we get
+    the most-detailed geometry without drawing hundreds of near-identical
+    trip shapes or degenerate 2-point straight-line shapes.
+    Max shapes returned = 2 × number of train routes.
+    """
     with _lock:
-        trips    = _data["trips"]
-        routes   = _data["routes"]
+        trips      = _data["trips"]
+        routes     = _data["routes"]
         all_shapes = _data["shapes"]
 
     train_route_ids = {rid for rid, r in routes.items()
                        if r["route_type"] == 2 or 100 <= r["route_type"] <= 199}
-    shape_ids = {t["shape_id"] for t in trips.values()
-                 if t.get("route_id") in train_route_ids and t.get("shape_id")}
-    shapes_out = {sid: all_shapes[sid] for sid in shape_ids if sid in all_shapes}
+
+    # best[(route_id, direction_id)] = (shape_id, point_count)
+    best: dict = {}
+    for trip in trips.values():
+        rid = trip.get("route_id", "")
+        if rid not in train_route_ids:
+            continue
+        sid = trip.get("shape_id", "")
+        if not sid or sid not in all_shapes:
+            continue
+        pts = len(all_shapes[sid])
+        key = (rid, trip.get("direction_id", 0))
+        if key not in best or pts > best[key][1]:
+            best[key] = (sid, pts)
+
+    # Deduplicate by shape_id (two directions may share the same shape)
+    seen: set = set()
+    shapes_out: dict = {}
+    for sid, _ in best.values():
+        if sid not in seen:
+            seen.add(sid)
+            shapes_out[sid] = all_shapes[sid]
+
     return jsonify({"shapes": shapes_out, "count": len(shapes_out)})
 
 
