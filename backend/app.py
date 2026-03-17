@@ -806,25 +806,38 @@ def departures_for_stop(stop_id):
                 if ls:
                     loc_sig = ls
                     break
+        tv_rt_time = None
+        tv_track_changed = False
         if loc_sig and tv_ann.get(loc_sig):
             dep_time = d["time"]
             tv_ops = config.TRAFIKVERKET_OPERATORS
-            # Find closest TV departure within 10 minutes, filtered by operator if configured
             best_tv = None
             best_diff = float("inf")
-            for tv_dep in tv_ann[loc_sig].get("departures", []):
-                if tv_ops and tv_dep.get("operator", "") not in tv_ops:
-                    continue
-                diff = abs(tv_dep["scheduled_time"] - dep_time)
-                if diff < best_diff and diff <= 600:
-                    best_diff = diff
-                    best_tv = tv_dep
+            # First pass: preferred operators only (avoids cross-operator time collisions)
+            if tv_ops:
+                for tv_dep in tv_ann[loc_sig].get("departures", []):
+                    if tv_dep.get("operator", "") not in tv_ops:
+                        continue
+                    diff = abs(tv_dep["scheduled_time"] - dep_time)
+                    if diff < best_diff and diff <= 600:
+                        best_diff = diff
+                        best_tv = tv_dep
+            # Second pass: any operator if no preferred match found
+            if best_tv is None:
+                best_diff = float("inf")
+                for tv_dep in tv_ann[loc_sig].get("departures", []):
+                    diff = abs(tv_dep["scheduled_time"] - dep_time)
+                    if diff < best_diff and diff <= 600:
+                        best_diff = diff
+                        best_tv = tv_dep
             if best_tv:
                 if not trip_short_name:
                     trip_short_name = best_tv["train_number"]
                 tv_track = best_tv["track"]
                 tv_canceled = best_tv["canceled"]
                 tv_deviation = best_tv["deviation"]
+                tv_rt_time = best_tv.get("realtime_time")
+                tv_track_changed = any("spår" in t.lower() for t in tv_deviation)
                 if not headsign and best_tv["dest_sig"]:
                     headsign = tv_stations.get(best_tv["dest_sig"], {}).get("name", best_tv["dest_sig"])
                 for vsig in best_tv.get("via_sigs", [])[:3]:
@@ -832,16 +845,20 @@ def departures_for_stop(stop_id):
                     tv_via.append(vname)
 
         platform = tv_track or d.get("_platform", "")
+        sched_time = d["time"]
+        rt_time = tv_rt_time or (d["time"] if d["is_realtime"] else None)
         deps.append({
             "route_short_name": rsn,
             "trip_short_name": trip_short_name,
             "route_color": color,
             "route_text_color": route.get("route_text_color", "FFFFFF"),
             "headsign": headsign,
-            "departure_time": d["time"],
-            "is_realtime": d["is_realtime"],
+            "departure_time": rt_time if rt_time else sched_time,
+            "scheduled_time": sched_time,
+            "is_realtime": bool(rt_time),
             "trip_id": trip_id,
             "platform": platform,
+            "track_changed": tv_track_changed,
             "canceled": tv_canceled,
             "deviation": tv_deviation,
             "via": tv_via,
@@ -936,27 +953,42 @@ def arrivals_for_stop(stop_id):
                 if ls:
                     loc_sig = ls
                     break
+        tv_rt_arr_time = None
+        tv_arr_track_changed = False
         if loc_sig and tv_ann.get(loc_sig):
             arr_time = a["time"]
             tv_ops = config.TRAFIKVERKET_OPERATORS
             best_tv = None
             best_diff = float("inf")
-            for tv_arr in tv_ann[loc_sig].get("arrivals", []):
-                if tv_ops and tv_arr.get("operator", "") not in tv_ops:
-                    continue
-                diff = abs(tv_arr["scheduled_time"] - arr_time)
-                if diff < best_diff and diff <= 600:
-                    best_diff = diff
-                    best_tv = tv_arr
+            # First pass: preferred operators
+            if tv_ops:
+                for tv_arr in tv_ann[loc_sig].get("arrivals", []):
+                    if tv_arr.get("operator", "") not in tv_ops:
+                        continue
+                    diff = abs(tv_arr["scheduled_time"] - arr_time)
+                    if diff < best_diff and diff <= 600:
+                        best_diff = diff
+                        best_tv = tv_arr
+            # Second pass: any operator
+            if best_tv is None:
+                best_diff = float("inf")
+                for tv_arr in tv_ann[loc_sig].get("arrivals", []):
+                    diff = abs(tv_arr["scheduled_time"] - arr_time)
+                    if diff < best_diff and diff <= 600:
+                        best_diff = diff
+                        best_tv = tv_arr
             if best_tv:
                 if not trip_short_name:
                     trip_short_name = best_tv["train_number"]
                 tv_track = best_tv["track"]
                 tv_canceled = best_tv["canceled"]
                 tv_deviation = best_tv["deviation"]
+                tv_rt_arr_time = best_tv.get("realtime_time")
+                tv_arr_track_changed = any("spår" in t.lower() for t in tv_deviation)
                 if not origin and best_tv["origin_sig"]:
                     origin = tv_stations.get(best_tv["origin_sig"], {}).get("name", best_tv["origin_sig"])
 
+        arr_sched_time = a["time"]
         arrs.append({
             "route_short_name": rsn,
             "trip_short_name": trip_short_name,
@@ -964,10 +996,12 @@ def arrivals_for_stop(stop_id):
             "route_text_color": route.get("route_text_color", "FFFFFF"),
             "headsign": headsign,
             "origin": origin,
-            "arrival_time": a["time"],
-            "is_realtime": False,
+            "arrival_time": tv_rt_arr_time if tv_rt_arr_time else arr_sched_time,
+            "scheduled_time": arr_sched_time,
+            "is_realtime": bool(tv_rt_arr_time),
             "trip_id": trip_id,
             "platform": tv_track,
+            "track_changed": tv_arr_track_changed,
             "canceled": tv_canceled,
             "deviation": tv_deviation,
         })

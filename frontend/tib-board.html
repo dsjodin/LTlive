@@ -318,6 +318,11 @@
             font-size: 0.8rem;
             color: var(--text);
         }
+        .track-num.track-changed {
+            background: #5a3a00;
+            border-color: var(--yellow);
+            color: var(--yellow);
+        }
 
         .sched-time {
             font-size: clamp(0.85rem, 1.7vw, 1.05rem);
@@ -325,6 +330,15 @@
             font-variant-numeric: tabular-nums;
             font-family: monospace;
             text-align: right;
+        }
+        .sched-time .time-orig {
+            text-decoration: line-through;
+            opacity: 0.5;
+            font-size: 0.8em;
+            margin-right: 4px;
+        }
+        .sched-time .time-new {
+            color: var(--orange);
         }
 
         .eta-col {
@@ -776,15 +790,23 @@ async function loadDepartures(board) {
         const deviationText = (d.deviation && d.deviation.length)
             ? `<span class="deviation">${d.deviation.join(", ")}</span>` : "";
         const viaText = (d.via && d.via.length) ? `via ${d.via.join(" · ")}` : "";
-        const depSubText = d.is_realtime ? `${rtDot}Realtid` : viaText;
+        const depSubText = viaText ? `${rtDot}${viaText}` : (d.is_realtime ? `${rtDot}Realtid` : "");
+        const trackChangedClass = d.track_changed ? " track-changed" : "";
+        const isDelayed = d.is_realtime && d.scheduled_time && d.departure_time !== d.scheduled_time;
+        const schedClock = isDelayed
+            ? new Date(d.scheduled_time * 1000).toLocaleTimeString("sv-SE", { hour: "2-digit", minute: "2-digit" })
+            : null;
+        const clockHtml = isDelayed
+            ? `<span class="time-orig">${schedClock}</span><span class="time-new">${clock}</span>`
+            : clock;
         return `<div class="row dep-grid ${nowClass}${canceledClass}">
             <span class="badge" style="background:${bg};color:${fg}">${trainLabel}</span>
             <div class="destination">
                 <div class="destination-main">${headsignText}${liveTag}</div>
                 <div class="destination-sub">${depSubText}${deviationText}</div>
             </div>
-            <span class="track"><span class="track-num">${d.platform || "–"}</span></span>
-            <span class="sched-time">${clock}</span>
+            <span class="track"><span class="track-num${trackChangedClass}">${d.platform || "–"}</span></span>
+            <span class="sched-time">${clockHtml}</span>
             <span class="eta-col ${etaCls}" data-ts="${d.departure_time}">${etaText}</span>
         </div>`;
     }).join("");
@@ -827,14 +849,24 @@ async function loadArrivals(board) {
         const trainLabel = a.trip_short_name || a.route_short_name || "?";
         const canceledClass = a.canceled ? " row-canceled" : "";
         const fromDisplay = a.canceled ? `<s>${fromLabel}</s> <span class="canceled-badge">Inställt</span>` : fromLabel;
+        const deviationText = (a.deviation && a.deviation.length)
+            ? `<span class="deviation">${a.deviation.join(", ")}</span>` : "";
+        const arrTrackChangedClass = a.track_changed ? " track-changed" : "";
+        const arrIsDelayed = a.is_realtime && a.scheduled_time && a.arrival_time !== a.scheduled_time;
+        const arrSchedClock = arrIsDelayed
+            ? new Date(a.scheduled_time * 1000).toLocaleTimeString("sv-SE", { hour: "2-digit", minute: "2-digit" })
+            : null;
+        const arrClockHtml = arrIsDelayed
+            ? `<span class="time-orig">${arrSchedClock}</span><span class="time-new">${clock}</span>`
+            : clock;
         return `<div class="row arr-grid ${nowClass}${canceledClass}">
             <span class="badge" style="background:${bg};color:${fg}">${trainLabel}</span>
             <div class="destination">
                 <div class="destination-main">${fromDisplay}${liveTag}</div>
-                <div class="destination-sub">${sub}</div>
+                <div class="destination-sub">${sub}${deviationText}</div>
             </div>
-            <span class="track"><span class="track-num">${a.platform || "–"}</span></span>
-            <span class="sched-time">${clock}</span>
+            <span class="track"><span class="track-num${arrTrackChangedClass}">${a.platform || "–"}</span></span>
+            <span class="sched-time">${arrClockHtml}</span>
             <span class="eta-col ${etaCls}" data-ts="${a.arrival_time}">${etaText}</span>
         </div>`;
     }).join("");
