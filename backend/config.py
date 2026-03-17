@@ -39,6 +39,17 @@ TIB_ROUTE_SHORT_NAMES: set = (
     {n.strip() for n in _route_names_env.split(",") if n.strip()}
     if _route_names_env else set()
 )
+
+# Override route colors when the GTFS data uses a generic regional color.
+# Format: comma-separated "ROUTE_SHORT_NAME:RRGGBB" pairs.
+# TiB brand green: 2C6E37  (e.g. "T53:2C6E37,T54:2C6E37,T63:2C6E37")
+_color_overrides_env = os.environ.get("ROUTE_COLOR_OVERRIDES", "")
+ROUTE_COLOR_OVERRIDES: dict = {}
+for _entry in _color_overrides_env.split(","):
+    _entry = _entry.strip()
+    if ":" in _entry:
+        _k, _v = _entry.split(":", 1)
+        ROUTE_COLOR_OVERRIDES[_k.strip()] = _v.strip().lstrip("#")
 FRONTEND_POLL_INTERVAL_MS = int(os.environ.get("FRONTEND_POLL_INTERVAL_MS", "5000"))
 
 # Oxyfi Realtidspositionering — train positions via WebSocket

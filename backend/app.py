@@ -774,10 +774,12 @@ def departures_for_stop(stop_id):
             continue
         headsign = trip_headsigns.get(trip_id, "") or route.get("route_long_name", "")
         trip_short_name = trips.get(trip_id, {}).get("trip_short_name", "")
+        rsn = route.get("route_short_name", "?")
+        color = config.ROUTE_COLOR_OVERRIDES.get(rsn) or route.get("route_color", "0074D9")
         deps.append({
-            "route_short_name": route.get("route_short_name", "?"),
+            "route_short_name": rsn,
             "trip_short_name": trip_short_name,
-            "route_color": route.get("route_color", "0074D9"),
+            "route_color": color,
             "route_text_color": route.get("route_text_color", "FFFFFF"),
             "headsign": headsign,
             "departure_time": d["time"],
@@ -854,10 +856,12 @@ def arrivals_for_stop(stop_id):
         headsign = trip_headsigns.get(trip_id, "") or route.get("route_long_name", "")
         origin = trip_origin_map.get(trip_id, "")
         trip_short_name = trips.get(trip_id, {}).get("trip_short_name", "")
+        rsn = route.get("route_short_name", "?")
+        color = config.ROUTE_COLOR_OVERRIDES.get(rsn) or route.get("route_color", "0074D9")
         arrs.append({
-            "route_short_name": route.get("route_short_name", "?"),
+            "route_short_name": rsn,
             "trip_short_name": trip_short_name,
-            "route_color": route.get("route_color", "0074D9"),
+            "route_color": color,
             "route_text_color": route.get("route_text_color", "FFFFFF"),
             "headsign": headsign,
             "origin": origin,
