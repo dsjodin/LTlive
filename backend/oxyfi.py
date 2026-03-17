@@ -203,6 +203,8 @@ def _connect() -> None:
 
     url = f"wss://api.oxyfi.com/trainpos/listen?v=1&key={config.OXYFI_API_KEY}"
 
+    _msg_count = [0]
+
     def on_message(ws, message):
         global _last_update
         vehicle = parse_oxyfi_message(message)
@@ -210,6 +212,9 @@ def _connect() -> None:
             with _trains_lock:
                 _trains[vehicle["vehicle_id"]] = vehicle
             _last_update = vehicle["timestamp"]
+            _msg_count[0] += 1
+            if _msg_count[0] <= 3 or _msg_count[0] % 100 == 0:
+                print(f"oxyfi: received train {vehicle['vehicle_id']} pos {vehicle['lat']},{vehicle['lon']} (#{_msg_count[0]})")
 
     def on_error(ws, error):
         print(f"oxyfi: WebSocket error: {error}")

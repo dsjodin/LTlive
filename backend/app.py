@@ -902,6 +902,19 @@ def debug_rt_feed():
     })
 
 
+@app.route("/api/debug/trains")
+@_debug_only
+def debug_trains():
+    """Show current Oxyfi train state."""
+    trains = oxyfi.get_trains()
+    return jsonify({
+        "oxyfi_key_set": bool(config.OXYFI_API_KEY),
+        "train_count": len(trains),
+        "last_update": oxyfi._last_update,
+        "trains": trains,
+    })
+
+
 @app.route("/api/stats/visit", methods=["POST"])
 def stats_visit():
     data = request.get_json(silent=True) or {}
@@ -1270,8 +1283,9 @@ def _push_train_positions():
     if not trains:
         return
     with _lock:
-        buses = _enrich_vehicles(list(_data["vehicles"]))
+        vehicle_list = list(_data["vehicles"])
         ts = _data["last_vehicle_update"]
+    buses = _enrich_vehicles(vehicle_list)  # takes _lock internally — must be outside our lock
     combined = buses + trains
     _push_sse("vehicles", {"vehicles": combined, "timestamp": ts, "count": len(combined)})
 
