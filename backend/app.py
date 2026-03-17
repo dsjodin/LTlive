@@ -64,6 +64,7 @@ _data = {
     "last_rt_error": None,
     "gtfs_loaded": False,
     "gtfs_error": None,
+    "static_stop_departures": {},
 }
 _lock = threading.Lock()
 _gtfs_retry_count = 0
@@ -218,9 +219,11 @@ def init_gtfs_static():
             trips = gtfs_loader.load_trips()
             shapes = gtfs_loader.load_shapes()
 
-        # Build headsigns and stop->route map in a single pass over stop_times.txt
-        print("Building trip headsigns and stop->route map from stop_times...")
-        trip_headsigns, stop_route_map = gtfs_loader.load_trip_headsigns_and_stop_route_map(stops, trips)
+        # Build headsigns, stop->route map and today's static departures in one pass
+        print("Building trip headsigns, stop->route map and static departures from stop_times...")
+        trip_headsigns, stop_route_map, static_stop_departures = (
+            gtfs_loader.load_trip_headsigns_and_stop_route_map(stops, trips)
+        )
 
         with _lock:
             _data["routes"] = routes
@@ -229,12 +232,14 @@ def init_gtfs_static():
             _data["shapes"] = shapes
             _data["trip_headsigns"] = trip_headsigns
             _data["stop_route_map"] = stop_route_map
+            _data["static_stop_departures"] = static_stop_departures
             _data["gtfs_loaded"] = True
             _data["gtfs_error"] = None
 
         print(f"GTFS loaded: {len(routes)} routes, {len(stops)} stops, "
               f"{len(trips)} trips, {len(shapes)} shapes, "
-              f"{len(trip_headsigns)} trip headsigns")
+              f"{len(trip_headsigns)} trip headsigns, "
+              f"{len(static_stop_departures)} stops with static departures today")
     except Exception as e:
         error_msg = f"{type(e).__name__}: {e}"
         print(f"Error loading GTFS static data: {error_msg}")
@@ -243,8 +248,29 @@ def init_gtfs_static():
             _data["gtfs_error"] = error_msg
 
 
+def _refresh_static_departures():
+    """Reload today's static departures without re-downloading the GTFS zip.
+
+    Called daily at midnight so badges reflect the new timetable day.
+    """
+    try:
+        with _lock:
+            trips = _data.get("trips", {})
+            stops = _data.get("stops", {})
+        if not trips:
+            return
+        _, _, static_stop_departures = (
+            gtfs_loader.load_trip_headsigns_and_stop_route_map(stops, trips)
+        )
+        with _lock:
+            _data["static_stop_departures"] = static_stop_departures
+        print(f"Static departures refreshed: {len(static_stop_departures)} stops with service today")
+    except Exception as e:
+        print(f"Error refreshing static departures: {e}")
+
+
 def refresh_gtfs_static():
-    """Re-download GTFS static data (scheduled daily)."""
+    """Re-download GTFS static data (scheduled every GTFS_REFRESH_HOURS)."""
     try:
         _clean_gtfs_dir()
         gtfs_loader.download_gtfs_static()
@@ -252,12 +278,16 @@ def refresh_gtfs_static():
         stops = gtfs_loader.load_stops()
         trips = gtfs_loader.load_trips()
         shapes = gtfs_loader.load_shapes()
+        _, _, static_stop_departures = (
+            gtfs_loader.load_trip_headsigns_and_stop_route_map(stops, trips)
+        )
 
         with _lock:
             _data["routes"] = routes
             _data["stops"] = stops
             _data["trips"] = trips
             _data["shapes"] = shapes
+            _data["static_stop_departures"] = static_stop_departures
             _data["gtfs_error"] = None
         # Invalidate stop-sequence cache so it is rebuilt with fresh trip data
         with _stop_seq_lock:
@@ -1137,21 +1167,30 @@ def line_departures(route_id):
 
 @app.route("/api/stops/next-departure")
 def stops_next_departure():
-    """Return the soonest upcoming departure per stop (used for map badges)."""
+    """Return the soonest upcoming departure per stop (used for map badges).
+
+    Uses GTFS static timetable as base so all stops with scheduled service
+    get a badge, then overrides with real-time data where available.
+    """
     cached = _cache_get("next_dep")
     if cached:
         return jsonify(cached)
 
     with _lock:
-        stop_departures = dict(_data.get("stop_departures", {}))
+        rt_departures = dict(_data.get("stop_departures", {}))
+        static_departures = dict(_data.get("static_stop_departures", {}))
         routes = _data["routes"]
         trips = _data["trips"]
         trip_headsigns = _data.get("trip_headsigns", {})
         now = int(time.time())
     horizon = now + 3 * 3600
 
-    result = {}
-    for stop_id, deps in stop_departures.items():
+    # Merge: static as base, RT entries replace static entries for same stop
+    merged = {**static_departures}
+    for stop_id, deps in rt_departures.items():
+        merged[stop_id] = deps
+
+    def _best_dep(deps):
         best = None
         for dep in deps:
             t = dep.get("time", 0)
@@ -1173,6 +1212,11 @@ def stops_next_departure():
                     "route_text_color": ri.get("route_text_color", "FFFFFF"),
                     "headsign": headsign,
                 }
+        return best
+
+    result = {}
+    for stop_id, deps in merged.items():
+        best = _best_dep(deps)
         if best:
             result[stop_id] = best
 
@@ -1191,6 +1235,8 @@ def start_background_tasks():
                       max_instances=1)
     scheduler.add_job(refresh_gtfs_static, "interval",
                       hours=config.GTFS_REFRESH_HOURS, max_instances=1)
+    # Refresh static departures daily at midnight (new timetable day)
+    scheduler.add_job(_refresh_static_departures, "cron", hour=0, minute=1, max_instances=1)
     # Retry GTFS static loading every 60s if it failed
     scheduler.add_job(_retry_gtfs_if_needed, "interval", seconds=60, max_instances=1)
     scheduler.start()

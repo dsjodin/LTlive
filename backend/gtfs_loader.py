@@ -1,6 +1,7 @@
 """Load and parse GTFS static data (stops, routes, trips, shapes)."""
 
 import csv
+import datetime
 import io
 import os
 import zipfile
@@ -158,16 +159,57 @@ def load_stop_times_for_trips(trip_ids):
     return dict(trip_stops)
 
 
+def _active_service_ids_today():
+    """Return the set of service_ids active for today from calendar + calendar_dates."""
+    today = datetime.date.today()
+    today_str = today.strftime("%Y%m%d")
+    weekday = today.strftime("%A").lower()  # monday … sunday
+
+    active = set()
+    for row in _read_csv("calendar.txt"):
+        if row.get("start_date", "") <= today_str <= row.get("end_date", ""):
+            if row.get(weekday, "0") == "1":
+                active.add(row["service_id"])
+
+    for row in _read_csv("calendar_dates.txt"):
+        if row.get("date") == today_str:
+            sid = row["service_id"]
+            if row.get("exception_type") == "1":
+                active.add(sid)
+            elif row.get("exception_type") == "2":
+                active.discard(sid)
+
+    return active
+
+
 def load_trip_headsigns_and_stop_route_map(stops, trips):
-    """Build trip headsigns and a stop->route mapping in a single pass over stop_times.txt.
+    """Build trip headsigns, stop->route mapping and today's static departures.
+
+    Does a single pass over stop_times.txt.
 
     Returns:
         headsigns: dict trip_id -> headsign (last stop name)
         stop_route_map: dict stop_id -> list of route_ids that serve the stop
+        static_stop_departures: dict stop_id -> list of departure dicts for today
     """
-    trip_to_route = {tid: t["route_id"] for tid, t in trips.items() if t.get("route_id")}
+    active_services = _active_service_ids_today()
+
+    # Map trip_id -> route_id, and which trips are active today
+    trip_to_route = {}
+    active_trip_ids = set()
+    for tid, t in trips.items():
+        rid = t.get("route_id", "")
+        if rid:
+            trip_to_route[tid] = rid
+        if t.get("service_id", "") in active_services:
+            active_trip_ids.add(tid)
+
+    today = datetime.date.today()
+    today_midnight = int(datetime.datetime.combine(today, datetime.time.min).timestamp())
+
     trip_last_stop = {}  # trip_id -> (max_sequence, stop_id)
     stop_routes = defaultdict(set)
+    static_departures = defaultdict(list)  # stop_id -> [dep, ...]
 
     for row in _read_csv("stop_times.txt"):
         tid = row["trip_id"]
@@ -180,6 +222,23 @@ def load_trip_headsigns_and_stop_route_map(stops, trips):
         if tid in trip_to_route:
             stop_routes[stop_id].add(trip_to_route[tid])
 
+        if tid in active_trip_ids:
+            dep_str = row.get("departure_time", "") or row.get("arrival_time", "")
+            if dep_str:
+                parts = dep_str.split(":")
+                if len(parts) == 3:
+                    try:
+                        h, m, s = int(parts[0]), int(parts[1]), int(parts[2])
+                        t = today_midnight + h * 3600 + m * 60 + s
+                        static_departures[stop_id].append({
+                            "trip_id": tid,
+                            "route_id": trip_to_route.get(tid, ""),
+                            "time": t,
+                            "is_realtime": False,
+                        })
+                    except ValueError:
+                        pass
+
     headsigns = {}
     for tid, (_, stop_id) in trip_last_stop.items():
         stop = stops.get(stop_id, {})
@@ -188,4 +247,4 @@ def load_trip_headsigns_and_stop_route_map(stops, trips):
             headsigns[tid] = name
 
     stop_route_map = {sid: list(rids) for sid, rids in stop_routes.items()}
-    return headsigns, stop_route_map
+    return headsigns, stop_route_map, dict(static_departures)
