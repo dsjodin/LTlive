@@ -807,6 +807,7 @@ def departures_for_stop(stop_id):
                     loc_sig = ls
                     break
         tv_rt_time = None
+        tv_sched_override = None
         tv_track_changed = False
         if loc_sig and tv_ann.get(loc_sig):
             dep_time = d["time"]
@@ -838,15 +839,19 @@ def departures_for_stop(stop_id):
                 tv_canceled = best_tv["canceled"]
                 tv_deviation = best_tv["deviation"]
                 tv_rt_time = best_tv.get("realtime_time")
+                tv_sched_override = best_tv["scheduled_time"]
                 tv_track_changed = any("spår" in t.lower() for t in tv_deviation)
-                if not headsign and best_tv["dest_sig"]:
+                # Always use TV destination and via — TV is authoritative, GTFS may be stale
+                if best_tv["dest_sig"]:
                     headsign = tv_stations.get(best_tv["dest_sig"], {}).get("name", best_tv["dest_sig"])
+                tv_via = []
                 for vsig in best_tv.get("via_sigs", [])[:3]:
                     vname = tv_stations.get(vsig, {}).get("name", vsig)
                     tv_via.append(vname)
 
         platform = tv_track or d.get("_platform", "")
-        sched_time = d["time"]
+        # Use TV scheduled time as base when matched (more accurate than GTFS)
+        sched_time = tv_sched_override if tv_sched_override else d["time"]
         rt_time = tv_rt_time or (d["time"] if d["is_realtime"] else None)
         deps.append({
             "route_short_name": rsn,
@@ -955,6 +960,7 @@ def arrivals_for_stop(stop_id):
                     loc_sig = ls
                     break
         tv_rt_arr_time = None
+        tv_arr_sched_override = None
         tv_arr_track_changed = False
         if loc_sig and tv_ann.get(loc_sig):
             arr_time = a["time"]
@@ -985,11 +991,12 @@ def arrivals_for_stop(stop_id):
                 tv_canceled = best_tv["canceled"]
                 tv_deviation = best_tv["deviation"]
                 tv_rt_arr_time = best_tv.get("realtime_time")
+                tv_arr_sched_override = best_tv["scheduled_time"]
                 tv_arr_track_changed = any("spår" in t.lower() for t in tv_deviation)
-                if not origin and best_tv["origin_sig"]:
+                if best_tv["origin_sig"]:
                     origin = tv_stations.get(best_tv["origin_sig"], {}).get("name", best_tv["origin_sig"])
 
-        arr_sched_time = a["time"]
+        arr_sched_time = tv_arr_sched_override if tv_arr_sched_override else a["time"]
         arrs.append({
             "route_short_name": rsn,
             "trip_short_name": trip_short_name,
