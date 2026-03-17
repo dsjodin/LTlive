@@ -224,8 +224,13 @@ def _connect() -> None:
 
     _msg_count = [0]
 
+    _raw_count = [0]
+
     def on_message(ws, message):
         global _last_update
+        _raw_count[0] += 1
+        if _raw_count[0] <= 5:
+            print(f"oxyfi: raw msg #{_raw_count[0]}: {message[:120]!r}")
         vehicle = parse_oxyfi_message(message)
         if vehicle:
             with _trains_lock:
