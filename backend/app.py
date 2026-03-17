@@ -934,10 +934,18 @@ def arrivals_for_stop(stop_id):
         tv_ann = _data.get("tv_announcements", {})
         tv_stations = _data.get("tv_stations", {})
 
-    upcoming = sorted(
+    upcoming_raw = sorted(
         [a for a in static_arrs if a["time"] >= now - 60],
         key=lambda a: a["time"],
     )
+    # Deduplicate GTFS trips by arrival time: two trips at the exact same time
+    # represent the same physical train (split/join service) — keep only the first.
+    seen_gtfs_times = set()
+    upcoming = []
+    for a in upcoming_raw:
+        if a["time"] not in seen_gtfs_times:
+            seen_gtfs_times.add(a["time"])
+            upcoming.append(a)
 
     tib_agency = config.TIB_AGENCY_ID
     tib_routes = config.TIB_ROUTE_SHORT_NAMES
@@ -1029,7 +1037,6 @@ def arrivals_for_stop(stop_id):
             "trip_short_name": trip_short_name,
             "route_color": color,
             "route_text_color": route.get("route_text_color", "FFFFFF"),
-            "headsign": headsign,
             "origin": origin,
             "arrival_time": tv_rt_arr_time if tv_rt_arr_time else arr_sched_time,
             "scheduled_time": arr_sched_time,
