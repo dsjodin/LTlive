@@ -317,8 +317,8 @@ function updateVehicles(vehicles) {
         const id = v.vehicle_id || v.id;
         currentIds.add(id);
 
-        // Skip vehicles not in our configured lines
-        if (ALLOWED_LINE_NUMBERS.size > 0 && !ALLOWED_LINE_NUMBERS.has(v.route_short_name)) {
+        // Skip vehicles not in our configured lines (trains always shown)
+        if (ALLOWED_LINE_NUMBERS.size > 0 && v.vehicle_type !== "train" && !ALLOWED_LINE_NUMBERS.has(v.route_short_name)) {
             if (vehicleMarkers[id]) {
                 map.removeLayer(vehicleMarkers[id]);
                 delete vehicleMarkers[id];
