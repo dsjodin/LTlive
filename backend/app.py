@@ -808,10 +808,13 @@ def departures_for_stop(stop_id):
                     break
         if loc_sig and tv_ann.get(loc_sig):
             dep_time = d["time"]
-            # Find closest TV departure within 10 minutes
+            tv_ops = config.TRAFIKVERKET_OPERATORS
+            # Find closest TV departure within 10 minutes, filtered by operator if configured
             best_tv = None
             best_diff = float("inf")
             for tv_dep in tv_ann[loc_sig].get("departures", []):
+                if tv_ops and tv_dep.get("operator", "") not in tv_ops:
+                    continue
                 diff = abs(tv_dep["scheduled_time"] - dep_time)
                 if diff < best_diff and diff <= 600:
                     best_diff = diff
@@ -935,9 +938,12 @@ def arrivals_for_stop(stop_id):
                     break
         if loc_sig and tv_ann.get(loc_sig):
             arr_time = a["time"]
+            tv_ops = config.TRAFIKVERKET_OPERATORS
             best_tv = None
             best_diff = float("inf")
             for tv_arr in tv_ann[loc_sig].get("arrivals", []):
+                if tv_ops and tv_arr.get("operator", "") not in tv_ops:
+                    continue
                 diff = abs(tv_arr["scheduled_time"] - arr_time)
                 if diff < best_diff and diff <= 600:
                     best_diff = diff

@@ -69,6 +69,16 @@ for _entry in _tv_stations_env.split(","):
         _stop_id, _loc_sig = _entry.split(":", 1)
         TRAFIKVERKET_STATIONS[_stop_id.strip()] = _loc_sig.strip()
 
+# Filter TV announcements by operator name (comma-separated, case-sensitive).
+# Prevents cross-operator time-based mismatches when a station serves multiple operators.
+# Example: "ARRIVA" matches only TiB trains (operated by Arriva).
+# Leave empty to match all operators (useful when showing SJ + TiB + Mälartåg together).
+_tv_operators_env = os.environ.get("TRAFIKVERKET_OPERATORS", "")
+TRAFIKVERKET_OPERATORS: set = (
+    {o.strip() for o in _tv_operators_env.split(",") if o.strip()}
+    if _tv_operators_env else set()
+)
+
 # How many minutes ahead to fetch TrainAnnouncement data.
 TRAFIKVERKET_LOOKAHEAD_MINUTES = int(os.environ.get("TRAFIKVERKET_LOOKAHEAD_MINUTES", "120"))
 
