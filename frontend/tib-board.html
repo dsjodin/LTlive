@@ -775,11 +775,13 @@ async function loadDepartures(board) {
             : (d.headsign || "");
         const deviationText = (d.deviation && d.deviation.length)
             ? `<span class="deviation">${d.deviation.join(", ")}</span>` : "";
+        const viaText = (d.via && d.via.length) ? `via ${d.via.join(" · ")}` : "";
+        const depSubText = d.is_realtime ? `${rtDot}Realtid` : viaText;
         return `<div class="row dep-grid ${nowClass}${canceledClass}">
             <span class="badge" style="background:${bg};color:${fg}">${trainLabel}</span>
             <div class="destination">
                 <div class="destination-main">${headsignText}${liveTag}</div>
-                <div class="destination-sub">${rtDot}${d.is_realtime ? "Realtid" : "Tidtabell"}${deviationText}</div>
+                <div class="destination-sub">${depSubText}${deviationText}</div>
             </div>
             <span class="track"><span class="track-num">${d.platform || "–"}</span></span>
             <span class="sched-time">${clock}</span>

@@ -798,9 +798,9 @@ def departures_for_stop(stop_id):
         tv_track = ""
         tv_canceled = False
         tv_deviation = []
+        tv_via = []
         loc_sig = config.TRAFIKVERKET_STATIONS.get(stop_id, "")
         if not loc_sig:
-            # Try child stop_ids
             for qid in query_ids:
                 ls = config.TRAFIKVERKET_STATIONS.get(qid, "")
                 if ls:
@@ -808,17 +808,25 @@ def departures_for_stop(stop_id):
                     break
         if loc_sig and tv_ann.get(loc_sig):
             dep_time = d["time"]
+            # Find closest TV departure within 10 minutes
+            best_tv = None
+            best_diff = float("inf")
             for tv_dep in tv_ann[loc_sig].get("departures", []):
-                sched = tv_dep["scheduled_time"]
-                if abs(sched - dep_time) <= 120:  # within 2 min
-                    if not trip_short_name:
-                        trip_short_name = tv_dep["train_number"]
-                    tv_track = tv_dep["track"]
-                    tv_canceled = tv_dep["canceled"]
-                    tv_deviation = tv_dep["deviation"]
-                    if not headsign and tv_dep["dest_sig"]:
-                        headsign = tv_stations.get(tv_dep["dest_sig"], {}).get("name", tv_dep["dest_sig"])
-                    break
+                diff = abs(tv_dep["scheduled_time"] - dep_time)
+                if diff < best_diff and diff <= 600:
+                    best_diff = diff
+                    best_tv = tv_dep
+            if best_tv:
+                if not trip_short_name:
+                    trip_short_name = best_tv["train_number"]
+                tv_track = best_tv["track"]
+                tv_canceled = best_tv["canceled"]
+                tv_deviation = best_tv["deviation"]
+                if not headsign and best_tv["dest_sig"]:
+                    headsign = tv_stations.get(best_tv["dest_sig"], {}).get("name", best_tv["dest_sig"])
+                for vsig in best_tv.get("via_sigs", [])[:3]:
+                    vname = tv_stations.get(vsig, {}).get("name", vsig)
+                    tv_via.append(vname)
 
         platform = tv_track or d.get("_platform", "")
         deps.append({
@@ -833,6 +841,7 @@ def departures_for_stop(stop_id):
             "platform": platform,
             "canceled": tv_canceled,
             "deviation": tv_deviation,
+            "via": tv_via,
         })
         if len(deps) >= limit:
             break
@@ -926,17 +935,21 @@ def arrivals_for_stop(stop_id):
                     break
         if loc_sig and tv_ann.get(loc_sig):
             arr_time = a["time"]
+            best_tv = None
+            best_diff = float("inf")
             for tv_arr in tv_ann[loc_sig].get("arrivals", []):
-                sched = tv_arr["scheduled_time"]
-                if abs(sched - arr_time) <= 120:
-                    if not trip_short_name:
-                        trip_short_name = tv_arr["train_number"]
-                    tv_track = tv_arr["track"]
-                    tv_canceled = tv_arr["canceled"]
-                    tv_deviation = tv_arr["deviation"]
-                    if not origin and tv_arr["origin_sig"]:
-                        origin = tv_stations.get(tv_arr["origin_sig"], {}).get("name", tv_arr["origin_sig"])
-                    break
+                diff = abs(tv_arr["scheduled_time"] - arr_time)
+                if diff < best_diff and diff <= 600:
+                    best_diff = diff
+                    best_tv = tv_arr
+            if best_tv:
+                if not trip_short_name:
+                    trip_short_name = best_tv["train_number"]
+                tv_track = best_tv["track"]
+                tv_canceled = best_tv["canceled"]
+                tv_deviation = best_tv["deviation"]
+                if not origin and best_tv["origin_sig"]:
+                    origin = tv_stations.get(best_tv["origin_sig"], {}).get("name", best_tv["origin_sig"])
 
         arrs.append({
             "route_short_name": rsn,
