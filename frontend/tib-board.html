@@ -267,6 +267,9 @@
         .row.dep-grid { grid-template-columns: 60px 1fr 64px 90px 90px; }
         .row.arr-grid { grid-template-columns: 60px 1fr 64px 90px 90px; }
         .row.row-now { background: #1a2a1a; border-left: 3px solid var(--green); }
+        .row.row-canceled { opacity: 0.6; }
+        .canceled-badge { background: #c0392b; color: #fff; font-size: 0.65em; padding: 1px 5px; border-radius: 3px; margin-left: 5px; vertical-align: middle; }
+        .deviation { color: #e67e22; font-size: 0.75em; margin-left: 6px; }
 
         .badge {
             display: inline-flex;
@@ -766,11 +769,17 @@ async function loadDepartures(board) {
             : "";
 
         const trainLabel = d.trip_short_name || d.route_short_name || "?";
-        return `<div class="row dep-grid ${nowClass}">
+        const canceledClass = d.canceled ? " row-canceled" : "";
+        const headsignText = d.canceled
+            ? `<s>${d.headsign || ""}</s> <span class="canceled-badge">Inställt</span>`
+            : (d.headsign || "");
+        const deviationText = (d.deviation && d.deviation.length)
+            ? `<span class="deviation">${d.deviation.join(", ")}</span>` : "";
+        return `<div class="row dep-grid ${nowClass}${canceledClass}">
             <span class="badge" style="background:${bg};color:${fg}">${trainLabel}</span>
             <div class="destination">
-                <div class="destination-main">${d.headsign || ""}${liveTag}</div>
-                <div class="destination-sub">${rtDot}${d.is_realtime ? "Realtid" : "Tidtabell"}</div>
+                <div class="destination-main">${headsignText}${liveTag}</div>
+                <div class="destination-sub">${rtDot}${d.is_realtime ? "Realtid" : "Tidtabell"}${deviationText}</div>
             </div>
             <span class="track"><span class="track-num">${d.platform || "–"}</span></span>
             <span class="sched-time">${clock}</span>
@@ -814,13 +823,15 @@ async function loadArrivals(board) {
             : "";
 
         const trainLabel = a.trip_short_name || a.route_short_name || "?";
-        return `<div class="row arr-grid ${nowClass}">
+        const canceledClass = a.canceled ? " row-canceled" : "";
+        const fromDisplay = a.canceled ? `<s>${fromLabel}</s> <span class="canceled-badge">Inställt</span>` : fromLabel;
+        return `<div class="row arr-grid ${nowClass}${canceledClass}">
             <span class="badge" style="background:${bg};color:${fg}">${trainLabel}</span>
             <div class="destination">
-                <div class="destination-main">${fromLabel}${liveTag}</div>
+                <div class="destination-main">${fromDisplay}${liveTag}</div>
                 <div class="destination-sub">${sub}</div>
             </div>
-            <span class="track"><span class="track-num">–</span></span>
+            <span class="track"><span class="track-num">${a.platform || "–"}</span></span>
             <span class="sched-time">${clock}</span>
             <span class="eta-col ${etaCls}" data-ts="${a.arrival_time}">${etaText}</span>
         </div>`;

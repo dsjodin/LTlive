@@ -21,6 +21,7 @@ import gtfs_loader
 import gtfs_rt
 import oxyfi
 import stats as _stats
+import trafikverket as tv_api
 
 app = Flask(__name__)
 
@@ -69,6 +70,12 @@ _data = {
     "static_stop_arrivals": {},
     "trip_origin_map": {},
     "rt_trip_short_names": {},
+    # Trafikverket data
+    "tv_announcements": {},   # {location_sig: {departures: [...], arrivals: [...]}}
+    "tv_stations": {},        # {location_sig: {name, lat, lon}}
+    "tv_positions": [],       # list of {train_number, lat, lon, bearing, ...}
+    "tv_last_poll": 0,
+    "tv_last_error": None,
 }
 _lock = threading.Lock()
 _gtfs_retry_count = 0
@@ -750,6 +757,8 @@ def departures_for_stop(stop_id):
         trips = _data["trips"]
         trip_headsigns = _data.get("trip_headsigns", {})
         rt_trip_short_names = _data.get("rt_trip_short_names", {})
+        tv_ann = _data.get("tv_announcements", {})
+        tv_stations = _data.get("tv_stations", {})
 
     raw = _merge_rt_static(rt_deps, static_deps)
 
@@ -784,6 +793,34 @@ def departures_for_stop(stop_id):
         )
         rsn = route.get("route_short_name", "?")
         color = config.ROUTE_COLOR_OVERRIDES.get(rsn) or route.get("route_color", "0074D9")
+
+        # Enrich from Trafikverket TrainAnnouncement if stop is mapped
+        tv_track = ""
+        tv_canceled = False
+        tv_deviation = []
+        loc_sig = config.TRAFIKVERKET_STATIONS.get(stop_id, "")
+        if not loc_sig:
+            # Try child stop_ids
+            for qid in query_ids:
+                ls = config.TRAFIKVERKET_STATIONS.get(qid, "")
+                if ls:
+                    loc_sig = ls
+                    break
+        if loc_sig and tv_ann.get(loc_sig):
+            dep_time = d["time"]
+            for tv_dep in tv_ann[loc_sig].get("departures", []):
+                sched = tv_dep["scheduled_time"]
+                if abs(sched - dep_time) <= 120:  # within 2 min
+                    if not trip_short_name:
+                        trip_short_name = tv_dep["train_number"]
+                    tv_track = tv_dep["track"]
+                    tv_canceled = tv_dep["canceled"]
+                    tv_deviation = tv_dep["deviation"]
+                    if not headsign and tv_dep["dest_sig"]:
+                        headsign = tv_stations.get(tv_dep["dest_sig"], {}).get("name", tv_dep["dest_sig"])
+                    break
+
+        platform = tv_track or d.get("_platform", "")
         deps.append({
             "route_short_name": rsn,
             "trip_short_name": trip_short_name,
@@ -793,7 +830,9 @@ def departures_for_stop(stop_id):
             "departure_time": d["time"],
             "is_realtime": d["is_realtime"],
             "trip_id": trip_id,
-            "platform": d.get("_platform", ""),
+            "platform": platform,
+            "canceled": tv_canceled,
+            "deviation": tv_deviation,
         })
         if len(deps) >= limit:
             break
@@ -838,6 +877,8 @@ def arrivals_for_stop(stop_id):
         trip_headsigns = _data.get("trip_headsigns", {})
         trip_origin_map = _data.get("trip_origin_map", {})
         rt_trip_short_names = _data.get("rt_trip_short_names", {})
+        tv_ann = _data.get("tv_announcements", {})
+        tv_stations = _data.get("tv_stations", {})
 
     upcoming = sorted(
         [a for a in static_arrs if a["time"] >= now - 60],
@@ -871,6 +912,32 @@ def arrivals_for_stop(stop_id):
         )
         rsn = route.get("route_short_name", "?")
         color = config.ROUTE_COLOR_OVERRIDES.get(rsn) or route.get("route_color", "0074D9")
+
+        # Enrich from Trafikverket TrainAnnouncement if stop is mapped
+        tv_track = ""
+        tv_canceled = False
+        tv_deviation = []
+        loc_sig = config.TRAFIKVERKET_STATIONS.get(stop_id, "")
+        if not loc_sig:
+            for qid in query_ids:
+                ls = config.TRAFIKVERKET_STATIONS.get(qid, "")
+                if ls:
+                    loc_sig = ls
+                    break
+        if loc_sig and tv_ann.get(loc_sig):
+            arr_time = a["time"]
+            for tv_arr in tv_ann[loc_sig].get("arrivals", []):
+                sched = tv_arr["scheduled_time"]
+                if abs(sched - arr_time) <= 120:
+                    if not trip_short_name:
+                        trip_short_name = tv_arr["train_number"]
+                    tv_track = tv_arr["track"]
+                    tv_canceled = tv_arr["canceled"]
+                    tv_deviation = tv_arr["deviation"]
+                    if not origin and tv_arr["origin_sig"]:
+                        origin = tv_stations.get(tv_arr["origin_sig"], {}).get("name", tv_arr["origin_sig"])
+                    break
+
         arrs.append({
             "route_short_name": rsn,
             "trip_short_name": trip_short_name,
@@ -881,6 +948,9 @@ def arrivals_for_stop(stop_id):
             "arrival_time": a["time"],
             "is_realtime": False,
             "trip_id": trip_id,
+            "platform": tv_track,
+            "canceled": tv_canceled,
+            "deviation": tv_deviation,
         })
         if len(arrs) >= limit:
             break
@@ -1169,6 +1239,47 @@ def debug_rt_feed():
         "cached_vehicles": len(vehicles),
         "sample_vehicles": sample,
         "trip_update_mappings": len(vehicle_trips),
+    })
+
+
+@app.route("/api/debug/tv-stations")
+@_debug_only
+def debug_tv_stations():
+    """Show cached Trafikverket station lookup table."""
+    with _lock:
+        stations = dict(_data["tv_stations"])
+        config_mapping = config.TRAFIKVERKET_STATIONS
+    sample = dict(list(stations.items())[:20])
+    return jsonify({
+        "total_stations": len(stations),
+        "sample": sample,
+        "configured_mapping": config_mapping,
+        "api_key_set": bool(config.TRAFIKVERKET_API_KEY),
+    })
+
+
+@app.route("/api/debug/tv-announcements")
+@_debug_only
+def debug_tv_announcements():
+    """Show cached Trafikverket TrainAnnouncement data."""
+    with _lock:
+        ann = dict(_data["tv_announcements"])
+        last_poll = _data["tv_last_poll"]
+        last_error = _data["tv_last_error"]
+        positions_count = len(_data["tv_positions"])
+    summary = {}
+    for loc_sig, bucket in ann.items():
+        summary[loc_sig] = {
+            "departures": len(bucket.get("departures", [])),
+            "arrivals": len(bucket.get("arrivals", [])),
+            "sample_departures": bucket.get("departures", [])[:3],
+        }
+    return jsonify({
+        "last_poll": last_poll,
+        "last_error": last_error,
+        "tv_positions_count": positions_count,
+        "configured_stations": config.TRAFIKVERKET_STATIONS,
+        "announcements": summary,
     })
 
 
@@ -1560,6 +1671,34 @@ def _push_train_positions():
     _push_sse("vehicles", {"vehicles": combined, "timestamp": ts, "count": len(combined)})
 
 
+def _init_trafikverket():
+    """Load TrainStation lookup table once at startup."""
+    stations = tv_api.fetch_train_stations()
+    with _lock:
+        _data["tv_stations"] = stations
+    if stations:
+        _poll_trafikverket()
+
+
+def _poll_trafikverket():
+    """Fetch TrainAnnouncement + TrainPosition data and cache."""
+    loc_sigs = list(config.TRAFIKVERKET_STATIONS.values())
+    if not loc_sigs:
+        return
+    announcements = tv_api.fetch_announcements(
+        loc_sigs, minutes_ahead=config.TRAFIKVERKET_LOOKAHEAD_MINUTES
+    )
+    positions = tv_api.fetch_train_positions()
+    with _lock:
+        if announcements:
+            _data["tv_announcements"] = announcements
+        if positions:
+            _data["tv_positions"] = positions
+        _data["tv_last_poll"] = int(time.time())
+        _data["tv_last_error"] = None
+    _invalidate_cache()
+
+
 def start_background_tasks():
     """Initialize GTFS data and start polling."""
     threading.Thread(target=init_gtfs_static, daemon=True).start()
@@ -1575,10 +1714,16 @@ def start_background_tasks():
     scheduler.add_job(_retry_gtfs_if_needed, "interval", seconds=60, max_instances=1)
     # Push live train positions via SSE every 5 seconds (Oxyfi updates ~1/s per train)
     scheduler.add_job(_push_train_positions, "interval", seconds=5, max_instances=1)
+    # Poll Trafikverket TrainAnnouncement for departure board data with train numbers
+    if config.TRAFIKVERKET_API_KEY and config.TRAFIKVERKET_STATIONS:
+        scheduler.add_job(_poll_trafikverket, "interval",
+                          seconds=config.TRAFIKVERKET_POLL_SECONDS, max_instances=1)
     scheduler.start()
 
     threading.Thread(target=poll_realtime, daemon=True).start()
     oxyfi.start()
+    if config.TRAFIKVERKET_API_KEY:
+        threading.Thread(target=_init_trafikverket, daemon=True).start()
 
 
 def _retry_gtfs_if_needed():

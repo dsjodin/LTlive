@@ -52,6 +52,29 @@ for _entry in _color_overrides_env.split(","):
         ROUTE_COLOR_OVERRIDES[_k.strip()] = _v.strip().lstrip("#")
 FRONTEND_POLL_INTERVAL_MS = int(os.environ.get("FRONTEND_POLL_INTERVAL_MS", "5000"))
 
+# Trafikverket Open Data API
+# Register at api.trafikinfo.trafikverket.se — free, separate from Trafiklab.
+TRAFIKVERKET_API_KEY = os.environ.get("TRAFIKVERKET_API_KEY", "")
+
+# Map GTFS stop_id → Trafikverket LocationSignature for train stations.
+# Format: comma-separated "STOP_ID:LOCATION_SIG" pairs.
+# Example: "740000400:Ör,740000015:Hpbg,740000001:Cst"
+# Run /api/debug/stops to find GTFS stop_ids and /api/debug/tv-stations
+# to browse Trafikverket station codes after providing TRAFIKVERKET_API_KEY.
+_tv_stations_env = os.environ.get("TRAFIKVERKET_STATIONS", "")
+TRAFIKVERKET_STATIONS: dict = {}
+for _entry in _tv_stations_env.split(","):
+    _entry = _entry.strip()
+    if ":" in _entry:
+        _stop_id, _loc_sig = _entry.split(":", 1)
+        TRAFIKVERKET_STATIONS[_stop_id.strip()] = _loc_sig.strip()
+
+# How many minutes ahead to fetch TrainAnnouncement data.
+TRAFIKVERKET_LOOKAHEAD_MINUTES = int(os.environ.get("TRAFIKVERKET_LOOKAHEAD_MINUTES", "120"))
+
+# How often to refresh TV announcement data (seconds).
+TRAFIKVERKET_POLL_SECONDS = int(os.environ.get("TRAFIKVERKET_POLL_SECONDS", "60"))
+
 # Oxyfi Realtidspositionering — train positions via WebSocket
 # Register at trafiklab.se and add the "Oxyfi-Realtidspositionering" API to your project.
 OXYFI_API_KEY = os.environ.get("OXYFI_API_KEY", "")
