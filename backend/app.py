@@ -718,7 +718,6 @@ def shapes_for_route(route_id):
 
 
 @app.route("/api/debug/stops-fields")
-@_debug_only
 def debug_stops_fields():
     """Debug: show coverage of platform_code / stop_desc / parent_station in GTFS stops."""
     with _lock:
