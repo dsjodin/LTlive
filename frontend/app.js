@@ -221,24 +221,24 @@ function createTrainIcon(vehicle) {
         });
     }
 
-    // Canvas: 140×140, locomotive centered at (cx,cy)=(70,70)
-    const W = 140, cx = 70, cy = 70;
+    // Canvas: 100×100, locomotive centered at (cx,cy)=(50,50)
+    const W = 100, cx = 50, cy = 50;
 
-    const lW = 52, lH = 22;   // locomotive
-    const cW = 36, cH = 16;   // carriage
-    const gap = 5;             // gap between cars
-    const noseLen = 12;        // nose length
-    const noseHH  = 9;         // nose half-height
-    const rx = 5;              // corner radius
+    const lW = 36, lH = 16;   // locomotive
+    const cW = 24, cH = 12;   // carriage
+    const gap = 4;             // gap between cars
+    const noseLen = 8;         // nose length
+    const noseHH  = 7;         // nose half-height
+    const rx = 4;              // corner radius
     const outlineColor = "#2A1010";
 
-    const lx   = cx - lW / 2;           // loco left edge  = 44
-    const ly   = cy - lH / 2;           // loco top  edge  = 59
-    const c1x  = lx - gap - cW;         // carriage-1 left = 3
-    const c2x  = c1x - gap - cW;        // carriage-2 left = −38 (overflow:visible)
-    const cy_c = cy - cH / 2;           // carriage top    = 62
-    const noseBaseX = lx + lW;          // nose base x     = 96
-    const noseTipX  = noseBaseX + noseLen; // nose tip x   = 108
+    const lx   = cx - lW / 2;           // loco left edge  = 32
+    const ly   = cy - lH / 2;           // loco top  edge  = 42
+    const c1x  = lx - gap - cW;         // carriage-1 left = 4
+    const c2x  = c1x - gap - cW;        // carriage-2 left = −24 (overflow:visible)
+    const cy_c = cy - cH / 2;           // carriage top    = 44
+    const noseBaseX = lx + lW;          // nose base x     = 68
+    const noseTipX  = noseBaseX + noseLen; // nose tip x   = 76
 
     const rotation = hasBearing ? bearing - 90 : 0;
     const fs = label.length >= 4 ? 11 : label.length >= 3 ? 13 : 15;
@@ -278,12 +278,14 @@ function updateBusIconBearing(marker, bearing) {
     const el = marker.getElement();
     const g = el && el.querySelector("svg > g");
     if (!g) return;
-    // Read actual SVG size from DOM so CX is always correct regardless of label length
     const svg = el.querySelector("svg");
     const W = svg ? parseFloat(svg.getAttribute("width")) : 0;
     if (!W) return;
     const CX = W / 2;
-    g.setAttribute("transform", `rotate(${bearing},${CX},${CX})`);
+    // Trains: nose points RIGHT by default → subtract 90° to align with north-up bearing
+    const isTrain = marker._vehicleData && marker._vehicleData.vehicle_type === "train";
+    const rotation = isTrain ? bearing - 90 : bearing;
+    g.setAttribute("transform", `rotate(${rotation},${CX},${CX})`);
 }
 
 // Calculate distance in meters between two lat/lon points (Haversine)
