@@ -561,7 +561,8 @@ def nearby_departures():
 
     with _lock:
         all_stops = dict(_data["stops"])
-        stop_departures = dict(_data.get("stop_departures", {}))
+        rt_stop_departures = dict(_data.get("stop_departures", {}))
+        static_stop_departures = dict(_data.get("static_stop_departures", {}))
         routes = dict(_data["routes"])
         trips = dict(_data["trips"])
         trip_headsigns = dict(_data.get("trip_headsigns", {}))
@@ -604,10 +605,13 @@ def nearby_departures():
 
     result = []
     for grp in sorted_groups:
-        # Collect and deduplicate departures across all stops in the group
+        # Collect and deduplicate departures across all stops in the group (RT + static fallback)
         all_raw = []
         for sid in grp["stop_ids"]:
-            all_raw.extend(stop_departures.get(sid, []))
+            rt = rt_stop_departures.get(sid, [])
+            rt_trips = {d["trip_id"] for d in rt}
+            all_raw.extend(rt)
+            all_raw.extend(d for d in static_stop_departures.get(sid, []) if d["trip_id"] not in rt_trips)
         seen_trips = set()
         upcoming = []
         for d in sorted([d for d in all_raw if d["time"] >= now - 60], key=lambda d: d["time"]):
@@ -654,11 +658,14 @@ def departures_for_stop(stop_id):
 
     now = int(time.time())
     with _lock:
-        stop_departures = _data.get("stop_departures", {})
+        rt_deps = _data.get("stop_departures", {}).get(stop_id, [])
+        static_deps = _data.get("static_stop_departures", {}).get(stop_id, [])
         routes = _data["routes"]
         trips = _data["trips"]
         trip_headsigns = _data.get("trip_headsigns", {})
-        raw = stop_departures.get(stop_id, [])
+
+    rt_trip_ids = {d["trip_id"] for d in rt_deps}
+    raw = rt_deps + [d for d in static_deps if d["trip_id"] not in rt_trip_ids]
 
     upcoming = sorted(
         [d for d in raw if d["time"] >= now - 60],
