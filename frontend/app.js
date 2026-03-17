@@ -50,6 +50,9 @@ let animFrameId = null;
 let sseSource = null;
 let sseFallbackTimer = null;
 
+// Last known bearing per vehicle — reused when train is stopped / bearing is null
+const vehicleLastBearing = {};  // vehicle_id -> degrees
+
 // Vehicle trails (breadcrumbs)
 const vehicleTrailPoints = {};  // vehicle_id -> [[lat,lon], ...]
 const vehicleTrails = {};       // vehicle_id -> L.polyline
@@ -368,6 +371,17 @@ function updateVehicles(vehicles) {
         }
         v._localTime = now;
 
+        // For trains: cache bearing when moving; reuse last known when stopped/null
+        if (v.vehicle_type === "train") {
+            const speed = v.speed ?? v._calculatedSpeed ?? 0;
+            if (v.bearing != null && speed > 0.5) {
+                vehicleLastBearing[id] = v.bearing;
+            }
+            if (v.bearing == null || speed <= 0.5) {
+                v.bearing = vehicleLastBearing[id] ?? v.bearing;
+            }
+        }
+
         if (vehicleMarkers[id]) {
             // Animate to new position instead of jumping
             const cur = vehicleMarkers[id].getLatLng();
@@ -433,6 +447,7 @@ function updateVehicles(vehicles) {
         map.removeLayer(vehicleMarkers[id]);
         delete vehicleMarkers[id];
         delete vehicleAnim[id];
+        delete vehicleLastBearing[id];
         delete vehicleTrailPoints[id];
         if (vehicleTrails[id]) { map.removeLayer(vehicleTrails[id]); delete vehicleTrails[id]; }
     });
