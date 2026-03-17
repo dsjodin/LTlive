@@ -76,6 +76,7 @@ def fetch_trip_updates():
     vehicle_trips = {}
     vehicle_next_stop = {}  # vehicle_id -> stop_id of first upcoming stop
     stop_departures = {}  # stop_id -> list of departure dicts
+    rt_trip_short_names = {}  # trip_id -> trip_short_name from RT feed
 
     for entity in feed.entity:
         if not entity.HasField("trip_update"):
@@ -88,6 +89,10 @@ def fetch_trip_updates():
         direction_id = tu.trip.direction_id  # 0 is valid; avoid falsy-check that converts 0 → None
         start_date = tu.trip.start_date if tu.trip.start_date else ""
         rt_trip_short_name = tu.trip.trip_short_name if tu.trip.trip_short_name else ""
+
+        # Build trip_id -> trip_short_name mapping for number lookups in board
+        if trip_id and rt_trip_short_name:
+            rt_trip_short_names[trip_id] = rt_trip_short_name
 
         if vehicle_id:
             vehicle_trips[vehicle_id] = {
@@ -133,7 +138,7 @@ def fetch_trip_updates():
                 "rt_trip_short_name": rt_trip_short_name,
             })
 
-    return vehicle_trips, vehicle_next_stop, stop_departures
+    return vehicle_trips, vehicle_next_stop, stop_departures, rt_trip_short_names
 
 
 def fetch_service_alerts():

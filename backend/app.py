@@ -68,6 +68,7 @@ _data = {
     "static_stop_departures": {},
     "static_stop_arrivals": {},
     "trip_origin_map": {},
+    "rt_trip_short_names": {},
 }
 _lock = threading.Lock()
 _gtfs_retry_count = 0
@@ -360,7 +361,7 @@ def poll_realtime():
         return
 
     # Fetch trip updates and alerts (non-critical — use cached on failure)
-    vehicle_trips, vehicle_next_stop, stop_departures = gtfs_rt.fetch_trip_updates()
+    vehicle_trips, vehicle_next_stop, stop_departures, rt_trip_short_names = gtfs_rt.fetch_trip_updates()
     alerts = gtfs_rt.fetch_service_alerts()
 
     # Merge TripUpdates into vehicles that lack trip info,
@@ -420,6 +421,8 @@ def poll_realtime():
         _data["vehicle_next_stop"] = vehicle_next_stop
         if stop_departures:
             _data["stop_departures"] = stop_departures
+        if rt_trip_short_names:
+            _data["rt_trip_short_names"] = rt_trip_short_names
         if alerts:
             _data["alerts"] = alerts
         _data["last_vehicle_update"] = int(time.time())
@@ -746,6 +749,7 @@ def departures_for_stop(stop_id):
         routes = _data["routes"]
         trips = _data["trips"]
         trip_headsigns = _data.get("trip_headsigns", {})
+        rt_trip_short_names = _data.get("rt_trip_short_names", {})
 
     raw = _merge_rt_static(rt_deps, static_deps)
 
@@ -775,6 +779,7 @@ def departures_for_stop(stop_id):
         headsign = trip_headsigns.get(trip_id, "") or route.get("route_long_name", "")
         trip_short_name = (
             trips.get(trip_id, {}).get("trip_short_name", "")
+            or rt_trip_short_names.get(trip_id, "")
             or d.get("rt_trip_short_name", "")
         )
         rsn = route.get("route_short_name", "?")
@@ -832,6 +837,7 @@ def arrivals_for_stop(stop_id):
         trips = _data["trips"]
         trip_headsigns = _data.get("trip_headsigns", {})
         trip_origin_map = _data.get("trip_origin_map", {})
+        rt_trip_short_names = _data.get("rt_trip_short_names", {})
 
     upcoming = sorted(
         [a for a in static_arrs if a["time"] >= now - 60],
@@ -860,6 +866,7 @@ def arrivals_for_stop(stop_id):
         origin = trip_origin_map.get(trip_id, "")
         trip_short_name = (
             trips.get(trip_id, {}).get("trip_short_name", "")
+            or rt_trip_short_names.get(trip_id, "")
             or a.get("rt_trip_short_name", "")
         )
         rsn = route.get("route_short_name", "?")
@@ -1121,7 +1128,15 @@ def debug_trip_names():
 
     has_names = {rsn: any(e["trip_short_name"] for e in entries)
                  for rsn, entries in by_route.items()}
-    return jsonify({"by_route": by_route, "has_trip_short_name": has_names})
+    with _lock:
+        rt_names = _data.get("rt_trip_short_names", {})
+    rt_sample = dict(list(rt_names.items())[:10])
+    return jsonify({
+        "by_route": by_route,
+        "has_trip_short_name": has_names,
+        "rt_trip_short_names_count": len(rt_names),
+        "rt_sample": rt_sample,
+    })
 
 
 @app.route("/api/debug/rt-feed")
