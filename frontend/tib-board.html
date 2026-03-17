@@ -415,7 +415,7 @@
 </div>
 
 <div id="station-bar">
-    <button class="station-btn" onclick="selectStation('orebro-c')">Örebro C</button>
+    <button class="station-btn" onclick="selectStation('orebro-c')">Örebro Resecentrum</button>
     <button class="station-btn" onclick="selectStation('orebro-sodra')">Örebro Södra</button>
     <div id="station-search-wrap">
         <input id="station-search" type="text" placeholder="Sök annan station…" autocomplete="off" />
@@ -456,12 +456,12 @@ const REFRESH_INTERVAL = 30000; // 30 s
 // First term that finds a match wins.
 const PRESET_STATIONS = {
     "orebro-c": {
-        label: "Örebro C",
-        terms: ["örebro c", "örebro centralstation", "örebro central", "örebro c station"],
+        label: "Örebro Resecentrum",
+        terms: ["örebro resecentrum", "örebro c", "örebro centralstation", "örebro central"],
     },
     "orebro-sodra": {
         label: "Örebro Södra",
-        terms: ["örebro södra", "örebro s ", "örebro södra station"],
+        terms: ["örebro södra", "örebro södra station",
     },
 };
 
