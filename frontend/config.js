@@ -21,6 +21,16 @@ const LINE_CONFIG = {
         "700", "701", "710",
         "800", "807", "819", "820", "840",
     ],
+
+    // Tåg i Bergslagen — filtreras på vehicleId-prefix (sifferdelen före .trains.se)
+    tag_i_bergslagen: [
+        "3190", "3223", "3231", "3234", "3235",
+        "9005", "9006", "9007", "9008", "9009",
+        "9011", "9012", "9013", "9014", "9015",
+        "9018", "9019", "9020", "9021", "9022",
+        "9023", "9024", "9025", "9037", "9039",
+        "9056", "9057", "9068",
+    ],
 };
 
 // Flat Set of all allowed route_short_name values — used for fast lookup
@@ -28,6 +38,9 @@ const ALLOWED_LINE_NUMBERS = new Set([
     ...LINE_CONFIG.stadstrafiken,
     ...LINE_CONFIG.lansbuss,
 ]);
+
+// Allowed train vehicleId prefixes (numeric part before .trains.se)
+const ALLOWED_TRAIN_IDS = new Set(LINE_CONFIG.tag_i_bergslagen);
 
 /**
  * Custom colors per line (overrides GTFS colors).

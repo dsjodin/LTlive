@@ -317,8 +317,12 @@ function updateVehicles(vehicles) {
         const id = v.vehicle_id || v.id;
         currentIds.add(id);
 
-        // Skip vehicles not in our configured lines (trains always shown)
-        if (ALLOWED_LINE_NUMBERS.size > 0 && v.vehicle_type !== "train" && !ALLOWED_LINE_NUMBERS.has(v.route_short_name)) {
+        // Skip vehicles not in our configured lines
+        // Trains: filter by vehicleId prefix against ALLOWED_TRAIN_IDS
+        // Buses: filter by route_short_name against ALLOWED_LINE_NUMBERS
+        const trainIdPrefix = v.vehicle_type === "train" ? (v.vehicle_id || "").split(".")[0] : null;
+        if (v.vehicle_type === "train" ? (ALLOWED_TRAIN_IDS.size > 0 && !ALLOWED_TRAIN_IDS.has(trainIdPrefix))
+                                       : (ALLOWED_LINE_NUMBERS.size > 0 && !ALLOWED_LINE_NUMBERS.has(v.route_short_name))) {
             if (vehicleMarkers[id]) {
                 map.removeLayer(vehicleMarkers[id]);
                 delete vehicleMarkers[id];
