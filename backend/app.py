@@ -719,23 +719,48 @@ def shapes_for_route(route_id):
 
 @app.route("/api/debug/stops-fields")
 def debug_stops_fields():
-    """Debug: show coverage of platform_code / stop_desc / parent_station in GTFS stops."""
+    """Debug: show coverage of platform_code / stop_desc / parent_station in GTFS stops.
+
+    ?local=1  restricts sample to stops within Örebro county bounding box.
+    """
     with _lock:
         stops = list(_data["stops"].values())
 
+    # Örebro county bounding box (approx)
+    LAT_MIN, LAT_MAX = 58.7, 59.9
+    LON_MIN, LON_MAX = 14.2, 15.8
+
+    local_only = request.args.get("local", "1") not in ("0", "false")
+    if local_only:
+        local_stops = [
+            s for s in stops
+            if LAT_MIN <= s.get("stop_lat", 0) <= LAT_MAX
+            and LON_MIN <= s.get("stop_lon", 0) <= LON_MAX
+        ]
+    else:
+        local_stops = stops
+
     total = len(stops)
-    has_platform = [s for s in stops if s.get("platform_code")]
-    has_desc = [s for s in stops if s.get("stop_desc")]
-    has_parent = [s for s in stops if s.get("parent_station")]
+    local_total = len(local_stops)
+
+    has_platform = [s for s in local_stops if s.get("platform_code")]
+    has_desc = [s for s in local_stops if s.get("stop_desc")]
+    has_parent = [s for s in local_stops if s.get("parent_station")]
+
+    # Unique platform_code values present
+    platform_values = sorted(set(s["platform_code"] for s in has_platform))
 
     # Sample up to 20 stops that have platform_code
     sample = sorted(has_platform, key=lambda s: s["stop_id"])[:20]
 
     return jsonify({
-        "total_stops": total,
+        "note": "Filtered to Örebro county (local=1). Pass ?local=0 to see all Sweden.",
+        "total_stops_in_feed": total,
+        "local_stops": local_total,
         "with_platform_code": len(has_platform),
         "with_stop_desc": len(has_desc),
         "with_parent_station": len(has_parent),
+        "platform_code_values": platform_values,
         "platform_code_sample": [
             {
                 "stop_id": s["stop_id"],
@@ -744,6 +769,8 @@ def debug_stops_fields():
                 "stop_desc": s.get("stop_desc", ""),
                 "parent_station": s.get("parent_station", ""),
                 "location_type": s.get("location_type", 0),
+                "lat": s.get("stop_lat"),
+                "lon": s.get("stop_lon"),
             }
             for s in sample
         ],
