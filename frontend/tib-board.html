@@ -452,10 +452,17 @@
 const API = "/api";
 const REFRESH_INTERVAL = 30000; // 30 s
 
-// Known stations: name -> search query used to find stop_id via /api/stops
+// Known stations: ordered list of fallback search terms tried in sequence.
+// First term that finds a match wins.
 const PRESET_STATIONS = {
-    "orebro-c":     { label: "Örebro Centralstation", search: "örebro c" },
-    "orebro-sodra": { label: "Örebro Södra",          search: "örebro södra" },
+    "orebro-c": {
+        label: "Örebro C",
+        terms: ["örebro c", "örebro centralstation", "örebro central", "örebro c station"],
+    },
+    "orebro-sodra": {
+        label: "Örebro Södra",
+        terms: ["örebro södra", "örebro s ", "örebro södra station"],
+    },
 };
 
 let currentStopId   = null;
@@ -595,28 +602,55 @@ async function selectStation(key) {
         b.classList.toggle("active", keys[i] === key);
     });
 
-    // Search for the stop_id by name
-    const q = preset.search.toLowerCase();
     if (!allTrainStops.length) await loadTrainStops();
 
-    const match = allTrainStops.find(s =>
-        s.stop_name.toLowerCase().includes(q)
-    );
+    // Try each fallback search term in order
+    let match = null;
+    for (const term of preset.terms) {
+        match = allTrainStops.find(s =>
+            s.stop_name.toLowerCase().includes(term)
+        );
+        if (match) break;
+    }
+
     if (match) {
         loadStation(match.stop_id, match.stop_name);
+        return;
+    }
+
+    // Still not found — show all stops whose name starts with the
+    // first word of the first search term so the user can pick.
+    const firstWord = preset.terms[0].split(" ")[0];  // e.g. "örebro"
+    const suggestions = allTrainStops.filter(s =>
+        s.stop_name.toLowerCase().startsWith(firstWord)
+    ).sort((a, b) => a.stop_name.localeCompare(b.stop_name, "sv"));
+
+    const board = document.getElementById("board");
+    if (suggestions.length) {
+        board.innerHTML = `
+            <div class="board-msg" style="flex-direction:column;gap:12px;height:auto;padding:20px">
+                <div style="color:var(--text);font-weight:600">
+                    "${preset.label}" hittades inte — välj manuellt:
+                </div>
+                <div style="display:flex;flex-direction:column;gap:6px;width:100%;max-width:400px">
+                    ${suggestions.map(s => `
+                        <button onclick="loadStation('${s.stop_id}','${s.stop_name.replace(/'/g,"\\'")}');
+                                         document.querySelector('.station-btn.active') && document.querySelector('.station-btn.active').classList.remove('active')"
+                            style="background:var(--bg3);border:1px solid var(--border);border-radius:8px;
+                                   color:var(--text);padding:9px 14px;text-align:left;cursor:pointer;
+                                   font-size:0.9rem;transition:border-color 0.15s"
+                            onmouseover="this.style.borderColor='var(--tib)'"
+                            onmouseout="this.style.borderColor='var(--border)'">
+                            ${s.stop_name}
+                            <span style="color:var(--muted);font-size:0.75rem;margin-left:6px">${s.stop_id}</span>
+                        </button>`).join("")}
+                </div>
+            </div>`;
     } else {
-        // Try fetching on demand
-        try {
-            const data = await fetch(`${API}/stops`).then(r => r.json());
-            allTrainStops = data.stops || [];
-            const m = allTrainStops.find(s => s.stop_name.toLowerCase().includes(q));
-            if (m) loadStation(m.stop_id, m.stop_name);
-            else document.getElementById("board").innerHTML =
-                `<div class="board-msg">Hållplatsen "${preset.label}" hittades inte i GTFS-data</div>`;
-        } catch {
-            document.getElementById("board").innerHTML =
-                `<div class="board-msg">Kunde inte hämta hållplatser</div>`;
-        }
+        board.innerHTML = `<div class="board-msg">
+            Inga hållplatser med "${firstWord}" hittades i GTFS-data.
+            Använd sökfältet ovan.
+        </div>`;
     }
 }
 
