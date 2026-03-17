@@ -682,9 +682,10 @@ function loadTrainRoutes() {
             if (!data.count) return;
             // Each shape_id is drawn once — no duplicate tracks from shared segments
             const layerGroup = L.layerGroup();
+            // TiB orange rail style regardless of GTFS route color
             Object.values(data.shapes).forEach(coords => {
-                L.polyline(coords, { color: "#555", weight: 6, opacity: 0.55 }).addTo(layerGroup);
-                L.polyline(coords, { color: "#E87722", weight: 3, opacity: 0.8 }).addTo(layerGroup);
+                L.polyline(coords, { color: "#7A3A00", weight: 6, opacity: 0.6 }).addTo(layerGroup);
+                L.polyline(coords, { color: "#E87722", weight: 3, opacity: 0.9 }).addTo(layerGroup);
             });
             trainRailLayer = layerGroup;
             layerGroup.addTo(map);
