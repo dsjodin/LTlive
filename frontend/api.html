@@ -313,9 +313,10 @@ const ENDPOINTS = [
   {
     group: "Debug",
     items: [
-      { method: "GET", path: "/api/debug/matching", desc: "RT-matchning mot GTFS-trips" },
-      { method: "GET", path: "/api/debug/routes",   desc: "Alla rutter med trip-count" },
-      { method: "GET", path: "/api/debug/rt-feed",  desc: "Rådata från RT-feeden (urval)" },
+      { method: "GET", path: "/api/debug/stops-fields", desc: "Täckning av platform_code / stop_desc i GTFS" },
+      { method: "GET", path: "/api/debug/matching",    desc: "RT-matchning mot GTFS-trips" },
+      { method: "GET", path: "/api/debug/routes",      desc: "Alla rutter med trip-count" },
+      { method: "GET", path: "/api/debug/rt-feed",     desc: "Rådata från RT-feeden (urval)" },
     ]
   },
   {

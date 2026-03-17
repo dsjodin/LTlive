@@ -717,6 +717,40 @@ def shapes_for_route(route_id):
     return jsonify({"shapes": route_shapes, "route_id": route_id})
 
 
+@app.route("/api/debug/stops-fields")
+@_debug_only
+def debug_stops_fields():
+    """Debug: show coverage of platform_code / stop_desc / parent_station in GTFS stops."""
+    with _lock:
+        stops = list(_data["stops"].values())
+
+    total = len(stops)
+    has_platform = [s for s in stops if s.get("platform_code")]
+    has_desc = [s for s in stops if s.get("stop_desc")]
+    has_parent = [s for s in stops if s.get("parent_station")]
+
+    # Sample up to 20 stops that have platform_code
+    sample = sorted(has_platform, key=lambda s: s["stop_id"])[:20]
+
+    return jsonify({
+        "total_stops": total,
+        "with_platform_code": len(has_platform),
+        "with_stop_desc": len(has_desc),
+        "with_parent_station": len(has_parent),
+        "platform_code_sample": [
+            {
+                "stop_id": s["stop_id"],
+                "stop_name": s.get("stop_name", ""),
+                "platform_code": s.get("platform_code", ""),
+                "stop_desc": s.get("stop_desc", ""),
+                "parent_station": s.get("parent_station", ""),
+                "location_type": s.get("location_type", 0),
+            }
+            for s in sample
+        ],
+    })
+
+
 @app.route("/api/debug/routes")
 @_debug_only
 def debug_routes():
