@@ -114,7 +114,7 @@ function initMap() {
     // Rescale icons when zoom changes
     map.on("zoomend", () => {
         Object.values(vehicleMarkers).forEach(m => {
-            if (m._vehicleData) m.setIcon(createBusIcon(m._vehicleData));
+            if (m._vehicleData) m.setIcon(createVehicleIcon(m._vehicleData));
         });
         updateStopBadges();
     });
@@ -670,6 +670,46 @@ function loadRoutes() {
 }
 
 
+// Load and draw train route shapes (always visible, independent of bus route toggle).
+let trainRouteLayers = {}; // route_id → L.layerGroup
+let trainRoutesLoaded = false;
+
+function loadTrainRoutes() {
+    if (trainRoutesLoaded) return;
+    fetch(`${API_BASE}/routes/trains`)
+        .then(r => r.json())
+        .then(data => {
+            if (!data.count) return;
+            const routeIds = data.routes.map(r => r.route_id);
+            const routeById = {};
+            data.routes.forEach(r => { routeById[r.route_id] = r; });
+
+            // Bulk-fetch all shapes in one request
+            return fetch(`${API_BASE}/shapes/bulk?route_ids=${routeIds.join(",")}`)
+            .then(r => r.json())
+            .then(shapeData => {
+                routeIds.forEach(routeId => {
+                    const coords = shapeData.routes && shapeData.routes[routeId];
+                    if (!coords || !coords.length) return;
+                    const route = routeById[routeId] || {};
+                    const color = `#${route.route_color || "E87722"}`;
+                    const layerGroup = L.layerGroup();
+                    coords.forEach(line => {
+                        // Rail style: thick dark outline + colored center line
+                        L.polyline(line, { color: "#333", weight: 7, opacity: 0.6 }).addTo(layerGroup);
+                        L.polyline(line, { color, weight: 4, opacity: 0.85 }).addTo(layerGroup);
+                    });
+                    trainRouteLayers[routeId] = layerGroup;
+                    layerGroup.addTo(map);
+                });
+                trainRoutesLoaded = true;
+                console.log(`Loaded ${routeIds.length} train route shapes`);
+            });
+        })
+        .catch(err => console.error("Error loading train routes:", err));
+}
+
+
 function loadRouteShapes(routeId) {
     if (routeLayers[routeId]) {
         if (showRoutes && !map.hasLayer(routeLayers[routeId])) {
@@ -967,6 +1007,9 @@ async function checkStatus() {
 
         if (!routesLoaded) {
             loadRoutes();
+        }
+        if (!trainRoutesLoaded) {
+            loadTrainRoutes();
         }
     } catch (err) {
         console.error("Error checking status:", err);

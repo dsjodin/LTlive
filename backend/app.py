@@ -553,6 +553,16 @@ def routes_bus():
     return jsonify({"routes": bus_routes, "count": len(bus_routes)})
 
 
+@app.route("/api/routes/trains")
+def routes_trains():
+    """Return train routes only (GTFS route_type 2 = rail, or 100–199)."""
+    with _lock:
+        route_list = list(_data["routes"].values())
+    train_routes = [r for r in route_list
+                    if r["route_type"] == 2 or 100 <= r["route_type"] <= 199]
+    return jsonify({"routes": train_routes, "count": len(train_routes)})
+
+
 @app.route("/api/routes/all")
 def routes_all():
     """Return all routes regardless of type."""
