@@ -266,7 +266,8 @@
         .row:hover { background: var(--bg3); }
         .row.dep-grid { grid-template-columns: 60px 1fr 64px 90px 90px; }
         .row.arr-grid { grid-template-columns: 60px 1fr 64px 90px 90px; }
-        .row.row-now { background: #1a2a1a; border-left: 3px solid var(--green); }
+        .row.row-now  { background: #1a2a1a; border-left: 3px solid var(--green); }
+        .row.row-past { opacity: 0.5; }
         .row.row-canceled { opacity: 0.6; }
         .canceled-badge { background: #c0392b; color: #fff; font-size: 0.65em; padding: 1px 5px; border-radius: 3px; margin-left: 5px; vertical-align: middle; }
         .deviation { color: #e67e22; font-size: 0.75em; margin-left: 6px; }
@@ -353,6 +354,7 @@
         .eta-soon   { color: var(--orange); }
         .eta-normal { color: #58a6ff; }
         .eta-late   { color: var(--red); }
+        .eta-past   { color: var(--muted); font-size: 0.8rem; font-weight: 600; }
 
         .rt-dot {
             display: inline-block;
@@ -697,7 +699,8 @@ function setMode(mode) {
 }
 
 // ── ETA helper ────────────────────────────────────────
-function formatEta(secs) {
+function formatEta(secs, mode) {
+    if (secs < -60) return { text: mode === "arr" ? "Ankommit" : "Avgått", cls: "eta-past" };
     if (secs <= 0)  return { text: "Nu",            cls: "eta-now" };
     if (secs < 60)  return { text: `${secs} s`,     cls: "eta-now" };
     const m = Math.floor(secs / 60), s = secs % 60;
@@ -712,11 +715,15 @@ function startCountdown() {
         document.querySelectorAll(".eta-col[data-ts]").forEach(el => {
             const ts   = parseFloat(el.dataset.ts);
             const secs = Math.round(ts - now);
-            const { text, cls } = formatEta(secs);
+            const mode = el.dataset.mode || "dep";
+            const { text, cls } = formatEta(secs, mode);
             el.textContent = text;
             el.className   = `eta-col ${cls}`;
             const row = el.closest(".row");
-            if (row) row.classList.toggle("row-now", secs <= 30 && secs > -60);
+            if (row) {
+                row.classList.toggle("row-now",  secs <= 30 && secs > -60);
+                row.classList.toggle("row-past", secs < -60);
+            }
         });
     }, 1000);
 }
@@ -767,12 +774,13 @@ async function loadDepartures(board) {
     const now = Date.now() / 1000;
     board.innerHTML = deps.map(d => {
         const secs  = Math.round(d.departure_time - now);
-        const { text: etaText, cls: etaCls } = formatEta(secs);
+        const { text: etaText, cls: etaCls } = formatEta(secs, "dep");
         const clock = new Date(d.departure_time * 1000)
             .toLocaleTimeString("sv-SE", { hour: "2-digit", minute: "2-digit" });
         const bg    = d.route_color     ? `#${d.route_color}`     : "#e87722";
         const fg    = d.route_text_color? `#${d.route_text_color}`: "#fff";
-        const nowClass = (secs <= 30 && secs > -60) ? "row-now" : "";
+        const nowClass  = (secs <= 30 && secs > -60) ? "row-now" : "";
+        const pastClass = secs < -60 ? " row-past" : "";
 
         const liveTrain = findLiveTrain(d.trip_id, d.route_short_name);
         const liveTag   = liveTrain
@@ -799,7 +807,7 @@ async function loadDepartures(board) {
         const clockHtml = isDelayed
             ? `<span class="time-orig">${schedClock}</span><span class="time-new">${clock}</span>`
             : clock;
-        return `<div class="row dep-grid ${nowClass}${canceledClass}">
+        return `<div class="row dep-grid ${nowClass}${pastClass}${canceledClass}">
             <span class="badge" style="background:${bg};color:${fg}">${trainLabel}</span>
             <div class="destination">
                 <div class="destination-main">${headsignText}${liveTag}</div>
@@ -807,7 +815,7 @@ async function loadDepartures(board) {
             </div>
             <span class="track"><span class="track-num${trackChangedClass}">${d.platform || "–"}</span></span>
             <span class="sched-time">${clockHtml}</span>
-            <span class="eta-col ${etaCls}" data-ts="${d.departure_time}">${etaText}</span>
+            <span class="eta-col ${etaCls}" data-ts="${d.departure_time}" data-mode="dep">${etaText}</span>
         </div>`;
     }).join("");
 
@@ -828,12 +836,13 @@ async function loadArrivals(board) {
     const now = Date.now() / 1000;
     board.innerHTML = arrs.map(a => {
         const secs  = Math.round(a.arrival_time - now);
-        const { text: etaText, cls: etaCls } = formatEta(secs);
+        const { text: etaText, cls: etaCls } = formatEta(secs, "arr");
         const clock = new Date(a.arrival_time * 1000)
             .toLocaleTimeString("sv-SE", { hour: "2-digit", minute: "2-digit" });
         const bg    = a.route_color     ? `#${a.route_color}`     : "#e87722";
         const fg    = a.route_text_color? `#${a.route_text_color}`: "#fff";
-        const nowClass = (secs <= 30 && secs > -60) ? "row-now" : "";
+        const nowClass  = (secs <= 30 && secs > -60) ? "row-now" : "";
+        const pastClass = secs < -60 ? " row-past" : "";
 
         const liveTrain = findLiveTrain(a.trip_id, a.route_short_name);
         const liveTag   = liveTrain
@@ -859,7 +868,7 @@ async function loadArrivals(board) {
         const arrClockHtml = arrIsDelayed
             ? `<span class="time-orig">${arrSchedClock}</span><span class="time-new">${clock}</span>`
             : clock;
-        return `<div class="row arr-grid ${nowClass}${canceledClass}">
+        return `<div class="row arr-grid ${nowClass}${pastClass}${canceledClass}">
             <span class="badge" style="background:${bg};color:${fg}">${trainLabel}</span>
             <div class="destination">
                 <div class="destination-main">${fromDisplay}${liveTag}</div>
@@ -867,7 +876,7 @@ async function loadArrivals(board) {
             </div>
             <span class="track"><span class="track-num${arrTrackChangedClass}">${a.platform || "–"}</span></span>
             <span class="sched-time">${arrClockHtml}</span>
-            <span class="eta-col ${etaCls}" data-ts="${a.arrival_time}">${etaText}</span>
+            <span class="eta-col ${etaCls}" data-ts="${a.arrival_time}" data-mode="arr">${etaText}</span>
         </div>`;
     }).join("");
 

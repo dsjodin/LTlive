@@ -763,7 +763,7 @@ def departures_for_stop(stop_id):
     raw = _merge_rt_static(rt_deps, static_deps)
 
     upcoming = sorted(
-        [d for d in raw if d["time"] >= now - 60],
+        [d for d in raw if d["time"] >= now - 600],
         key=lambda d: d["time"],
     )
 
@@ -935,7 +935,7 @@ def arrivals_for_stop(stop_id):
         tv_stations = _data.get("tv_stations", {})
 
     upcoming_raw = sorted(
-        [a for a in static_arrs if a["time"] >= now - 60],
+        [a for a in static_arrs if a["time"] >= now - 600],
         key=lambda a: a["time"],
     )
     # Deduplicate GTFS trips by arrival time: two trips at the exact same time
