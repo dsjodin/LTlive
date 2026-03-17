@@ -416,7 +416,6 @@
 
 <div id="station-bar">
     <button class="station-btn" onclick="selectStation('orebro-c')">Örebro Resecentrum</button>
-    <button class="station-btn" onclick="selectStation('orebro-sodra')">Örebro Södra</button>
     <div id="station-search-wrap">
         <input id="station-search" type="text" placeholder="Sök annan station…" autocomplete="off" />
         <div id="station-search-results"></div>
@@ -458,10 +457,6 @@ const PRESET_STATIONS = {
     "orebro-c": {
         label: "Örebro Resecentrum",
         terms: ["örebro resecentrum", "örebro c", "örebro centralstation", "örebro central"],
-    },
-    "orebro-sodra": {
-        label: "Örebro Södra",
-        terms: ["örebro södra", "örebro södra station",
     },
 };
 
@@ -546,15 +541,11 @@ let allTrainStops = [];
 
 async function loadTrainStops() {
     try {
-        // Load train routes to filter stops
-        const [routeData, stopData] = await Promise.all([
-            fetch(`${API}/routes/trains`).then(r => r.json()),
-            fetch(`${API}/stops`).then(r => r.json()),
-        ]);
-        const trainRouteIds = new Set((routeData.routes || []).map(r => r.route_id));
-        // We can't easily filter stops by route here without stop_route_map;
-        // just load all stops and let the user search
-        allTrainStops = (stopData.stops || []);
+        // Use parent stations (location_type=1) — one entry per station,
+        // not one per platform. This avoids 20 identical "Örebro Resecentrum"
+        // rows in search results. The departures API expands parent → children.
+        const data = await fetch(`${API}/stops/stations`).then(r => r.json());
+        allTrainStops = (data.stops || []);
     } catch {
         allTrainStops = [];
     }

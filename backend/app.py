@@ -699,6 +699,9 @@ def nearby_departures():
 def departures_for_stop(stop_id):
     """Return upcoming departures for a stop, enriched with route info.
 
+    If stop_id is a parent station (location_type=1) the departures of all
+    child stops are merged automatically.
+
     Optional query params:
         limit: max rows (1-30, default 10)
         route_type: 'train' to filter to rail routes only
@@ -712,8 +715,24 @@ def departures_for_stop(stop_id):
 
     now = int(time.time())
     with _lock:
-        rt_deps = _data.get("stop_departures", {}).get(stop_id, [])
-        static_deps = _data.get("static_stop_departures", {}).get(stop_id, [])
+        all_stops_data = _data["stops"]
+        # Collect all stop_ids to query: if this is a parent station, expand
+        # to all child stops so we get departures from every platform.
+        target_stop = all_stops_data.get(stop_id, {})
+        if target_stop.get("location_type", 0) == 1:
+            child_ids = [
+                s["stop_id"] for s in all_stops_data.values()
+                if s.get("parent_station") == stop_id
+            ]
+            query_ids = child_ids if child_ids else [stop_id]
+        else:
+            query_ids = [stop_id]
+
+        rt_deps = []
+        static_deps = []
+        for qid in query_ids:
+            rt_deps.extend(_data.get("stop_departures", {}).get(qid, []))
+            static_deps.extend(_data.get("static_stop_departures", {}).get(qid, []))
         routes = _data["routes"]
         trips = _data["trips"]
         trip_headsigns = _data.get("trip_headsigns", {})
@@ -758,6 +777,9 @@ def departures_for_stop(stop_id):
 def arrivals_for_stop(stop_id):
     """Return upcoming train arrivals for a stop, enriched with origin info.
 
+    If stop_id is a parent station (location_type=1) arrivals from all child
+    stops are merged automatically.
+
     Optional query params:
         limit: max rows (1-30, default 10)
         route_type: 'train' to filter to rail routes only (default all)
@@ -767,7 +789,20 @@ def arrivals_for_stop(stop_id):
 
     now = int(time.time())
     with _lock:
-        static_arrs = list(_data.get("static_stop_arrivals", {}).get(stop_id, []))
+        all_stops_data = _data["stops"]
+        target_stop = all_stops_data.get(stop_id, {})
+        if target_stop.get("location_type", 0) == 1:
+            child_ids = [
+                s["stop_id"] for s in all_stops_data.values()
+                if s.get("parent_station") == stop_id
+            ]
+            query_ids = child_ids if child_ids else [stop_id]
+        else:
+            query_ids = [stop_id]
+
+        static_arrs = []
+        for qid in query_ids:
+            static_arrs.extend(_data.get("static_stop_arrivals", {}).get(qid, []))
         routes = _data["routes"]
         trips = _data["trips"]
         trip_headsigns = _data.get("trip_headsigns", {})
