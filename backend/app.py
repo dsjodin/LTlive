@@ -742,6 +742,22 @@ def stations():
     return jsonify({"stops": result, "count": len(result)})
 
 
+@app.route("/api/shapes/trains")
+def train_shapes():
+    """Return deduplicated rail geometries (one entry per shape_id, not per route)."""
+    with _lock:
+        trips    = _data["trips"]
+        routes   = _data["routes"]
+        all_shapes = _data["shapes"]
+
+    train_route_ids = {rid for rid, r in routes.items()
+                       if r["route_type"] == 2 or 100 <= r["route_type"] <= 199}
+    shape_ids = {t["shape_id"] for t in trips.values()
+                 if t.get("route_id") in train_route_ids and t.get("shape_id")}
+    shapes_out = {sid: all_shapes[sid] for sid in shape_ids if sid in all_shapes}
+    return jsonify({"shapes": shapes_out, "count": len(shapes_out)})
+
+
 @app.route("/api/shapes")
 def shapes():
     """Return all shapes (route geometries)."""

@@ -670,41 +670,26 @@ function loadRoutes() {
 }
 
 
-// Load and draw train route shapes (always visible, independent of bus route toggle).
-let trainRouteLayers = {}; // route_id → L.layerGroup
+// Load and draw train route shapes (deduplicated per shape_id, always visible).
+let trainRailLayer = null;
 let trainRoutesLoaded = false;
 
 function loadTrainRoutes() {
     if (trainRoutesLoaded) return;
-    fetch(`${API_BASE}/routes/trains`)
+    fetch(`${API_BASE}/shapes/trains`)
         .then(r => r.json())
         .then(data => {
             if (!data.count) return;
-            const routeIds = data.routes.map(r => r.route_id);
-            const routeById = {};
-            data.routes.forEach(r => { routeById[r.route_id] = r; });
-
-            // Bulk-fetch all shapes in one request
-            return fetch(`${API_BASE}/shapes/bulk?route_ids=${routeIds.join(",")}`)
-            .then(r => r.json())
-            .then(shapeData => {
-                routeIds.forEach(routeId => {
-                    const coords = shapeData.routes && shapeData.routes[routeId];
-                    if (!coords || !coords.length) return;
-                    const route = routeById[routeId] || {};
-                    const color = `#${route.route_color || "E87722"}`;
-                    const layerGroup = L.layerGroup();
-                    coords.forEach(line => {
-                        // Rail style: thick dark outline + colored center line
-                        L.polyline(line, { color: "#333", weight: 7, opacity: 0.6 }).addTo(layerGroup);
-                        L.polyline(line, { color, weight: 4, opacity: 0.85 }).addTo(layerGroup);
-                    });
-                    trainRouteLayers[routeId] = layerGroup;
-                    layerGroup.addTo(map);
-                });
-                trainRoutesLoaded = true;
-                console.log(`Loaded ${routeIds.length} train route shapes`);
+            // Each shape_id is drawn once — no duplicate tracks from shared segments
+            const layerGroup = L.layerGroup();
+            Object.values(data.shapes).forEach(coords => {
+                L.polyline(coords, { color: "#555", weight: 6, opacity: 0.55 }).addTo(layerGroup);
+                L.polyline(coords, { color: "#E87722", weight: 3, opacity: 0.8 }).addTo(layerGroup);
             });
+            trainRailLayer = layerGroup;
+            layerGroup.addTo(map);
+            trainRoutesLoaded = true;
+            console.log(`Loaded ${data.count} deduplicated train shapes`);
         })
         .catch(err => console.error("Error loading train routes:", err));
 }
