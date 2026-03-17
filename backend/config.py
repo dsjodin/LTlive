@@ -29,6 +29,16 @@ NEARBY_RADIUS_METERS = int(os.environ.get("NEARBY_RADIUS_METERS", "400"))
 # Leave empty to show all train operators; set to filter to TiB only.
 # Run /api/debug/agencies after startup to find the correct value.
 TIB_AGENCY_ID = os.environ.get("TIB_AGENCY_ID", "")
+
+# Comma-separated list of route_short_names to include in departure/arrival
+# boards. Takes priority over TIB_AGENCY_ID. Leave empty for no filter.
+# Example: "T53,T63,T66,T68,T72"
+# Run /api/routes/trains after startup to see available route short names.
+_route_names_env = os.environ.get("TIB_ROUTE_SHORT_NAMES", "")
+TIB_ROUTE_SHORT_NAMES: set = (
+    {n.strip() for n in _route_names_env.split(",") if n.strip()}
+    if _route_names_env else set()
+)
 FRONTEND_POLL_INTERVAL_MS = int(os.environ.get("FRONTEND_POLL_INTERVAL_MS", "5000"))
 
 # Oxyfi Realtidspositionering — train positions via WebSocket

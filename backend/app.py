@@ -755,6 +755,7 @@ def departures_for_stop(stop_id):
     )
 
     tib_agency = config.TIB_AGENCY_ID
+    tib_routes = config.TIB_ROUTE_SHORT_NAMES
     deps = []
     for d in upcoming:
         route_id = d["route_id"]
@@ -766,7 +767,10 @@ def departures_for_stop(stop_id):
             rt = route.get("route_type", 3)
             if not (rt == 2 or 100 <= rt <= 199):
                 continue
-        if tib_agency and route.get("agency_id", "") != tib_agency:
+        if tib_routes:
+            if route.get("route_short_name", "") not in tib_routes:
+                continue
+        elif tib_agency and route.get("agency_id", "") != tib_agency:
             continue
         headsign = trip_headsigns.get(trip_id, "") or route.get("route_long_name", "")
         trip_short_name = trips.get(trip_id, {}).get("trip_short_name", "")
@@ -830,6 +834,7 @@ def arrivals_for_stop(stop_id):
     )
 
     tib_agency = config.TIB_AGENCY_ID
+    tib_routes = config.TIB_ROUTE_SHORT_NAMES
     arrs = []
     for a in upcoming:
         route_id = a["route_id"]
@@ -841,7 +846,10 @@ def arrivals_for_stop(stop_id):
             rt = route.get("route_type", 3)
             if not (rt == 2 or 100 <= rt <= 199):
                 continue
-        if tib_agency and route.get("agency_id", "") != tib_agency:
+        if tib_routes:
+            if route.get("route_short_name", "") not in tib_routes:
+                continue
+        elif tib_agency and route.get("agency_id", "") != tib_agency:
             continue
         headsign = trip_headsigns.get(trip_id, "") or route.get("route_long_name", "")
         origin = trip_origin_map.get(trip_id, "")
