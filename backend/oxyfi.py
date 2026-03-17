@@ -184,18 +184,37 @@ def start() -> None:
 # Internal WebSocket management
 # ---------------------------------------------------------------------------
 
+_reconnect_count: int = 0
+
 def _run_forever() -> None:
-    """Reconnect loop — runs in background thread."""
+    """Reconnect loop — runs in background thread.
+
+    Uses exponential backoff capped at 10 minutes.  After 20 failed
+    reconnects in a row the loop gives up entirely to protect quota
+    (24 000 requests / 30 days ≈ 800 / day — one persistent connection
+    costs just 1 request; this guard prevents a crash-loop from burning
+    through them).
+    """
+    global _reconnect_count
     backoff = 5
     while True:
         try:
             _connect()
-            backoff = 5  # reset on clean disconnect
+            # Clean disconnect — reset counters
+            backoff = 5
+            _reconnect_count = 0
         except Exception as e:
             print(f"oxyfi: connection error: {e}")
-        print(f"oxyfi: reconnecting in {backoff}s…")
+
+        _reconnect_count += 1
+        if _reconnect_count > 20:
+            print("oxyfi: too many reconnects — giving up to protect API quota. "
+                  "Restart the service to retry.")
+            return
+
+        print(f"oxyfi: reconnecting in {backoff}s… (attempt {_reconnect_count}/20)")
         time.sleep(backoff)
-        backoff = min(backoff * 2, 120)
+        backoff = min(backoff * 2, 600)  # cap at 10 minutes
 
 
 def _connect() -> None:
