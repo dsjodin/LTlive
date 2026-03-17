@@ -83,6 +83,40 @@ _MAX_SSE_PER_IP = 4
 _api_cache = {}
 _api_cache_lock = threading.Lock()
 
+_RT_STATIC_WINDOW = 20 * 60  # seconds — static entry within this window of an RT entry = same trip
+
+
+def _merge_rt_static(rt_deps, static_deps):
+    """Merge RT and static departures for one stop.
+
+    RT entries take precedence.  A static entry is suppressed if:
+      - its trip_id matches an RT entry, OR
+      - it shares the same route_id and its scheduled time is within
+        _RT_STATIC_WINDOW seconds of an RT departure (handles delayed/early trips
+        where the GTFS-RT trip_id differs from the static trip_id).
+    """
+    if not rt_deps:
+        return list(static_deps)
+
+    rt_trip_ids = {d["trip_id"] for d in rt_deps}
+    # Build (route_id, time) pairs for RT entries to catch time-window duplicates
+    rt_route_times = [(d.get("route_id", ""), d["time"]) for d in rt_deps]
+
+    filtered_static = []
+    for dep in static_deps:
+        if dep["trip_id"] in rt_trip_ids:
+            continue
+        dep_route = dep.get("route_id", "")
+        dep_time = dep["time"]
+        if any(
+            dep_route == rt_route and abs(dep_time - rt_time) <= _RT_STATIC_WINDOW
+            for rt_route, rt_time in rt_route_times
+        ):
+            continue
+        filtered_static.append(dep)
+
+    return rt_deps + filtered_static
+
 
 def _cache_get(key):
     with _api_cache_lock:
@@ -608,10 +642,10 @@ def nearby_departures():
         # Collect and deduplicate departures across all stops in the group (RT + static fallback)
         all_raw = []
         for sid in grp["stop_ids"]:
-            rt = rt_stop_departures.get(sid, [])
-            rt_trips = {d["trip_id"] for d in rt}
-            all_raw.extend(rt)
-            all_raw.extend(d for d in static_stop_departures.get(sid, []) if d["trip_id"] not in rt_trips)
+            all_raw.extend(_merge_rt_static(
+                rt_stop_departures.get(sid, []),
+                static_stop_departures.get(sid, []),
+            ))
         seen_trips = set()
         upcoming = []
         for d in sorted([d for d in all_raw if d["time"] >= now - 60], key=lambda d: d["time"]):
@@ -664,8 +698,7 @@ def departures_for_stop(stop_id):
         trips = _data["trips"]
         trip_headsigns = _data.get("trip_headsigns", {})
 
-    rt_trip_ids = {d["trip_id"] for d in rt_deps}
-    raw = rt_deps + [d for d in static_deps if d["trip_id"] not in rt_trip_ids]
+    raw = _merge_rt_static(rt_deps, static_deps)
 
     upcoming = sorted(
         [d for d in raw if d["time"] >= now - 60],
@@ -1197,9 +1230,7 @@ def stops_next_departure():
     all_stops = set(static_departures) | set(rt_departures)
     for stop_id in all_stops:
         rt_deps = rt_departures.get(stop_id, [])
-        rt_trip_ids = {d["trip_id"] for d in rt_deps}
-        static_only = [d for d in static_departures.get(stop_id, []) if d["trip_id"] not in rt_trip_ids]
-        merged[stop_id] = rt_deps + static_only
+        merged[stop_id] = _merge_rt_static(rt_deps, static_departures.get(stop_id, []))
 
     def _best_dep(deps):
         best = None
