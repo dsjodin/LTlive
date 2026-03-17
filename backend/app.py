@@ -19,6 +19,7 @@ from flask_cors import CORS
 import config
 import gtfs_loader
 import gtfs_rt
+import oxyfi
 import stats as _stats
 
 app = Flask(__name__)
@@ -527,7 +528,7 @@ def debug_matching():
 
 @app.route("/api/vehicles")
 def vehicles():
-    """Return current vehicle positions with route info."""
+    """Return current vehicle positions with route info (buses + trains)."""
     cached = _cache_get("vehicles")
     if cached:
         return jsonify(cached)
@@ -536,7 +537,7 @@ def vehicles():
         vehicle_list = list(_data["vehicles"])
         ts = _data["last_vehicle_update"]
 
-    enriched = _enrich_vehicles(vehicle_list)
+    enriched = _enrich_vehicles(vehicle_list) + oxyfi.get_trains()
     result = {"vehicles": enriched, "timestamp": ts, "count": len(enriched)}
     _cache_set("vehicles", result)
     return jsonify(result)
@@ -1263,6 +1264,18 @@ def stops_next_departure():
 
 # --- Startup ---
 
+def _push_train_positions():
+    """Push merged bus+train positions via SSE (runs every 5 s if trains are active)."""
+    trains = oxyfi.get_trains()
+    if not trains:
+        return
+    with _lock:
+        buses = _enrich_vehicles(list(_data["vehicles"]))
+        ts = _data["last_vehicle_update"]
+    combined = buses + trains
+    _push_sse("vehicles", {"vehicles": combined, "timestamp": ts, "count": len(combined)})
+
+
 def start_background_tasks():
     """Initialize GTFS data and start polling."""
     threading.Thread(target=init_gtfs_static, daemon=True).start()
@@ -1276,9 +1289,12 @@ def start_background_tasks():
     scheduler.add_job(_refresh_static_departures, "cron", hour=0, minute=1, max_instances=1)
     # Retry GTFS static loading every 60s if it failed
     scheduler.add_job(_retry_gtfs_if_needed, "interval", seconds=60, max_instances=1)
+    # Push live train positions via SSE every 5 seconds (Oxyfi updates ~1/s per train)
+    scheduler.add_job(_push_train_positions, "interval", seconds=5, max_instances=1)
     scheduler.start()
 
     threading.Thread(target=poll_realtime, daemon=True).start()
+    oxyfi.start()
 
 
 def _retry_gtfs_if_needed():

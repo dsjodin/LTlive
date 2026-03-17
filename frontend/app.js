@@ -199,6 +199,67 @@ function createBusIcon(vehicle) {
     });
 }
 
+// Train icon — rounded rectangle shape instead of circle, same SVG rotation trick.
+function createTrainIcon(vehicle) {
+    const color = `#${vehicle.route_color || "E87722"}`;
+    const textColor = `#${vehicle.route_text_color || "FFFFFF"}`;
+    const label = vehicle.route_short_name || vehicle.label || "";
+    const bearing = vehicle.bearing;
+    const hasBearing = bearing != null;
+    const zoom = map.getZoom();
+
+    if (zoom <= 12) {
+        const d = 8;
+        return L.divIcon({
+            className: "bus-icon-wrapper",
+            html: `<div style="width:${d}px;height:${d}px;border-radius:2px;background:${color};border:2px solid white;box-shadow:0 1px 4px rgba(0,0,0,.5)"></div>`,
+            iconSize: [d, d],
+            iconAnchor: [d / 2, d / 2],
+        });
+    }
+
+    // Rounded rectangle + arrow tip, same coordinate system as bus icon
+    const R = 13 + (label.length >= 3 ? 4 : label.length >= 2 ? 1 : 0);
+    const RH = Math.round(R * 0.72);  // half-height of rectangle
+    const RW = Math.round(R * 1.1);   // half-width
+    const TIP = Math.round(R * 0.55);
+    const W = (R + TIP) * 2;
+    const CX = W / 2, CY = W / 2;
+    const rx = 3; // corner radius
+    const fs = Math.round(R * (label.length >= 3 ? 0.66 : label.length >= 2 ? 0.82 : 1.0));
+
+    const tipPath = hasBearing
+        ? `<path d="M ${CX},${CY-RH-TIP} L ${CX+Math.round(TIP*0.55)},${CY-RH+Math.round(TIP*0.4)} L ${CX-Math.round(TIP*0.55)},${CY-RH+Math.round(TIP*0.4)} Z"
+                  fill="${color}" stroke="white" stroke-width="2" stroke-linejoin="round"/>`
+        : "";
+
+    const svg = `
+    <svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${W}"
+         style="overflow:visible;display:block">
+      <g transform="rotate(${hasBearing ? bearing : 0},${CX},${CY})">
+        ${tipPath}
+        <rect x="${CX-RW}" y="${CY-RH}" width="${RW*2}" height="${RH*2}"
+              rx="${rx}" ry="${rx}" fill="${color}" stroke="white" stroke-width="2.5"/>
+      </g>
+      <text x="${CX}" y="${CY}" text-anchor="middle" dominant-baseline="central"
+            font-size="${fs}" font-weight="800" fill="${textColor}"
+            font-family="-apple-system,BlinkMacSystemFont,sans-serif"
+            style="user-select:none;pointer-events:none">${label}</text>
+    </svg>`;
+
+    return L.divIcon({
+        className: "bus-icon-wrapper",
+        html: `<div class="bus-icon-inner" style="filter:drop-shadow(0 2px 4px rgba(0,0,0,.45))">${svg}</div>`,
+        iconSize: [W, W],
+        iconAnchor: [CX, CY],
+    });
+}
+
+// Dispatch to bus or train icon based on vehicle_type.
+function createVehicleIcon(vehicle) {
+    return vehicle.vehicle_type === "train" ? createTrainIcon(vehicle) : createBusIcon(vehicle);
+}
+
 // Update bearing in-place without recreating the DOM element (avoids click flicker).
 function updateBusIconBearing(marker, bearing) {
     const el = marker.getElement();
@@ -319,14 +380,14 @@ function updateVehicles(vehicles) {
             const colorChanged = !prev || prev.route_short_name !== v.route_short_name ||
                                  prev.route_color !== v.route_color;
             if (colorChanged) {
-                vehicleMarkers[id].setIcon(createBusIcon(v));
+                vehicleMarkers[id].setIcon(createVehicleIcon(v));
             } else if (v.bearing != null) {
                 // Rotate the existing SVG in-place — avoids DOM recreation and click flicker
                 updateBusIconBearing(vehicleMarkers[id], v.bearing);
             }
         } else {
             const marker = L.marker(latlng, {
-                icon: createBusIcon(v),
+                icon: createVehicleIcon(v),
                 zIndexOffset: 1000,
             });
             marker.on("click", () => {
@@ -448,15 +509,17 @@ function showVehiclePopup(vehicle, marker) {
     const lineName = vehicle.route_short_name || "?";
     let headsign = vehicle.trip_headsign || "";
 
-    // If headsign is a "A - B" route name, show it as-is after "Buss X"
+    // If headsign is a "A - B" route name, show it as-is after "Buss/Tåg X"
+    const isTrain = vehicle.vehicle_type === "train";
+    const typeLabel = isTrain ? "Tåg" : "Buss";
     const isRouteName = headsign.includes(" - ");
     let title;
     if (headsign && !isRouteName) {
-        title = `Buss ${lineName} mot ${headsign}`;
+        title = `${typeLabel} ${lineName} mot ${headsign}`;
     } else if (headsign && isRouteName) {
-        title = `Buss ${lineName} ${headsign}`;
+        title = `${typeLabel} ${lineName} ${headsign}`;
     } else {
-        title = `Buss ${lineName}`;
+        title = `${typeLabel} ${lineName}`;
     }
 
     const speedMs = vehicle.speed != null ? vehicle.speed : vehicle._calculatedSpeed;

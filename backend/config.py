@@ -25,5 +25,9 @@ RT_POLL_SECONDS = int(os.environ.get("RT_POLL_SECONDS", "180"))
 
 NEARBY_RADIUS_METERS = int(os.environ.get("NEARBY_RADIUS_METERS", "400"))
 FRONTEND_POLL_INTERVAL_MS = int(os.environ.get("FRONTEND_POLL_INTERVAL_MS", "5000"))
+
+# Oxyfi Realtidspositionering — train positions via WebSocket
+# Register at trafiklab.se and add the "Oxyfi-Realtidspositionering" API to your project.
+OXYFI_API_KEY = os.environ.get("OXYFI_API_KEY", "")
 # Bronze: max ~180s (30 000 req/30 days ÷ 2 feeds)
 # Silver: ok med 5s (2 000 000 req/30 days)

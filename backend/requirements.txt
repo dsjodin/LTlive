@@ -6,3 +6,4 @@ requests==2.32.3
 apscheduler==3.11.0
 gunicorn==23.0.0
 python-dotenv==1.0.1
+websocket-client==1.8.0
