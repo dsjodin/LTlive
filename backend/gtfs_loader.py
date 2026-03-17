@@ -120,6 +120,7 @@ def load_trips():
         trips[trip_id] = {
             "trip_id": trip_id,
             "route_id": row.get("route_id", ""),
+            "service_id": row.get("service_id", ""),
             "shape_id": row.get("shape_id", ""),
             "trip_headsign": row.get("trip_headsign", ""),
             "direction_id": row.get("direction_id", ""),
