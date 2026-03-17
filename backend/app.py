@@ -822,12 +822,13 @@ def departures_for_stop(stop_id):
                     if diff < best_diff and diff <= 600:
                         best_diff = diff
                         best_tv = tv_dep
-            # Second pass: any operator if no preferred match found
+            # Second pass: any operator if no preferred match found (tight 3-min window to
+            # avoid cross-operator mismatches where an SJ train happens to be nearby)
             if best_tv is None:
                 best_diff = float("inf")
                 for tv_dep in tv_ann[loc_sig].get("departures", []):
                     diff = abs(tv_dep["scheduled_time"] - dep_time)
-                    if diff < best_diff and diff <= 600:
+                    if diff < best_diff and diff <= 180:
                         best_diff = diff
                         best_tv = tv_dep
             if best_tv:
@@ -969,12 +970,12 @@ def arrivals_for_stop(stop_id):
                     if diff < best_diff and diff <= 600:
                         best_diff = diff
                         best_tv = tv_arr
-            # Second pass: any operator
+            # Second pass: any operator (tight 3-min window)
             if best_tv is None:
                 best_diff = float("inf")
                 for tv_arr in tv_ann[loc_sig].get("arrivals", []):
                     diff = abs(tv_arr["scheduled_time"] - arr_time)
-                    if diff < best_diff and diff <= 600:
+                    if diff < best_diff and diff <= 180:
                         best_diff = diff
                         best_tv = tv_arr
             if best_tv:
