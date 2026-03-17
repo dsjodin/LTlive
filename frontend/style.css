@@ -696,6 +696,14 @@ body.ticker-collapsed #ticker-reopener {
     background: rgba(20,20,30,0.82);
     color: #e8e8ed;
 }
+.sbp-platform {
+    padding: 1px 5px 1px 3px;
+    background: rgba(20,20,30,0.82);
+    color: #f0c040;
+    border-left: 1px solid rgba(255,255,255,0.12);
+    font-size: 10px;
+    font-weight: 700;
+}
 
 /* ===== Leaflet popups — dark (default) ===== */
 .leaflet-popup-content-wrapper {
@@ -722,7 +730,16 @@ body.ticker-collapsed #ticker-reopener {
 }
 
 /* ===== Stop departure board ===== */
-.popup-stop-name { font-size: 14px; font-weight: 700; margin-bottom: 8px; }
+.popup-stop-name { font-size: 14px; font-weight: 700; margin-bottom: 8px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.popup-platform {
+    font-size: 11px;
+    font-weight: 700;
+    background: #f0c040;
+    color: #1c1c1e;
+    border-radius: 4px;
+    padding: 1px 6px;
+    letter-spacing: 0.03em;
+}
 .dep-loading, .dep-empty { color: #8e8e93; font-size: 0.85em; padding: 4px 0; }
 .dep-table {
     width: 100%;

@@ -399,9 +399,12 @@ function showStopDepartures(stop, marker) {
                             <td class="dep-clock">${clock}</td>
                         </tr>`;
                 }).join("");
+                const platformChip = stop.platform_code
+                    ? `<span class="popup-platform">Läge ${stop.platform_code}</span>`
+                    : "";
                 html = `
                     <div class="popup-stop">
-                        <div class="popup-stop-name">${stop.stop_name}
+                        <div class="popup-stop-name">${stop.stop_name}${platformChip}
                             <a class="board-link" href="/board.html?stop_id=${encodeURIComponent(stop.stop_id)}&stop_name=${encodeURIComponent(stop.stop_name)}" target="_blank" title="Öppna avgångstavla">&#128507;</a>
                         </div>
                         <table class="dep-table"><tbody>${rows}</tbody></table>
@@ -927,11 +930,15 @@ function updateStopBadges() {
             const bg = dep.route_color || "0074D9";
             const fg = dep.route_text_color || "FFFFFF";
             const dotClass = isStation ? "station-marker" : "stop-marker";
+            const platformHtml = stop.platform_code
+                ? `<span class="sbp-platform">${stop.platform_code}</span>`
+                : "";
             iconHtml = `<div style="display:flex;align-items:center;gap:3px;pointer-events:none">` +
                 `<div class="${dotClass}" style="flex-shrink:0"></div>` +
-                `<span class="stop-badge-pill"><span class="sbp-line" style="background:#${bg};color:#${fg}">${dep.route_short_name}</span><span class="sbp-time">${label}</span></span>` +
+                `<span class="stop-badge-pill"><span class="sbp-line" style="background:#${bg};color:#${fg}">${dep.route_short_name}</span><span class="sbp-time">${label}</span>${platformHtml}</span>` +
                 `</div>`;
-            iconSize = isStation ? [80, 14] : [72, 10];
+            const extraWidth = stop.platform_code ? 14 : 0;
+            iconSize = isStation ? [80 + extraWidth, 14] : [72 + extraWidth, 10];
             iconAnchor = isStation ? [6, 7] : [4, 5];
         } else {
             const dotClass = isStation ? "station-marker" : "stop-marker";
