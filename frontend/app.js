@@ -362,7 +362,7 @@ function showStopDepartures(stop, marker) {
             <div class="popup-stop-name">${stop.stop_name}</div>
             <div class="dep-loading">Hämtar avgångar…</div>
         </div>`;
-    marker.bindPopup(loadingHtml, { maxWidth: 320 }).openPopup();
+    marker.setPopupContent(loadingHtml);
 
     fetch(`${API_BASE}/departures/${encodeURIComponent(stop.stop_id)}`)
         .then((r) => r.json())
@@ -529,7 +529,8 @@ function loadStops() {
                     zIndexOffset: isStation ? 500 : 100,
                 });
                 marker._stopData = stop;
-                marker.on("click", () => showStopDepartures(stop, marker));
+                marker.bindPopup("", { maxWidth: 320 });
+                marker.on("popupopen", () => showStopDepartures(stop, marker));
                 stopsLayer.addLayer(marker);
                 stopMarkerMap[stop.stop_id] = marker;
             });
