@@ -880,6 +880,17 @@ def departures_for_stop(stop_id):
         if len(deps) >= limit:
             break
 
+    # Deduplicate: same scheduled time + same headsign = same physical train
+    # (happens when a GTFS trip split/join creates two entries for one train)
+    seen_dep_keys = set()
+    deduped_deps = []
+    for entry in deps:
+        key = (entry["scheduled_time"], entry["headsign"])
+        if key not in seen_dep_keys:
+            seen_dep_keys.add(key)
+            deduped_deps.append(entry)
+    deps = deduped_deps
+
     result = {"stop_id": stop_id, "departures": deps, "count": len(deps)}
     _cache_set(cache_key, result)
     return jsonify(result)
@@ -1031,6 +1042,17 @@ def arrivals_for_stop(stop_id):
         })
         if len(arrs) >= limit:
             break
+
+    # Deduplicate: same scheduled time + same origin = same physical train
+    # (happens when a GTFS trip split/join creates two entries for one train)
+    seen_arr_keys = set()
+    deduped_arrs = []
+    for entry in arrs:
+        key = (entry["scheduled_time"], entry["origin"])
+        if key not in seen_arr_keys:
+            seen_arr_keys.add(key)
+            deduped_arrs.append(entry)
+    arrs = deduped_arrs
 
     return jsonify({"stop_id": stop_id, "arrivals": arrs, "count": len(arrs)})
 
