@@ -469,9 +469,13 @@ function showVehiclePopup(vehicle, marker) {
         : new Date().toLocaleTimeString("sv-SE");
 
     const nextStop = vehicle.next_stop_name || "";
+    const nextStopPlatform = vehicle.next_stop_platform || "";
     const nextStopLabel = vehicle.current_status === "Vid hållplats"
         ? "Vid hållplats"
         : "Nästa hållplats";
+    const platformChip = nextStopPlatform
+        ? ` <span class="popup-platform">Läge ${nextStopPlatform}</span>`
+        : "";
 
     const html = `
         <div class="popup-vehicle">
@@ -479,7 +483,7 @@ function showVehiclePopup(vehicle, marker) {
                 ${title}
             </div>
             <div class="popup-details">
-                ${nextStop ? `${nextStopLabel}: ${nextStop}<br/>` : ""}
+                ${nextStop ? `${nextStopLabel}: ${nextStop}${platformChip}<br/>` : ""}
                 ${speed ? `Hastighet: ${speed}<br/>` : ""}
                 Uppdaterad: ${updatedAt}
             </div>

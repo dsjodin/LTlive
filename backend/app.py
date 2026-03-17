@@ -131,7 +131,9 @@ def _enrich_vehicles(vehicle_list):
             headsign = route_info.get("route_long_name", "")
 
         stop_id = v.get("current_stop_id", "")
-        next_stop_name = stops.get(stop_id, {}).get("stop_name", "") if stop_id else ""
+        next_stop = stops.get(stop_id, {}) if stop_id else {}
+        next_stop_name = next_stop.get("stop_name", "")
+        next_stop_platform = next_stop.get("platform_code", "")
 
         enriched.append({
             **v,
@@ -142,6 +144,7 @@ def _enrich_vehicles(vehicle_list):
             "route_text_color": route_info.get("route_text_color", "FFFFFF"),
             "trip_headsign": headsign,
             "next_stop_name": next_stop_name,
+            "next_stop_platform": next_stop_platform,
         })
     return enriched
 
