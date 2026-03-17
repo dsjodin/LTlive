@@ -237,6 +237,7 @@ def init_gtfs_static():
             _clean_gtfs_dir()
             gtfs_loader.download_gtfs_static()
 
+        agencies = gtfs_loader.load_agencies()
         routes = gtfs_loader.load_routes()
         stops = gtfs_loader.load_stops()
         trips = gtfs_loader.load_trips()
@@ -246,6 +247,7 @@ def init_gtfs_static():
             print("GTFS routes empty after load, forcing re-download...")
             _clean_gtfs_dir()
             gtfs_loader.download_gtfs_static()
+            agencies = gtfs_loader.load_agencies()
             routes = gtfs_loader.load_routes()
             stops = gtfs_loader.load_stops()
             trips = gtfs_loader.load_trips()
@@ -258,6 +260,7 @@ def init_gtfs_static():
         )
 
         with _lock:
+            _data["agencies"] = agencies
             _data["routes"] = routes
             _data["stops"] = stops
             _data["trips"] = trips
@@ -310,19 +313,22 @@ def refresh_gtfs_static():
     try:
         _clean_gtfs_dir()
         gtfs_loader.download_gtfs_static()
+        agencies = gtfs_loader.load_agencies()
         routes = gtfs_loader.load_routes()
         stops = gtfs_loader.load_stops()
         trips = gtfs_loader.load_trips()
         shapes = gtfs_loader.load_shapes()
-        _, _, static_stop_departures, static_stop_arrivals, trip_origin_map = (
+        trip_headsigns, _, static_stop_departures, static_stop_arrivals, trip_origin_map = (
             gtfs_loader.load_trip_headsigns_and_stop_route_map(stops, trips)
         )
 
         with _lock:
+            _data["agencies"] = agencies
             _data["routes"] = routes
             _data["stops"] = stops
             _data["trips"] = trips
             _data["shapes"] = shapes
+            _data["trip_headsigns"] = trip_headsigns
             _data["static_stop_departures"] = static_stop_departures
             _data["static_stop_arrivals"] = static_stop_arrivals
             _data["trip_origin_map"] = trip_origin_map
@@ -748,6 +754,7 @@ def departures_for_stop(stop_id):
         key=lambda d: d["time"],
     )
 
+    tib_agency = config.TIB_AGENCY_ID
     deps = []
     for d in upcoming:
         route_id = d["route_id"]
@@ -759,9 +766,13 @@ def departures_for_stop(stop_id):
             rt = route.get("route_type", 3)
             if not (rt == 2 or 100 <= rt <= 199):
                 continue
+        if tib_agency and route.get("agency_id", "") != tib_agency:
+            continue
         headsign = trip_headsigns.get(trip_id, "") or route.get("route_long_name", "")
+        trip_short_name = trips.get(trip_id, {}).get("trip_short_name", "")
         deps.append({
             "route_short_name": route.get("route_short_name", "?"),
+            "trip_short_name": trip_short_name,
             "route_color": route.get("route_color", "0074D9"),
             "route_text_color": route.get("route_text_color", "FFFFFF"),
             "headsign": headsign,
@@ -818,6 +829,7 @@ def arrivals_for_stop(stop_id):
         key=lambda a: a["time"],
     )
 
+    tib_agency = config.TIB_AGENCY_ID
     arrs = []
     for a in upcoming:
         route_id = a["route_id"]
@@ -829,10 +841,14 @@ def arrivals_for_stop(stop_id):
             rt = route.get("route_type", 3)
             if not (rt == 2 or 100 <= rt <= 199):
                 continue
+        if tib_agency and route.get("agency_id", "") != tib_agency:
+            continue
         headsign = trip_headsigns.get(trip_id, "") or route.get("route_long_name", "")
         origin = trip_origin_map.get(trip_id, "")
+        trip_short_name = trips.get(trip_id, {}).get("trip_short_name", "")
         arrs.append({
             "route_short_name": route.get("route_short_name", "?"),
+            "trip_short_name": trip_short_name,
             "route_color": route.get("route_color", "0074D9"),
             "route_text_color": route.get("route_text_color", "FFFFFF"),
             "headsign": headsign,
@@ -950,6 +966,29 @@ def shapes_for_route(route_id):
 
     route_shapes = {sid: all_shapes[sid] for sid in shape_ids if sid in all_shapes}
     return jsonify({"shapes": route_shapes, "route_id": route_id})
+
+
+@app.route("/api/debug/agencies")
+def debug_agencies():
+    """Debug: list all agencies in the GTFS data with their agency_id."""
+    with _lock:
+        agencies = _data.get("agencies", {})
+        routes = _data["routes"]
+
+    agency_route_counts = {}
+    for r in routes.values():
+        aid = r.get("agency_id", "")
+        agency_route_counts[aid] = agency_route_counts.get(aid, 0) + 1
+
+    result = []
+    for aid, ag in agencies.items():
+        result.append({
+            "agency_id": aid,
+            "agency_name": ag.get("agency_name", ""),
+            "route_count": agency_route_counts.get(aid, 0),
+        })
+    result.sort(key=lambda x: x["agency_name"])
+    return jsonify({"agencies": result, "tib_agency_id_configured": config.TIB_AGENCY_ID})
 
 
 @app.route("/api/debug/stops-fields")

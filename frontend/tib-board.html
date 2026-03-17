@@ -765,8 +765,9 @@ async function loadDepartures(board) {
             ? `<span class="rt-dot" title="Realtidsdata"></span>`
             : "";
 
+        const trainLabel = d.trip_short_name || d.route_short_name || "?";
         return `<div class="row dep-grid ${nowClass}">
-            <span class="badge" style="background:${bg};color:${fg}">${d.route_short_name || "?"}</span>
+            <span class="badge" style="background:${bg};color:${fg}">${trainLabel}</span>
             <div class="destination">
                 <div class="destination-main">${d.headsign || ""}${liveTag}</div>
                 <div class="destination-sub">${rtDot}${d.is_realtime ? "Realtid" : "Tidtabell"}</div>
@@ -812,8 +813,9 @@ async function loadArrivals(board) {
             ? `mot ${a.headsign}`
             : "";
 
+        const trainLabel = a.trip_short_name || a.route_short_name || "?";
         return `<div class="row arr-grid ${nowClass}">
-            <span class="badge" style="background:${bg};color:${fg}">${a.route_short_name || "?"}</span>
+            <span class="badge" style="background:${bg};color:${fg}">${trainLabel}</span>
             <div class="destination">
                 <div class="destination-main">${fromLabel}${liveTag}</div>
                 <div class="destination-sub">${sub}</div>

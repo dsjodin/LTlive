@@ -74,13 +74,27 @@ def _read_csv(filename):
         return list(reader)
 
 
+def load_agencies():
+    """Load agency.txt -> dict keyed by agency_id."""
+    agencies = {}
+    for row in _read_csv("agency.txt"):
+        aid = row.get("agency_id", "")
+        agencies[aid] = {
+            "agency_id": aid,
+            "agency_name": row.get("agency_name", ""),
+            "agency_url": row.get("agency_url", ""),
+        }
+    return agencies
+
+
 def load_routes():
-    """Load routes.txt -> dict keyed by route_id."""
+    """Load routes.txt -> dict keyed by route_id, including agency_id."""
     routes = {}
     for row in _read_csv("routes.txt"):
         route_id = row["route_id"]
         routes[route_id] = {
             "route_id": route_id,
+            "agency_id": row.get("agency_id", ""),
             "route_short_name": row.get("route_short_name", ""),
             "route_long_name": row.get("route_long_name", ""),
             "route_type": int(row.get("route_type", 3)),
@@ -123,6 +137,7 @@ def load_trips():
             "service_id": row.get("service_id", ""),
             "shape_id": row.get("shape_id", ""),
             "trip_headsign": row.get("trip_headsign", ""),
+            "trip_short_name": row.get("trip_short_name", ""),
             "direction_id": row.get("direction_id", ""),
         }
     return trips

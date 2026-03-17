@@ -24,6 +24,11 @@ GTFS_REFRESH_HOURS = int(os.environ.get("GTFS_REFRESH_HOURS", "48"))
 RT_POLL_SECONDS = int(os.environ.get("RT_POLL_SECONDS", "180"))
 
 NEARBY_RADIUS_METERS = int(os.environ.get("NEARBY_RADIUS_METERS", "400"))
+
+# Agency ID for Tåg i Bergslagen in the Samtrafiken GTFS.
+# Leave empty to show all train operators; set to filter to TiB only.
+# Run /api/debug/agencies after startup to find the correct value.
+TIB_AGENCY_ID = os.environ.get("TIB_AGENCY_ID", "")
 FRONTEND_POLL_INTERVAL_MS = int(os.environ.get("FRONTEND_POLL_INTERVAL_MS", "5000"))
 
 # Oxyfi Realtidspositionering — train positions via WebSocket
