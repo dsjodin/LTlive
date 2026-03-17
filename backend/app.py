@@ -539,6 +539,9 @@ def nearby_departures():
 
     nearby = []
     for stop_id, stop in all_stops.items():
+        # Skip station containers and other non-boarding locations
+        if stop.get("location_type", 0) != 0:
+            continue
         slat = stop.get("stop_lat")
         slon = stop.get("stop_lon")
         if not slat or not slon:
@@ -552,10 +555,34 @@ def nearby_departures():
 
     nearby.sort()
 
+    # Group platforms that share the same parent station so "Slottet A" and
+    # "Slottet B" appear as a single entry with merged departures.
+    groups = {}  # group_key -> {dist, stop, stop_ids}
+    for dist, stop_id, stop in nearby:
+        group_key = stop.get("parent_station") or stop_id
+        if group_key not in groups:
+            groups[group_key] = {"dist": dist, "stop": stop, "stop_ids": []}
+        groups[group_key]["stop_ids"].append(stop_id)
+        if dist < groups[group_key]["dist"]:
+            groups[group_key]["dist"] = dist
+            groups[group_key]["stop"] = stop
+
+    sorted_groups = sorted(groups.values(), key=lambda g: g["dist"])[:8]
+
     result = []
-    for dist, stop_id, stop in nearby[:12]:
-        raw = stop_departures.get(stop_id, [])
-        upcoming = sorted([d for d in raw if d["time"] >= now - 60], key=lambda d: d["time"])[:5]
+    for grp in sorted_groups:
+        # Collect and deduplicate departures across all stops in the group
+        all_raw = []
+        for sid in grp["stop_ids"]:
+            all_raw.extend(stop_departures.get(sid, []))
+        seen_trips = set()
+        upcoming = []
+        for d in sorted([d for d in all_raw if d["time"] >= now - 60], key=lambda d: d["time"]):
+            if d["trip_id"] not in seen_trips:
+                seen_trips.add(d["trip_id"])
+                upcoming.append(d)
+            if len(upcoming) >= 5:
+                break
         deps = []
         for d in upcoming:
             route_id = d["route_id"] or trips.get(d["trip_id"], {}).get("route_id", "")
@@ -571,9 +598,9 @@ def nearby_departures():
                 "is_realtime": d.get("is_realtime", False),
             })
         result.append({
-            "stop_id": stop_id,
-            "stop_name": stop.get("stop_name", stop_id),
-            "distance_m": round(dist),
+            "stop_id": grp["stop"]["stop_id"],
+            "stop_name": grp["stop"].get("stop_name", grp["stop"]["stop_id"]),
+            "distance_m": round(grp["dist"]),
             "departures": deps,
         })
 

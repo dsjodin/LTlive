@@ -103,7 +103,8 @@ def load_stops():
             "stop_name": row.get("stop_name", ""),
             "stop_lat": float(lat),
             "stop_lon": float(lon),
-            "location_type": int(row.get("location_type", 0)),
+            "location_type": int(row.get("location_type", 0) or 0),
+            "parent_station": row.get("parent_station", ""),
         }
     return stops
 
