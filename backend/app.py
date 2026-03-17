@@ -66,6 +66,8 @@ _data = {
     "gtfs_loaded": False,
     "gtfs_error": None,
     "static_stop_departures": {},
+    "static_stop_arrivals": {},
+    "trip_origin_map": {},
 }
 _lock = threading.Lock()
 _gtfs_retry_count = 0
@@ -249,9 +251,9 @@ def init_gtfs_static():
             trips = gtfs_loader.load_trips()
             shapes = gtfs_loader.load_shapes()
 
-        # Build headsigns, stop->route map and today's static departures in one pass
+        # Build headsigns, stop->route map and today's static departures/arrivals in one pass
         print("Building trip headsigns, stop->route map and static departures from stop_times...")
-        trip_headsigns, stop_route_map, static_stop_departures = (
+        trip_headsigns, stop_route_map, static_stop_departures, static_stop_arrivals, trip_origin_map = (
             gtfs_loader.load_trip_headsigns_and_stop_route_map(stops, trips)
         )
 
@@ -261,8 +263,10 @@ def init_gtfs_static():
             _data["trips"] = trips
             _data["shapes"] = shapes
             _data["trip_headsigns"] = trip_headsigns
+            _data["trip_origin_map"] = trip_origin_map
             _data["stop_route_map"] = stop_route_map
             _data["static_stop_departures"] = static_stop_departures
+            _data["static_stop_arrivals"] = static_stop_arrivals
             _data["gtfs_loaded"] = True
             _data["gtfs_error"] = None
 
@@ -289,11 +293,13 @@ def _refresh_static_departures():
             stops = _data.get("stops", {})
         if not trips:
             return
-        _, _, static_stop_departures = (
+        _, _, static_stop_departures, static_stop_arrivals, trip_origin_map = (
             gtfs_loader.load_trip_headsigns_and_stop_route_map(stops, trips)
         )
         with _lock:
             _data["static_stop_departures"] = static_stop_departures
+            _data["static_stop_arrivals"] = static_stop_arrivals
+            _data["trip_origin_map"] = trip_origin_map
         print(f"Static departures refreshed: {len(static_stop_departures)} stops with service today")
     except Exception as e:
         print(f"Error refreshing static departures: {e}")
@@ -308,7 +314,7 @@ def refresh_gtfs_static():
         stops = gtfs_loader.load_stops()
         trips = gtfs_loader.load_trips()
         shapes = gtfs_loader.load_shapes()
-        _, _, static_stop_departures = (
+        _, _, static_stop_departures, static_stop_arrivals, trip_origin_map = (
             gtfs_loader.load_trip_headsigns_and_stop_route_map(stops, trips)
         )
 
@@ -318,6 +324,8 @@ def refresh_gtfs_static():
             _data["trips"] = trips
             _data["shapes"] = shapes
             _data["static_stop_departures"] = static_stop_departures
+            _data["static_stop_arrivals"] = static_stop_arrivals
+            _data["trip_origin_map"] = trip_origin_map
             _data["gtfs_error"] = None
         # Invalidate stop-sequence cache so it is rebuilt with fresh trip data
         with _stop_seq_lock:
@@ -689,9 +697,15 @@ def nearby_departures():
 
 @app.route("/api/departures/<stop_id>")
 def departures_for_stop(stop_id):
-    """Return upcoming departures for a stop, enriched with route info."""
+    """Return upcoming departures for a stop, enriched with route info.
+
+    Optional query params:
+        limit: max rows (1-30, default 10)
+        route_type: 'train' to filter to rail routes only
+    """
     limit = max(1, min(int(request.args.get("limit", 10)), 30))
-    cache_key = ("dep", stop_id, limit)
+    only_trains = request.args.get("route_type") == "train"
+    cache_key = ("dep", stop_id, limit, only_trains)
     cached = _cache_get(cache_key)
     if cached:
         return jsonify(cached)
@@ -709,7 +723,7 @@ def departures_for_stop(stop_id):
     upcoming = sorted(
         [d for d in raw if d["time"] >= now - 60],
         key=lambda d: d["time"],
-    )[:limit]
+    )
 
     deps = []
     for d in upcoming:
@@ -718,6 +732,10 @@ def departures_for_stop(stop_id):
         if not route_id:
             route_id = trips.get(trip_id, {}).get("route_id", "")
         route = routes.get(route_id, {})
+        if only_trains:
+            rt = route.get("route_type", 3)
+            if not (rt == 2 or 100 <= rt <= 199):
+                continue
         headsign = trip_headsigns.get(trip_id, "") or route.get("route_long_name", "")
         deps.append({
             "route_short_name": route.get("route_short_name", "?"),
@@ -726,11 +744,67 @@ def departures_for_stop(stop_id):
             "headsign": headsign,
             "departure_time": d["time"],
             "is_realtime": d["is_realtime"],
+            "trip_id": trip_id,
         })
+        if len(deps) >= limit:
+            break
 
     result = {"stop_id": stop_id, "departures": deps, "count": len(deps)}
     _cache_set(cache_key, result)
     return jsonify(result)
+
+
+@app.route("/api/arrivals/<stop_id>")
+def arrivals_for_stop(stop_id):
+    """Return upcoming train arrivals for a stop, enriched with origin info.
+
+    Optional query params:
+        limit: max rows (1-30, default 10)
+        route_type: 'train' to filter to rail routes only (default all)
+    """
+    limit = max(1, min(int(request.args.get("limit", 10)), 30))
+    only_trains = request.args.get("route_type") == "train"
+
+    now = int(time.time())
+    with _lock:
+        static_arrs = list(_data.get("static_stop_arrivals", {}).get(stop_id, []))
+        routes = _data["routes"]
+        trips = _data["trips"]
+        trip_headsigns = _data.get("trip_headsigns", {})
+        trip_origin_map = _data.get("trip_origin_map", {})
+
+    upcoming = sorted(
+        [a for a in static_arrs if a["time"] >= now - 60],
+        key=lambda a: a["time"],
+    )
+
+    arrs = []
+    for a in upcoming:
+        route_id = a["route_id"]
+        trip_id = a["trip_id"]
+        if not route_id:
+            route_id = trips.get(trip_id, {}).get("route_id", "")
+        route = routes.get(route_id, {})
+        if only_trains:
+            rt = route.get("route_type", 3)
+            if not (rt == 2 or 100 <= rt <= 199):
+                continue
+        headsign = trip_headsigns.get(trip_id, "") or route.get("route_long_name", "")
+        origin = trip_origin_map.get(trip_id, "")
+        arrs.append({
+            "route_short_name": route.get("route_short_name", "?"),
+            "route_color": route.get("route_color", "0074D9"),
+            "route_text_color": route.get("route_text_color", "FFFFFF"),
+            "headsign": headsign,
+            "origin": origin,
+            "arrival_time": a["time"],
+            "is_realtime": False,
+            "trip_id": trip_id,
+        })
+        if len(arrs) >= limit:
+            break
+
+    return jsonify({"stop_id": stop_id, "arrivals": arrs, "count": len(arrs)})
 
 
 @app.route("/api/stops/stations")

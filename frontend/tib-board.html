@@ -1,0 +1,827 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tåg i Bergslagen – Avgångs- och ankomsttavla</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        :root {
+            --bg: #0d1117;
+            --bg2: #161b22;
+            --bg3: #21262d;
+            --border: #30363d;
+            --text: #e6edf3;
+            --muted: #8b949e;
+            --tib: #e87722;
+            --tib-dark: #b55b10;
+            --green: #3fb950;
+            --orange: #f0883e;
+            --red: #f85149;
+            --yellow: #d29922;
+            --header-bg: #0d1117;
+        }
+
+        html, body {
+            height: 100%;
+            background: var(--bg);
+            color: var(--text);
+            font-family: "Segoe UI", -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
+            overflow: hidden;
+        }
+
+        /* ── Header ── */
+        #header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 12px 20px;
+            background: var(--header-bg);
+            border-bottom: 2px solid var(--tib);
+            gap: 12px;
+        }
+
+        #header-left {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            min-width: 0;
+        }
+
+        #tib-logo {
+            width: 38px;
+            height: 38px;
+            background: var(--tib);
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 900;
+            font-size: 1rem;
+            color: #fff;
+            flex-shrink: 0;
+            letter-spacing: -1px;
+        }
+
+        #station-title {
+            font-size: clamp(1.1rem, 3vw, 1.7rem);
+            font-weight: 700;
+            color: var(--text);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        #station-subtitle {
+            font-size: 0.72rem;
+            color: var(--muted);
+            margin-top: 2px;
+        }
+
+        #clock {
+            font-size: clamp(1.3rem, 3.5vw, 2.2rem);
+            font-weight: 700;
+            font-variant-numeric: tabular-nums;
+            color: var(--tib);
+            letter-spacing: 1px;
+            flex-shrink: 0;
+            font-family: monospace;
+        }
+
+        #back-btn {
+            background: rgba(232,119,34,0.12);
+            border: 1px solid rgba(232,119,34,0.35);
+            color: var(--tib);
+            padding: 6px 12px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 0.82rem;
+            flex-shrink: 0;
+            text-decoration: none;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            transition: background 0.15s;
+        }
+        #back-btn:hover { background: rgba(232,119,34,0.22); }
+
+        #fs-btn {
+            background: rgba(255,255,255,0.06);
+            border: 1px solid var(--border);
+            color: var(--muted);
+            padding: 6px 10px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 0.82rem;
+            flex-shrink: 0;
+            transition: background 0.15s;
+        }
+        #fs-btn:hover { background: rgba(255,255,255,0.1); color: var(--text); }
+
+        /* ── Station tabs ── */
+        #station-bar {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 20px;
+            background: var(--bg2);
+            border-bottom: 1px solid var(--border);
+        }
+
+        .station-btn {
+            padding: 7px 16px;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            background: var(--bg3);
+            color: var(--muted);
+            font-size: 0.88rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.15s;
+            white-space: nowrap;
+        }
+        .station-btn:hover { border-color: var(--tib); color: var(--tib); }
+        .station-btn.active {
+            background: var(--tib);
+            border-color: var(--tib);
+            color: #fff;
+        }
+
+        #station-search-wrap {
+            position: relative;
+            margin-left: auto;
+        }
+
+        #station-search {
+            background: var(--bg3);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            color: var(--text);
+            padding: 7px 12px;
+            font-size: 0.88rem;
+            outline: none;
+            width: 220px;
+            transition: border-color 0.15s;
+        }
+        #station-search:focus { border-color: var(--tib); }
+        #station-search::placeholder { color: var(--muted); }
+
+        #station-search-results {
+            position: absolute;
+            top: calc(100% + 4px);
+            right: 0;
+            background: var(--bg2);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            width: 280px;
+            max-height: 260px;
+            overflow-y: auto;
+            z-index: 200;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+            display: none;
+        }
+        #station-search-results.open { display: block; }
+        .ssr-item {
+            padding: 9px 14px;
+            cursor: pointer;
+            font-size: 0.88rem;
+            border-bottom: 1px solid var(--border);
+            color: var(--text);
+            transition: background 0.1s;
+        }
+        .ssr-item:last-child { border-bottom: none; }
+        .ssr-item:hover { background: var(--bg3); color: var(--tib); }
+
+        /* ── Mode tabs (avgångar / ankomster) ── */
+        #mode-bar {
+            display: flex;
+            align-items: center;
+            background: var(--bg2);
+            border-bottom: 1px solid var(--border);
+        }
+
+        .mode-tab {
+            flex: 1;
+            padding: 10px 0;
+            text-align: center;
+            font-size: 0.9rem;
+            font-weight: 600;
+            color: var(--muted);
+            cursor: pointer;
+            border-bottom: 3px solid transparent;
+            transition: all 0.15s;
+            letter-spacing: 0.3px;
+        }
+        .mode-tab:hover { color: var(--text); }
+        .mode-tab.active {
+            color: var(--tib);
+            border-bottom-color: var(--tib);
+        }
+
+        /* ── Refresh bar ── */
+        #refresh-bar {
+            height: 2px;
+            background: var(--tib);
+            width: 100%;
+            transform-origin: left;
+            transform: scaleX(0);
+        }
+        #refresh-bar.running {
+            transition: transform 30s linear;
+            transform: scaleX(1);
+        }
+
+        /* ── Column header ── */
+        #col-header {
+            display: grid;
+            padding: 6px 20px;
+            background: var(--bg3);
+            border-bottom: 1px solid var(--border);
+            color: var(--muted);
+            font-size: 0.72rem;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+            text-transform: uppercase;
+        }
+        #col-header.dep-grid { grid-template-columns: 60px 1fr 64px 90px 90px; gap: 0 12px; }
+        #col-header.arr-grid { grid-template-columns: 60px 1fr 64px 90px 90px; gap: 0 12px; }
+
+        /* ── Board ── */
+        #board-wrap {
+            position: absolute;
+            left: 0; right: 0; bottom: 0;
+            overflow-y: auto;
+        }
+
+        .row {
+            display: grid;
+            align-items: center;
+            gap: 0 12px;
+            padding: 13px 20px;
+            border-bottom: 1px solid var(--border);
+            background: var(--bg2);
+            transition: background 0.2s;
+        }
+        .row:hover { background: var(--bg3); }
+        .row.dep-grid { grid-template-columns: 60px 1fr 64px 90px 90px; }
+        .row.arr-grid { grid-template-columns: 60px 1fr 64px 90px 90px; }
+        .row.row-now { background: #1a2a1a; border-left: 3px solid var(--green); }
+
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 5px 8px;
+            border-radius: 6px;
+            font-weight: 800;
+            font-size: clamp(0.85rem, 2vw, 1.1rem);
+            letter-spacing: -0.3px;
+            white-space: nowrap;
+        }
+
+        .destination {
+            min-width: 0;
+        }
+        .destination-main {
+            font-size: clamp(0.9rem, 2.2vw, 1.25rem);
+            font-weight: 500;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            color: var(--text);
+        }
+        .destination-sub {
+            font-size: 0.72rem;
+            color: var(--muted);
+            margin-top: 2px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .track {
+            font-size: 0.85rem;
+            color: var(--muted);
+            text-align: center;
+        }
+        .track-num {
+            display: inline-block;
+            background: var(--bg3);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            padding: 2px 7px;
+            font-weight: 600;
+            font-size: 0.8rem;
+            color: var(--text);
+        }
+
+        .sched-time {
+            font-size: clamp(0.85rem, 1.7vw, 1.05rem);
+            color: var(--muted);
+            font-variant-numeric: tabular-nums;
+            font-family: monospace;
+            text-align: right;
+        }
+
+        .eta-col {
+            font-size: clamp(0.95rem, 2.4vw, 1.4rem);
+            font-weight: 800;
+            font-variant-numeric: tabular-nums;
+            font-family: monospace;
+            text-align: right;
+            white-space: nowrap;
+        }
+        .eta-now    { color: var(--green); }
+        .eta-soon   { color: var(--orange); }
+        .eta-normal { color: #58a6ff; }
+        .eta-late   { color: var(--red); }
+
+        .rt-dot {
+            display: inline-block;
+            width: 7px; height: 7px;
+            border-radius: 50%;
+            background: var(--green);
+            margin-right: 5px;
+            vertical-align: middle;
+        }
+
+        /* Live train indicator */
+        .live-train {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            font-size: 0.72rem;
+            color: var(--tib);
+            font-weight: 700;
+            background: rgba(232,119,34,0.12);
+            border: 1px solid rgba(232,119,34,0.3);
+            border-radius: 4px;
+            padding: 1px 5px;
+            margin-left: 6px;
+            vertical-align: middle;
+        }
+        .live-dot {
+            width: 6px; height: 6px;
+            border-radius: 50%;
+            background: var(--tib);
+            animation: pulse 1.2s ease-in-out infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.4; transform: scale(0.7); }
+        }
+
+        /* Empty / loading states */
+        .board-msg {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 180px;
+            color: var(--muted);
+            font-size: 0.95rem;
+            background: var(--bg2);
+        }
+
+        /* Train icon in header area */
+        #live-status {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 4px 20px;
+            background: var(--bg);
+            border-bottom: 1px solid var(--border);
+            font-size: 0.75rem;
+            color: var(--muted);
+            min-height: 28px;
+        }
+        #live-status-text { }
+        #live-status .tib-live { color: var(--tib); font-weight: 600; }
+    </style>
+</head>
+<body>
+
+<div id="header">
+    <div id="header-left">
+        <div id="tib-logo">TiB</div>
+        <div>
+            <div id="station-title">Välj station</div>
+            <div id="station-subtitle">Tåg i Bergslagen · Avgångar &amp; ankomster</div>
+        </div>
+    </div>
+    <div id="clock">--:--:--</div>
+    <button id="fs-btn" title="Helskärm" onclick="toggleFullscreen()">⛶</button>
+    <a id="back-btn" href="/">&#8592; Karta</a>
+</div>
+
+<div id="station-bar">
+    <button class="station-btn" onclick="selectStation('orebro-c')">Örebro C</button>
+    <button class="station-btn" onclick="selectStation('orebro-sodra')">Örebro Södra</button>
+    <div id="station-search-wrap">
+        <input id="station-search" type="text" placeholder="Sök annan station…" autocomplete="off" />
+        <div id="station-search-results"></div>
+    </div>
+</div>
+
+<div id="mode-bar">
+    <div class="mode-tab active" id="tab-dep" onclick="setMode('dep')">&#9654; Avgångar</div>
+    <div class="mode-tab" id="tab-arr" onclick="setMode('arr')">&#9664; Ankomster</div>
+</div>
+
+<div id="live-status">
+    <span id="live-status-text">Hämtar tågpositioner…</span>
+</div>
+
+<div id="refresh-bar"></div>
+
+<div id="col-header" class="dep-grid">
+    <span>Tåg</span>
+    <span>Destination</span>
+    <span style="text-align:center">Spår</span>
+    <span style="text-align:right">Avg.</span>
+    <span style="text-align:right">Om</span>
+</div>
+
+<div id="board-wrap">
+    <div id="board">
+        <div class="board-msg">Välj en station ovan</div>
+    </div>
+</div>
+
+<script>
+const API = "/api";
+const REFRESH_INTERVAL = 30000; // 30 s
+
+// Known stations: name -> search query used to find stop_id via /api/stops
+const PRESET_STATIONS = {
+    "orebro-c":     { label: "Örebro Centralstation", search: "örebro c" },
+    "orebro-sodra": { label: "Örebro Södra",          search: "örebro södra" },
+};
+
+let currentStopId   = null;
+let currentStopName = "";
+let currentMode     = "dep"; // "dep" | "arr"
+let refreshTimer    = null;
+let countdownTimer  = null;
+let liveTibTrains   = []; // from /api/vehicles
+
+// ── Clock ──────────────────────────────────────────────
+function updateClock() {
+    document.getElementById("clock").textContent =
+        new Date().toLocaleTimeString("sv-SE");
+}
+setInterval(updateClock, 1000);
+updateClock();
+
+// ── Layout ─────────────────────────────────────────────
+function resizeBoard() {
+    const header    = document.getElementById("header").offsetHeight;
+    const stBar     = document.getElementById("station-bar").offsetHeight;
+    const modeBar   = document.getElementById("mode-bar").offsetHeight;
+    const liveBar   = document.getElementById("live-status").offsetHeight;
+    const refBar    = document.getElementById("refresh-bar").offsetHeight;
+    const colHeader = document.getElementById("col-header").offsetHeight;
+    const wrap      = document.getElementById("board-wrap");
+    wrap.style.top  = (header + stBar + modeBar + liveBar + refBar + colHeader) + "px";
+}
+window.addEventListener("resize", resizeBoard);
+resizeBoard();
+
+// ── Fullscreen ─────────────────────────────────────────
+function toggleFullscreen() {
+    if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen().catch(() => {});
+    } else {
+        document.exitFullscreen();
+    }
+}
+
+// ── Live TiB train positions ───────────────────────────
+async function fetchLiveTrains() {
+    try {
+        const data = await fetch(`${API}/vehicles`).then(r => r.json());
+        liveTibTrains = (data.vehicles || []).filter(v =>
+            v.source === "oxyfi" || v.route_type === 2 || (100 <= (v.route_type || 0) && (v.route_type || 0) <= 199)
+        );
+        updateLiveStatus();
+    } catch {
+        liveTibTrains = [];
+    }
+}
+
+function updateLiveStatus() {
+    const el = document.getElementById("live-status-text");
+    if (liveTibTrains.length === 0) {
+        el.textContent = "Inga aktiva tåg just nu";
+        return;
+    }
+    const labels = liveTibTrains.map(v => {
+        const name = v.route_short_name || v.label || "?";
+        const spd  = v.speed != null ? ` ${Math.round(v.speed * 3.6)} km/h` : "";
+        return `<span class="tib-live">${name}${spd}</span>`;
+    });
+    el.innerHTML = `Aktiva tåg: ${labels.join(" &nbsp;·&nbsp; ")}`;
+}
+
+// Find a live train matching a trip_id or route_short_name
+function findLiveTrain(tripId, routeShortName) {
+    return liveTibTrains.find(v =>
+        (v.trip_id && v.trip_id === tripId) ||
+        (v.route_short_name && v.route_short_name === routeShortName)
+    ) || null;
+}
+
+setInterval(fetchLiveTrains, 10000);
+fetchLiveTrains();
+
+// ── Stop search ────────────────────────────────────────
+let allTrainStops = [];
+
+async function loadTrainStops() {
+    try {
+        // Load train routes to filter stops
+        const [routeData, stopData] = await Promise.all([
+            fetch(`${API}/routes/trains`).then(r => r.json()),
+            fetch(`${API}/stops`).then(r => r.json()),
+        ]);
+        const trainRouteIds = new Set((routeData.routes || []).map(r => r.route_id));
+        // We can't easily filter stops by route here without stop_route_map;
+        // just load all stops and let the user search
+        allTrainStops = (stopData.stops || []);
+    } catch {
+        allTrainStops = [];
+    }
+}
+loadTrainStops();
+
+const searchInput   = document.getElementById("station-search");
+const searchResults = document.getElementById("station-search-results");
+
+searchInput.addEventListener("input", () => {
+    const q = searchInput.value.trim().toLowerCase();
+    if (q.length < 2) { searchResults.classList.remove("open"); return; }
+    const matches = allTrainStops
+        .filter(s => s.stop_name.toLowerCase().includes(q))
+        .slice(0, 10);
+    if (!matches.length) { searchResults.classList.remove("open"); return; }
+    searchResults.innerHTML = matches.map(s =>
+        `<div class="ssr-item" data-id="${s.stop_id}" data-name="${s.stop_name}">${s.stop_name}</div>`
+    ).join("");
+    searchResults.classList.add("open");
+});
+
+searchResults.addEventListener("click", e => {
+    const item = e.target.closest(".ssr-item");
+    if (!item) return;
+    searchInput.value = "";
+    searchResults.classList.remove("open");
+    loadStation(item.dataset.id, item.dataset.name);
+});
+
+document.addEventListener("click", e => {
+    if (!e.target.closest("#station-search-wrap")) {
+        searchResults.classList.remove("open");
+    }
+});
+
+// ── Preset station selector ────────────────────────────
+async function selectStation(key) {
+    const preset = PRESET_STATIONS[key];
+    if (!preset) return;
+
+    // Update active button
+    document.querySelectorAll(".station-btn").forEach((b, i) => {
+        const keys = Object.keys(PRESET_STATIONS);
+        b.classList.toggle("active", keys[i] === key);
+    });
+
+    // Search for the stop_id by name
+    const q = preset.search.toLowerCase();
+    if (!allTrainStops.length) await loadTrainStops();
+
+    const match = allTrainStops.find(s =>
+        s.stop_name.toLowerCase().includes(q)
+    );
+    if (match) {
+        loadStation(match.stop_id, match.stop_name);
+    } else {
+        // Try fetching on demand
+        try {
+            const data = await fetch(`${API}/stops`).then(r => r.json());
+            allTrainStops = data.stops || [];
+            const m = allTrainStops.find(s => s.stop_name.toLowerCase().includes(q));
+            if (m) loadStation(m.stop_id, m.stop_name);
+            else document.getElementById("board").innerHTML =
+                `<div class="board-msg">Hållplatsen "${preset.label}" hittades inte i GTFS-data</div>`;
+        } catch {
+            document.getElementById("board").innerHTML =
+                `<div class="board-msg">Kunde inte hämta hållplatser</div>`;
+        }
+    }
+}
+
+function loadStation(stopId, stopName) {
+    currentStopId   = stopId;
+    currentStopName = stopName;
+    document.getElementById("station-title").textContent    = stopName;
+    document.getElementById("station-subtitle").textContent = "Tåg i Bergslagen · Avgångar & ankomster";
+    history.replaceState(null, "", `?stop_id=${encodeURIComponent(stopId)}&stop_name=${encodeURIComponent(stopName)}`);
+    refreshBoard();
+}
+
+// ── Mode toggle ───────────────────────────────────────
+function setMode(mode) {
+    currentMode = mode;
+    document.getElementById("tab-dep").classList.toggle("active", mode === "dep");
+    document.getElementById("tab-arr").classList.toggle("active", mode === "arr");
+
+    const colHdr = document.getElementById("col-header");
+    if (mode === "dep") {
+        colHdr.innerHTML = `
+            <span>Tåg</span>
+            <span>Destination</span>
+            <span style="text-align:center">Spår</span>
+            <span style="text-align:right">Avg.</span>
+            <span style="text-align:right">Om</span>`;
+    } else {
+        colHdr.innerHTML = `
+            <span>Tåg</span>
+            <span>Från</span>
+            <span style="text-align:center">Spår</span>
+            <span style="text-align:right">Ank.</span>
+            <span style="text-align:right">Om</span>`;
+    }
+    refreshBoard();
+}
+
+// ── ETA helper ────────────────────────────────────────
+function formatEta(secs) {
+    if (secs <= 0)  return { text: "Nu",            cls: "eta-now" };
+    if (secs < 60)  return { text: `${secs} s`,     cls: "eta-now" };
+    const m = Math.floor(secs / 60), s = secs % 60;
+    const cls = m < 3 ? "eta-soon" : "eta-normal";
+    return { text: `${m}:${String(s).padStart(2,"0")}`, cls };
+}
+
+function startCountdown() {
+    clearInterval(countdownTimer);
+    countdownTimer = setInterval(() => {
+        const now = Date.now() / 1000;
+        document.querySelectorAll(".eta-col[data-ts]").forEach(el => {
+            const ts   = parseFloat(el.dataset.ts);
+            const secs = Math.round(ts - now);
+            const { text, cls } = formatEta(secs);
+            el.textContent = text;
+            el.className   = `eta-col ${cls}`;
+            const row = el.closest(".row");
+            if (row) row.classList.toggle("row-now", secs <= 30 && secs > -60);
+        });
+    }, 1000);
+}
+
+// ── Refresh ───────────────────────────────────────────
+async function refreshBoard() {
+    if (!currentStopId) return;
+    clearTimeout(refreshTimer);
+
+    const board = document.getElementById("board");
+    if (!board.querySelector(".row")) {
+        board.innerHTML = `<div class="board-msg">Hämtar…</div>`;
+    }
+
+    try {
+        if (currentMode === "dep") {
+            await loadDepartures(board);
+        } else {
+            await loadArrivals(board);
+        }
+    } catch {
+        board.innerHTML = `<div class="board-msg">Kunde inte hämta data</div>`;
+    }
+
+    // Refresh bar
+    const bar = document.getElementById("refresh-bar");
+    bar.style.transition = "none";
+    bar.style.transform  = "scaleX(0)";
+    bar.classList.remove("running");
+    requestAnimationFrame(() => {
+        bar.classList.add("running");
+    });
+
+    refreshTimer = setTimeout(refreshBoard, REFRESH_INTERVAL);
+}
+
+async function loadDepartures(board) {
+    const data = await fetch(
+        `${API}/departures/${encodeURIComponent(currentStopId)}?limit=20&route_type=train`
+    ).then(r => r.json());
+
+    const deps = data.departures || [];
+    if (!deps.length) {
+        board.innerHTML = `<div class="board-msg">Inga kommande tåg</div>`;
+        return;
+    }
+
+    const now = Date.now() / 1000;
+    board.innerHTML = deps.map(d => {
+        const secs  = Math.round(d.departure_time - now);
+        const { text: etaText, cls: etaCls } = formatEta(secs);
+        const clock = new Date(d.departure_time * 1000)
+            .toLocaleTimeString("sv-SE", { hour: "2-digit", minute: "2-digit" });
+        const bg    = d.route_color     ? `#${d.route_color}`     : "#e87722";
+        const fg    = d.route_text_color? `#${d.route_text_color}`: "#fff";
+        const nowClass = (secs <= 30 && secs > -60) ? "row-now" : "";
+
+        const liveTrain = findLiveTrain(d.trip_id, d.route_short_name);
+        const liveTag   = liveTrain
+            ? `<span class="live-train"><span class="live-dot"></span>Live</span>`
+            : "";
+        const rtDot = d.is_realtime
+            ? `<span class="rt-dot" title="Realtidsdata"></span>`
+            : "";
+
+        return `<div class="row dep-grid ${nowClass}">
+            <span class="badge" style="background:${bg};color:${fg}">${d.route_short_name || "?"}</span>
+            <div class="destination">
+                <div class="destination-main">${d.headsign || ""}${liveTag}</div>
+                <div class="destination-sub">${rtDot}${d.is_realtime ? "Realtid" : "Tidtabell"}</div>
+            </div>
+            <span class="track"><span class="track-num">–</span></span>
+            <span class="sched-time">${clock}</span>
+            <span class="eta-col ${etaCls}" data-ts="${d.departure_time}">${etaText}</span>
+        </div>`;
+    }).join("");
+
+    startCountdown();
+}
+
+async function loadArrivals(board) {
+    const data = await fetch(
+        `${API}/arrivals/${encodeURIComponent(currentStopId)}?limit=20&route_type=train`
+    ).then(r => r.json());
+
+    const arrs = data.arrivals || [];
+    if (!arrs.length) {
+        board.innerHTML = `<div class="board-msg">Inga kommande ankomster</div>`;
+        return;
+    }
+
+    const now = Date.now() / 1000;
+    board.innerHTML = arrs.map(a => {
+        const secs  = Math.round(a.arrival_time - now);
+        const { text: etaText, cls: etaCls } = formatEta(secs);
+        const clock = new Date(a.arrival_time * 1000)
+            .toLocaleTimeString("sv-SE", { hour: "2-digit", minute: "2-digit" });
+        const bg    = a.route_color     ? `#${a.route_color}`     : "#e87722";
+        const fg    = a.route_text_color? `#${a.route_text_color}`: "#fff";
+        const nowClass = (secs <= 30 && secs > -60) ? "row-now" : "";
+
+        const liveTrain = findLiveTrain(a.trip_id, a.route_short_name);
+        const liveTag   = liveTrain
+            ? `<span class="live-train"><span class="live-dot"></span>Live</span>`
+            : "";
+
+        // origin = first stop of trip, headsign = last stop (= this station or beyond)
+        const fromLabel = a.origin || "–";
+        const sub = a.headsign && a.headsign !== currentStopName
+            ? `mot ${a.headsign}`
+            : "";
+
+        return `<div class="row arr-grid ${nowClass}">
+            <span class="badge" style="background:${bg};color:${fg}">${a.route_short_name || "?"}</span>
+            <div class="destination">
+                <div class="destination-main">${fromLabel}${liveTag}</div>
+                <div class="destination-sub">${sub}</div>
+            </div>
+            <span class="track"><span class="track-num">–</span></span>
+            <span class="sched-time">${clock}</span>
+            <span class="eta-col ${etaCls}" data-ts="${a.arrival_time}">${etaText}</span>
+        </div>`;
+    }).join("");
+
+    startCountdown();
+}
+
+// ── URL param restore ─────────────────────────────────
+const params = new URLSearchParams(location.search);
+if (params.get("stop_id")) {
+    loadStation(params.get("stop_id"), params.get("stop_name") || params.get("stop_id"));
+} else {
+    // Default: try to load Örebro C
+    selectStation("orebro-c");
+}
+
+// ── Resize ────────────────────────────────────────────
+new ResizeObserver(resizeBoard).observe(document.getElementById("col-header"));
+resizeBoard();
+</script>
+<script>
+(function(){var s=Math.random().toString(36).slice(2),t=Date.now(),p=location.pathname;
+fetch('/api/stats/visit',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:s,page:p}),keepalive:true}).catch(function(){});
+function leave(){navigator.sendBeacon('/api/stats/leave',JSON.stringify({session_id:s,duration:Math.round((Date.now()-t)/1000)}));}
+window.addEventListener('beforeunload',leave);
+document.addEventListener('visibilitychange',function(){if(document.hidden)leave();});
+})();
+</script>
+</body>
+</html>

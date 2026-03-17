@@ -53,6 +53,7 @@ Live-kartan som visar bussar och tåg i Örebro län i realtid.
 
 ### Verktyg & sidor
 - **Avgångstavla** (`/board.html`) — tavla för enskild hållplats, öppnas från popup
+- **TiB-tavla** (`/tib-board.html`) — avgångs- och ankomsttavla för Tåg i Bergslagen (Örebro C, Örebro Södra m.fl.) med live-tågindikatorer från Oxyfi
 - **Statistiksida** (`/stats.html`) — besöksstatistik per sida (30 dagar + senaste 20 besök)
 - **Schematic Tracer** (`/tracer.html`) — ritverktyg för att skapa schematiska linjekartor
 - **API-utforskare** (`/api.html`) — testa alla backend-endpoints direkt i webbläsaren

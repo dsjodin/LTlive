@@ -187,7 +187,7 @@ def _active_service_ids_today():
 
 
 def load_trip_headsigns_and_stop_route_map(stops, trips):
-    """Build trip headsigns, stop->route mapping and today's static departures.
+    """Build trip headsigns, stop->route mapping and today's static departures/arrivals.
 
     Does a single pass over stop_times.txt.
 
@@ -195,6 +195,8 @@ def load_trip_headsigns_and_stop_route_map(stops, trips):
         headsigns: dict trip_id -> headsign (last stop name)
         stop_route_map: dict stop_id -> list of route_ids that serve the stop
         static_stop_departures: dict stop_id -> list of departure dicts for today
+        static_stop_arrivals: dict stop_id -> list of arrival dicts for today
+        trip_origin_map: dict trip_id -> origin stop_name (first stop of trip)
     """
     active_services = _active_service_ids_today()
 
@@ -211,9 +213,11 @@ def load_trip_headsigns_and_stop_route_map(stops, trips):
     today = datetime.date.today()
     today_midnight = int(datetime.datetime.combine(today, datetime.time.min).timestamp())
 
-    trip_last_stop = {}  # trip_id -> (max_sequence, stop_id)
+    trip_last_stop = {}   # trip_id -> (max_sequence, stop_id)
+    trip_first_stop = {}  # trip_id -> (min_sequence, stop_id)
     stop_routes = defaultdict(set)
     static_departures = defaultdict(list)  # stop_id -> [dep, ...]
+    static_arrivals = defaultdict(list)    # stop_id -> [arr, ...]
 
     for row in _read_csv("stop_times.txt"):
         tid = row["trip_id"]
@@ -222,6 +226,8 @@ def load_trip_headsigns_and_stop_route_map(stops, trips):
 
         if tid not in trip_last_stop or seq > trip_last_stop[tid][0]:
             trip_last_stop[tid] = (seq, stop_id)
+        if tid not in trip_first_stop or seq < trip_first_stop[tid][0]:
+            trip_first_stop[tid] = (seq, stop_id)
 
         if tid in trip_to_route:
             stop_routes[stop_id].add(trip_to_route[tid])
@@ -243,6 +249,22 @@ def load_trip_headsigns_and_stop_route_map(stops, trips):
                     except ValueError:
                         pass
 
+            arr_str = row.get("arrival_time", "") or row.get("departure_time", "")
+            if arr_str:
+                parts = arr_str.split(":")
+                if len(parts) == 3:
+                    try:
+                        h, m, s = int(parts[0]), int(parts[1]), int(parts[2])
+                        t = today_midnight + h * 3600 + m * 60 + s
+                        static_arrivals[stop_id].append({
+                            "trip_id": tid,
+                            "route_id": trip_to_route.get(tid, ""),
+                            "time": t,
+                            "is_realtime": False,
+                        })
+                    except ValueError:
+                        pass
+
     headsigns = {}
     for tid, (_, stop_id) in trip_last_stop.items():
         stop = stops.get(stop_id, {})
@@ -250,5 +272,12 @@ def load_trip_headsigns_and_stop_route_map(stops, trips):
         if name:
             headsigns[tid] = name
 
+    trip_origin_map = {}
+    for tid, (_, stop_id) in trip_first_stop.items():
+        stop = stops.get(stop_id, {})
+        name = stop.get("stop_name", "")
+        if name:
+            trip_origin_map[tid] = name
+
     stop_route_map = {sid: list(rids) for sid, rids in stop_routes.items()}
-    return headsigns, stop_route_map, dict(static_departures)
+    return headsigns, stop_route_map, dict(static_departures), dict(static_arrivals), trip_origin_map
