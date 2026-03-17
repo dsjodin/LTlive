@@ -199,17 +199,20 @@ function createBusIcon(vehicle) {
     });
 }
 
-// Train icon — rounded rectangle shape instead of circle, same SVG rotation trick.
+// Train icon — horizontal [carriage2][carriage1][locomotive>] shape.
+// Pivot = locomotive center. Nose points RIGHT by default → rotate(bearing−90) to align north.
+// Label stays upright on the locomotive at all headings.
 function createTrainIcon(vehicle) {
-    const color = `#${vehicle.route_color || "E87722"}`;
+    const color     = `#${vehicle.route_color      || "E87722"}`;
     const textColor = `#${vehicle.route_text_color || "FFFFFF"}`;
-    const label = vehicle.route_short_name || vehicle.label || "";
-    const bearing = vehicle.bearing;
+    // Prefer advertised trip label; fall back to vehicleId prefix ("9005" from "9005.trains.se")
+    const label   = vehicle.label || (vehicle.vehicle_id || "").split(".")[0] || "";
+    const bearing  = vehicle.bearing;
     const hasBearing = bearing != null;
     const zoom = map.getZoom();
 
     if (zoom <= 12) {
-        const d = 8;
+        const d = 10;
         return L.divIcon({
             className: "bus-icon-wrapper",
             html: `<div style="width:${d}px;height:${d}px;border-radius:2px;background:${color};border:2px solid white;box-shadow:0 1px 4px rgba(0,0,0,.5)"></div>`,
@@ -218,40 +221,50 @@ function createTrainIcon(vehicle) {
         });
     }
 
-    // Rounded rectangle + arrow tip, same coordinate system as bus icon
-    const R = 13 + (label.length >= 3 ? 4 : label.length >= 2 ? 1 : 0);
-    const RH = Math.round(R * 0.72);  // half-height of rectangle
-    const RW = Math.round(R * 1.1);   // half-width
-    const TIP = Math.round(R * 0.55);
-    const W = (R + TIP) * 2;
-    const CX = W / 2, CY = W / 2;
-    const rx = 3; // corner radius
-    const fs = Math.round(R * (label.length >= 3 ? 0.66 : label.length >= 2 ? 0.82 : 1.0));
+    // Canvas: 140×140, locomotive centered at (cx,cy)=(70,70)
+    const W = 140, cx = 70, cy = 70;
 
-    const tipPath = hasBearing
-        ? `<path d="M ${CX},${CY-RH-TIP} L ${CX+Math.round(TIP*0.55)},${CY-RH+Math.round(TIP*0.4)} L ${CX-Math.round(TIP*0.55)},${CY-RH+Math.round(TIP*0.4)} Z"
-                  fill="${color}" stroke="white" stroke-width="2" stroke-linejoin="round"/>`
-        : "";
+    const lW = 52, lH = 22;   // locomotive
+    const cW = 36, cH = 16;   // carriage
+    const gap = 5;             // gap between cars
+    const noseLen = 12;        // nose length
+    const noseHH  = 9;         // nose half-height
+    const rx = 5;              // corner radius
+    const outlineColor = "#2A1010";
 
-    const svg = `
-    <svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${W}"
-         style="overflow:visible;display:block">
-      <g transform="rotate(${hasBearing ? bearing : 0},${CX},${CY})">
-        ${tipPath}
-        <rect x="${CX-RW}" y="${CY-RH}" width="${RW*2}" height="${RH*2}"
-              rx="${rx}" ry="${rx}" fill="${color}" stroke="white" stroke-width="2.5"/>
-      </g>
-      <text x="${CX}" y="${CY}" text-anchor="middle" dominant-baseline="central"
-            font-size="${fs}" font-weight="800" fill="${textColor}"
-            font-family="-apple-system,BlinkMacSystemFont,sans-serif"
-            style="user-select:none;pointer-events:none">${label}</text>
-    </svg>`;
+    const lx   = cx - lW / 2;           // loco left edge  = 44
+    const ly   = cy - lH / 2;           // loco top  edge  = 59
+    const c1x  = lx - gap - cW;         // carriage-1 left = 3
+    const c2x  = c1x - gap - cW;        // carriage-2 left = −38 (overflow:visible)
+    const cy_c = cy - cH / 2;           // carriage top    = 62
+    const noseBaseX = lx + lW;          // nose base x     = 96
+    const noseTipX  = noseBaseX + noseLen; // nose tip x   = 108
+
+    const rotation = hasBearing ? bearing - 90 : 0;
+    const fs = label.length >= 4 ? 11 : label.length >= 3 ? 13 : 15;
+
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${W}" style="overflow:visible;display:block">
+  <g transform="rotate(${rotation},${cx},${cy})">
+    <rect x="${c2x}" y="${cy_c}" width="${cW}" height="${cH}" rx="${rx}" ry="${rx}"
+          fill="#5C3030" stroke="${outlineColor}" stroke-width="2"/>
+    <rect x="${c1x}" y="${cy_c}" width="${cW}" height="${cH}" rx="${rx}" ry="${rx}"
+          fill="#5C3030" stroke="${outlineColor}" stroke-width="2"/>
+    <rect x="${lx}" y="${ly}" width="${lW}" height="${lH}" rx="${rx}" ry="${rx}"
+          fill="${color}" stroke="${outlineColor}" stroke-width="2"/>
+    <path d="M ${noseTipX},${cy} L ${noseBaseX},${cy - noseHH} L ${noseBaseX},${cy + noseHH} Z"
+          fill="${color}" stroke="${outlineColor}" stroke-width="2" stroke-linejoin="round"/>
+  </g>
+  <text x="${cx}" y="${cy}" text-anchor="middle" dominant-baseline="central"
+        font-size="${fs}" font-weight="800" fill="${textColor}"
+        font-family="-apple-system,BlinkMacSystemFont,sans-serif"
+        style="user-select:none;pointer-events:none">${label}</text>
+</svg>`;
 
     return L.divIcon({
         className: "bus-icon-wrapper",
         html: `<div class="bus-icon-inner" style="filter:drop-shadow(0 2px 4px rgba(0,0,0,.45))">${svg}</div>`,
         iconSize: [W, W],
-        iconAnchor: [CX, CY],
+        iconAnchor: [cx, cy],
     });
 }
 
