@@ -88,7 +88,7 @@ def fetch_trip_updates():
         route_id = tu.trip.route_id if tu.trip.route_id else ""
         direction_id = tu.trip.direction_id  # 0 is valid; avoid falsy-check that converts 0 → None
         start_date = tu.trip.start_date if tu.trip.start_date else ""
-        rt_trip_short_name = tu.trip.trip_short_name if tu.trip.trip_short_name else ""
+        rt_trip_short_name = getattr(tu.trip, "trip_short_name", "") or ""
 
         # Build trip_id -> trip_short_name mapping for number lookups in board
         if trip_id and rt_trip_short_name:
