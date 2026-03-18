@@ -1709,6 +1709,38 @@ def debug_trains():
     })
 
 
+@app.route("/api/debug/tv-positions")
+@_debug_only
+def debug_tv_positions():
+    """Show raw Trafikverket TrainPosition cache and geo-filtered trains within radius."""
+    with _lock:
+        raw_positions = list(_data.get("tv_positions", []))
+        last_poll = _data.get("tv_last_poll", 0)
+        last_error = _data.get("tv_last_error")
+
+    filtered = _tv_trains_from_positions()
+
+    # Count operator distribution in raw positions
+    op_counts: dict = {}
+    for p in raw_positions:
+        op = p.get("operator") or "okänd"
+        op_counts[op] = op_counts.get(op, 0) + 1
+
+    return jsonify({
+        "config": {
+            "center_lat": config.TV_POSITION_CENTER_LAT,
+            "center_lon": config.TV_POSITION_CENTER_LON,
+            "radius_km": config.TV_POSITION_RADIUS_KM,
+        },
+        "last_poll": last_poll,
+        "last_error": last_error,
+        "raw_count": len(raw_positions),
+        "filtered_count": len(filtered),
+        "operator_counts": dict(sorted(op_counts.items(), key=lambda x: -x[1])),
+        "trains": sorted(filtered, key=lambda t: t.get("label", "")),
+    })
+
+
 @app.route("/api/stats/visit", methods=["POST"])
 def stats_visit():
     data = request.get_json(silent=True) or {}
