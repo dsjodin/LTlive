@@ -52,7 +52,7 @@ def fetch_train_stations() -> dict:
         return {}
     xml = f"""<REQUEST>
   <LOGIN authenticationkey="{config.TRAFIKVERKET_API_KEY}" />
-  <QUERY objecttype="TrainStation" schemaversion="1.0" limit="10000">
+  <QUERY objecttype="TrainStation" schemaversion="1.0" namespace="rail.infrastructure" limit="10000">
     <FILTER>
       <EQ name="Advertised" value="true" />
     </FILTER>
@@ -225,7 +225,7 @@ def fetch_train_positions(location_signatures: set | None = None) -> list:
     <INCLUDE>Position.WGS84</INCLUDE>
     <INCLUDE>Bearing</INCLUDE>
     <INCLUDE>Speed</INCLUDE>
-    <INCLUDE>Status.TimeStamp</INCLUDE>
+    <INCLUDE>TimeStamp</INCLUDE>
     <INCLUDE>Deleted</INCLUDE>
   </QUERY>
 </REQUEST>"""
@@ -248,8 +248,7 @@ def fetch_train_positions(location_signatures: set | None = None) -> list:
         if not m:
             continue
         lon, lat = float(m.group(1)), float(m.group(2))
-        # TimeStamp is nested under Status per the API schema
-        ts = _ts_to_unix((pos.get("Status") or {}).get("TimeStamp", ""))
+        ts = _ts_to_unix(pos.get("TimeStamp", ""))
         result.append({
             "train_number": adv_num,
             "lat": lat,
