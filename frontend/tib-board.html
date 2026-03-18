@@ -244,8 +244,8 @@
             letter-spacing: 0.5px;
             text-transform: uppercase;
         }
-        #col-header.dep-grid { grid-template-columns: 60px 1fr 64px 90px 90px; gap: 0 12px; }
-        #col-header.arr-grid { grid-template-columns: 60px 1fr 64px 90px 90px; gap: 0 12px; }
+        #col-header.dep-grid { grid-template-columns: 72px 1fr 52px 72px 72px 92px 1.4fr; gap: 0 12px; }
+        #col-header.arr-grid { grid-template-columns: 72px 1fr 52px 72px 72px 92px 1.4fr; gap: 0 12px; }
 
         /* ── Board ── */
         #board-wrap {
@@ -254,58 +254,61 @@
             overflow-y: auto;
         }
 
-        .row {
-            display: grid;
-            align-items: center;
-            gap: 0 12px;
-            padding: 13px 20px;
+        /* Row wrapper groups main row + optional via-row */
+        .row-wrap {
             border-bottom: 1px solid var(--border);
             background: var(--bg2);
             transition: background 0.2s;
         }
-        .row:hover { background: var(--bg3); }
-        .row.dep-grid { grid-template-columns: 60px 1fr 64px 90px 90px; }
-        .row.arr-grid { grid-template-columns: 60px 1fr 64px 90px 90px; }
-        .row.row-now  { background: #1a2a1a; border-left: 3px solid var(--green); }
-        .row.row-past { opacity: 0.5; }
-        .row.row-canceled { opacity: 0.6; }
-        .canceled-badge { background: #c0392b; color: #fff; font-size: 0.65em; padding: 1px 5px; border-radius: 3px; margin-left: 5px; vertical-align: middle; }
-        .deviation { color: #e67e22; font-size: 0.75em; margin-left: 6px; }
-        .other-info { color: #8b9fb7; font-size: 0.75em; margin-left: 6px; }
-        .platform-msg { color: #c0a060; font-size: 0.75em; margin-left: 6px; }
+        .row-wrap:hover { background: var(--bg3); }
+        .row-wrap.row-now  { background: #1a2a1a; border-left: 3px solid var(--green); }
+        .row-wrap.row-past { opacity: 0.5; }
+        .row-wrap.row-canceled { opacity: 0.6; }
+
+        .row {
+            display: grid;
+            align-items: center;
+            gap: 0 12px;
+            padding: 11px 20px;
+        }
+        .row.dep-grid { grid-template-columns: 72px 1fr 52px 72px 72px 92px 1.4fr; }
+        .row.arr-grid { grid-template-columns: 72px 1fr 52px 72px 72px 92px 1.4fr; }
+
+        .via-row {
+            padding: 0 20px 7px 20px;
+            font-size: 0.72rem;
+            color: var(--muted);
+        }
+
+        .canceled-badge { background: #c0392b; color: #fff; font-size: 0.65em; padding: 1px 5px; border-radius: 3px; margin-right: 4px; vertical-align: middle; }
+        .deviation { color: #e67e22; }
+        .other-info { color: #8b9fb7; }
+        .platform-msg { color: #c0a060; }
         .time-prelim { font-style: italic; opacity: 0.80; }
         .bus-tag { background: #4a4a4a; color: #fff; font-size: 0.62em; padding: 1px 4px; border-radius: 3px; margin-left: 4px; vertical-align: middle; letter-spacing: 0.3px; }
 
-        .badge {
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            padding: 5px 8px;
-            border-radius: 6px;
-            font-weight: 800;
-            font-size: clamp(0.85rem, 2vw, 1.1rem);
-            letter-spacing: -0.3px;
+        .time-col {
+            font-size: clamp(0.85rem, 1.7vw, 1.05rem);
+            font-variant-numeric: tabular-nums;
+            font-family: monospace;
             white-space: nowrap;
         }
-
-        .destination {
-            min-width: 0;
+        .time-orig {
+            text-decoration: line-through;
+            opacity: 0.5;
+            font-size: 0.8em;
+            margin-right: 4px;
         }
-        .destination-main {
-            font-size: clamp(0.9rem, 2.2vw, 1.25rem);
+        .time-new { color: var(--orange); }
+
+        .dest-col {
+            min-width: 0;
+            font-size: clamp(0.9rem, 2.2vw, 1.15rem);
             font-weight: 500;
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
             color: var(--text);
-        }
-        .destination-sub {
-            font-size: 0.72rem;
-            color: var(--muted);
-            margin-top: 2px;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
         }
 
         .track {
@@ -329,25 +332,28 @@
             color: var(--yellow);
         }
 
-        .sched-time {
-            font-size: clamp(0.85rem, 1.7vw, 1.05rem);
-            color: var(--muted);
+        .trainno-col {
+            font-size: 0.9rem;
             font-variant-numeric: tabular-nums;
             font-family: monospace;
-            text-align: right;
+            color: var(--text);
         }
-        .sched-time .time-orig {
-            text-decoration: line-through;
-            opacity: 0.5;
-            font-size: 0.8em;
-            margin-right: 4px;
+
+        .operator-col {
+            font-size: 0.75rem;
         }
-        .sched-time .time-new {
-            color: var(--orange);
+        .op-tag {
+            font-size: 0.75rem;
+            font-weight: 700;
+            letter-spacing: 0.03em;
+            padding: 2px 6px;
+            border-radius: 4px;
+            color: #fff;
+            white-space: nowrap;
         }
 
         .eta-col {
-            font-size: clamp(0.95rem, 2.4vw, 1.4rem);
+            font-size: clamp(0.95rem, 2.4vw, 1.3rem);
             font-weight: 800;
             font-variant-numeric: tabular-nums;
             font-family: monospace;
@@ -359,6 +365,14 @@
         .eta-normal { color: #58a6ff; }
         .eta-late   { color: var(--red); }
         .eta-past   { color: var(--muted); font-size: 0.8rem; font-weight: 600; }
+
+        .remark-col {
+            font-size: 0.78rem;
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
 
         .rt-dot {
             display: inline-block;
@@ -420,24 +434,6 @@
         }
         #live-status-text { }
         #live-status .tib-live { color: var(--tib); font-weight: 600; }
-
-        /* Operator sub-label below train badge */
-        .badge-cell {
-            display: flex;
-            flex-direction: column;
-            align-items: flex-start;
-            gap: 3px;
-        }
-        .op-tag {
-            font-size: 0.6rem;
-            font-weight: 700;
-            letter-spacing: 0.03em;
-            padding: 1px 4px;
-            border-radius: 3px;
-            color: #fff;
-            opacity: 0.9;
-            white-space: nowrap;
-        }
 
         /* Station messages banner */
         #station-messages {
@@ -504,11 +500,13 @@
 <div id="station-messages"></div>
 
 <div id="col-header" class="dep-grid">
-    <span>Tåg</span>
-    <span>Destination</span>
+    <span>Tid</span>
+    <span>Till</span>
     <span style="text-align:center">Spår</span>
-    <span style="text-align:right">Avg.</span>
-    <span style="text-align:right">Om</span>
+    <span>Tågnr</span>
+    <span>Bolag</span>
+    <span style="text-align:right">Avgår om</span>
+    <span>Anmärkning</span>
 </div>
 
 <div id="board-wrap">
@@ -734,18 +732,22 @@ function setMode(mode) {
     const colHdr = document.getElementById("col-header");
     if (mode === "dep") {
         colHdr.innerHTML = `
-            <span>Tåg</span>
-            <span>Destination</span>
+            <span>Tid</span>
+            <span>Till</span>
             <span style="text-align:center">Spår</span>
-            <span style="text-align:right">Avg.</span>
-            <span style="text-align:right">Om</span>`;
+            <span>Tågnr</span>
+            <span>Bolag</span>
+            <span style="text-align:right">Avgår om</span>
+            <span>Anmärkning</span>`;
     } else {
         colHdr.innerHTML = `
-            <span>Tåg</span>
+            <span>Tid</span>
             <span>Från</span>
             <span style="text-align:center">Spår</span>
-            <span style="text-align:right">Ank.</span>
-            <span style="text-align:right">Om</span>`;
+            <span>Tågnr</span>
+            <span>Bolag</span>
+            <span style="text-align:right">Ankommer om</span>
+            <span>Anmärkning</span>`;
     }
     refreshBoard();
 }
@@ -763,6 +765,21 @@ function operatorTag(operator, product) {
     if (op.includes("snälltåget"))
         return `<span class="op-tag" style="background:#1a1a1a">Snälltåget</span>`;
     return "";
+}
+
+function buildRemarkText(item) {
+    const parts = [];
+    if (item.canceled) parts.push(`<span class="canceled-badge">Inställt</span>`);
+    if (item.deviation && item.deviation.length)
+        parts.push(`<span class="deviation">${item.deviation.join(", ")}</span>`);
+    if (item.other_info && item.other_info.length)
+        parts.push(`<span class="other-info">${item.other_info.join(", ")}</span>`);
+    if (item.traffic_type === "Buss")
+        parts.push(`<span class="bus-tag">Buss</span>`);
+    const track = item.platform;
+    if (track && platformMessages[track] && platformMessages[track].length)
+        parts.push(`<span class="platform-msg">${platformMessages[track].map(m => m.body).join(" · ")}</span>`);
+    return parts.join(" ");
 }
 
 // ── ETA helper ────────────────────────────────────────
@@ -786,7 +803,7 @@ function startCountdown() {
             const { text, cls } = formatEta(secs, mode);
             el.textContent = text;
             el.className   = `eta-col ${cls}`;
-            const row = el.closest(".row");
+            const row = el.closest(".row-wrap");
             if (row) {
                 row.classList.toggle("row-now",  secs <= 30 && secs > -60);
                 row.classList.toggle("row-past", secs < -60);
@@ -877,10 +894,9 @@ async function loadDepartures(board) {
         const { text: etaText, cls: etaCls } = formatEta(secs, "dep");
         const clock = new Date(d.departure_time * 1000)
             .toLocaleTimeString("sv-SE", { hour: "2-digit", minute: "2-digit" });
-        const bg    = d.route_color     ? `#${d.route_color}`     : "#e87722";
-        const fg    = d.route_text_color? `#${d.route_text_color}`: "#fff";
-        const nowClass  = (secs <= 30 && secs > -60) ? "row-now" : "";
-        const pastClass = secs < -60 ? " row-past" : "";
+        const nowClass     = (secs <= 30 && secs > -60) ? "row-now" : "";
+        const pastClass    = secs < -60 ? " row-past" : "";
+        const canceledClass = d.canceled ? " row-canceled" : "";
 
         const liveTrain = findLiveTrain(d.trip_id, d.route_short_name);
         const liveTag   = liveTrain
@@ -892,21 +908,7 @@ async function loadDepartures(board) {
 
         const trainLabel = d.trip_short_name || d.route_short_name || "?";
         const opTag = operatorTag(d.operator, d.product);
-        const canceledClass = d.canceled ? " row-canceled" : "";
-        const headsignText = d.canceled
-            ? `<s>${d.headsign || ""}</s> <span class="canceled-badge">Inställt</span>`
-            : (d.headsign || "");
-        const deviationText = (d.deviation && d.deviation.length)
-            ? `<span class="deviation">${d.deviation.join(", ")}</span>` : "";
-        const otherInfoText = (d.other_info && d.other_info.length)
-            ? `<span class="other-info">${d.other_info.join(", ")}</span>` : "";
-        const isBusReplacement = d.traffic_type === "Buss";
-        const busTag = isBusReplacement ? `<span class="bus-tag">Buss</span>` : "";
-        const trackMsgs = d.platform ? (platformMessages[d.platform] || []) : [];
-        const platformMsgText = trackMsgs.length
-            ? `<span class="platform-msg">${trackMsgs.map(m => m.body).join(" · ")}</span>` : "";
-        const viaText = (d.via && d.via.length) ? `via ${d.via.join(" · ")}` : "";
-        const depSubText = viaText ? `${rtDot}${viaText}` : (d.is_realtime ? `${rtDot}Realtid` : "");
+        const headsignText = d.canceled ? `<s>${d.headsign || ""}</s>` : (d.headsign || "");
         const trackChangedClass = d.track_changed ? " track-changed" : "";
         const isDelayed = d.is_realtime && d.scheduled_time && d.departure_time !== d.scheduled_time;
         const schedClock = isDelayed
@@ -916,18 +918,21 @@ async function loadDepartures(board) {
         const clockHtml = isDelayed
             ? `<span class="time-orig">${schedClock}</span><span class="time-new${prelimClass}">${clock}</span>`
             : (d.preliminary ? `<span class="time-prelim">${clock}</span>` : clock);
-        return `<div class="row dep-grid ${nowClass}${pastClass}${canceledClass}">
-            <div class="badge-cell">
-                <span class="badge" style="background:${bg};color:${fg}">${trainLabel}</span>
-                ${opTag}
+        const viaRow = (d.via && d.via.length)
+            ? `<div class="via-row">${rtDot}via ${d.via.join(" · ")}</div>`
+            : (d.is_realtime ? `<div class="via-row">${rtDot}Realtid</div>` : "");
+        const remarkText = buildRemarkText(d);
+        return `<div class="row-wrap ${nowClass}${pastClass}${canceledClass}">
+            <div class="row dep-grid">
+                <span class="time-col">${clockHtml}</span>
+                <span class="dest-col">${headsignText}${liveTag}</span>
+                <span class="track"><span class="track-num${trackChangedClass}">${d.platform || "–"}</span></span>
+                <span class="trainno-col">${trainLabel}</span>
+                <span class="operator-col">${opTag}</span>
+                <span class="eta-col ${etaCls}" data-ts="${d.departure_time}" data-mode="dep">${etaText}</span>
+                <span class="remark-col">${remarkText}</span>
             </div>
-            <div class="destination">
-                <div class="destination-main">${headsignText}${busTag}${liveTag}</div>
-                <div class="destination-sub">${depSubText}${deviationText}${otherInfoText}${platformMsgText}</div>
-            </div>
-            <span class="track"><span class="track-num${trackChangedClass}">${d.platform || "–"}</span></span>
-            <span class="sched-time">${clockHtml}</span>
-            <span class="eta-col ${etaCls}" data-ts="${d.departure_time}" data-mode="dep">${etaText}</span>
+            ${viaRow}
         </div>`;
     }).join("");
 
@@ -951,35 +956,22 @@ async function loadArrivals(board) {
         const { text: etaText, cls: etaCls } = formatEta(secs, "arr");
         const clock = new Date(a.arrival_time * 1000)
             .toLocaleTimeString("sv-SE", { hour: "2-digit", minute: "2-digit" });
-        const bg    = a.route_color     ? `#${a.route_color}`     : "#e87722";
-        const fg    = a.route_text_color? `#${a.route_text_color}`: "#fff";
-        const nowClass  = (secs <= 30 && secs > -60) ? "row-now" : "";
-        const pastClass = secs < -60 ? " row-past" : "";
+        const nowClass     = (secs <= 30 && secs > -60) ? "row-now" : "";
+        const pastClass    = secs < -60 ? " row-past" : "";
+        const canceledClass = a.canceled ? " row-canceled" : "";
 
         const liveTrain = findLiveTrain(a.trip_id, a.route_short_name);
         const liveTag   = liveTrain
             ? `<span class="live-train"><span class="live-dot"></span>Live</span>`
             : "";
-
-        // origin = first stop of trip, headsign = last stop (= this station or beyond)
-        const fromLabel = a.origin || "–";
-        const sub = a.headsign && a.headsign !== currentStopName
-            ? `mot ${a.headsign}`
+        const rtDot = a.is_realtime
+            ? `<span class="rt-dot" title="Realtidsdata"></span>`
             : "";
 
+        const fromLabel = a.origin || "–";
+        const fromDisplay = a.canceled ? `<s>${fromLabel}</s>` : fromLabel;
         const trainLabel = a.trip_short_name || a.route_short_name || "?";
         const opTag = operatorTag(a.operator, a.product);
-        const canceledClass = a.canceled ? " row-canceled" : "";
-        const fromDisplay = a.canceled ? `<s>${fromLabel}</s> <span class="canceled-badge">Inställt</span>` : fromLabel;
-        const deviationText = (a.deviation && a.deviation.length)
-            ? `<span class="deviation">${a.deviation.join(", ")}</span>` : "";
-        const otherInfoText = (a.other_info && a.other_info.length)
-            ? `<span class="other-info">${a.other_info.join(", ")}</span>` : "";
-        const isBusReplacement = a.traffic_type === "Buss";
-        const busTag = isBusReplacement ? `<span class="bus-tag">Buss</span>` : "";
-        const arrTrackMsgs = a.platform ? (platformMessages[a.platform] || []) : [];
-        const arrPlatformMsgText = arrTrackMsgs.length
-            ? `<span class="platform-msg">${arrTrackMsgs.map(m => m.body).join(" · ")}</span>` : "";
         const arrTrackChangedClass = a.track_changed ? " track-changed" : "";
         const arrIsDelayed = a.is_realtime && a.scheduled_time && a.arrival_time !== a.scheduled_time;
         const arrSchedClock = arrIsDelayed
@@ -989,18 +981,21 @@ async function loadArrivals(board) {
         const arrClockHtml = arrIsDelayed
             ? `<span class="time-orig">${arrSchedClock}</span><span class="time-new${arrPrelimClass}">${clock}</span>`
             : (a.preliminary ? `<span class="time-prelim">${clock}</span>` : clock);
-        return `<div class="row arr-grid ${nowClass}${pastClass}${canceledClass}">
-            <div class="badge-cell">
-                <span class="badge" style="background:${bg};color:${fg}">${trainLabel}</span>
-                ${opTag}
+        const viaRow = (a.via && a.via.length)
+            ? `<div class="via-row">${rtDot}via ${a.via.join(" · ")}</div>`
+            : (a.is_realtime ? `<div class="via-row">${rtDot}Realtid</div>` : "");
+        const remarkText = buildRemarkText(a);
+        return `<div class="row-wrap ${nowClass}${pastClass}${canceledClass}">
+            <div class="row arr-grid">
+                <span class="time-col">${arrClockHtml}</span>
+                <span class="dest-col">${fromDisplay}${liveTag}</span>
+                <span class="track"><span class="track-num${arrTrackChangedClass}">${a.platform || "–"}</span></span>
+                <span class="trainno-col">${trainLabel}</span>
+                <span class="operator-col">${opTag}</span>
+                <span class="eta-col ${etaCls}" data-ts="${a.arrival_time}" data-mode="arr">${etaText}</span>
+                <span class="remark-col">${remarkText}</span>
             </div>
-            <div class="destination">
-                <div class="destination-main">${fromDisplay}${busTag}${liveTag}</div>
-                <div class="destination-sub">${sub}${deviationText}${otherInfoText}${arrPlatformMsgText}</div>
-            </div>
-            <span class="track"><span class="track-num${arrTrackChangedClass}">${a.platform || "–"}</span></span>
-            <span class="sched-time">${arrClockHtml}</span>
-            <span class="eta-col ${etaCls}" data-ts="${a.arrival_time}" data-mode="arr">${etaText}</span>
+            ${viaRow}
         </div>`;
     }).join("");
 
