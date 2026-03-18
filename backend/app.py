@@ -2379,29 +2379,30 @@ def _push_train_positions():
 
 
 def _init_trafikverket():
-    """Load TrainStation lookup table once at startup."""
+    """Load TrainStation lookup table once at startup, then do first poll."""
     stations = tv_api.fetch_train_stations()
     with _lock:
         _data["tv_stations"] = stations
-    if stations:
-        _poll_trafikverket()
+    _poll_trafikverket()
 
 
 def _poll_trafikverket():
     """Fetch TrainAnnouncement + TrainPosition data and cache."""
     loc_sigs = list(config.TRAFIKVERKET_STATIONS.values())
-    if not loc_sigs:
-        return
+
+    # TrainPosition is independent of station config — always fetch when API key is set
+    positions = tv_api.fetch_train_positions()
+
     announcements = tv_api.fetch_announcements(
         loc_sigs, minutes_ahead=config.TRAFIKVERKET_LOOKAHEAD_MINUTES
-    )
-    positions = tv_api.fetch_train_positions()
-    messages = tv_api.fetch_station_messages(loc_sigs)
+    ) if loc_sigs else {}
+    messages = tv_api.fetch_station_messages(loc_sigs) if loc_sigs else {}
+
     with _lock:
-        if announcements:
-            _data["tv_announcements"] = announcements
         if positions:
             _data["tv_positions"] = positions
+        if announcements:
+            _data["tv_announcements"] = announcements
         _data["tv_messages"] = messages  # empty dict = no messages, still valid
         _data["tv_last_poll"] = int(time.time())
         _data["tv_last_error"] = None
@@ -2423,8 +2424,8 @@ def start_background_tasks():
     scheduler.add_job(_retry_gtfs_if_needed, "interval", seconds=60, max_instances=1)
     # Push live train positions via SSE every 5 seconds (Oxyfi updates ~1/s per train)
     scheduler.add_job(_push_train_positions, "interval", seconds=5, max_instances=1)
-    # Poll Trafikverket TrainAnnouncement for departure board data with train numbers
-    if config.TRAFIKVERKET_API_KEY and config.TRAFIKVERKET_STATIONS:
+    # Poll Trafikverket positions (always) and announcements (when stations configured)
+    if config.TRAFIKVERKET_API_KEY:
         scheduler.add_job(_poll_trafikverket, "interval",
                           seconds=config.TRAFIKVERKET_POLL_SECONDS, max_instances=1)
     scheduler.start()
