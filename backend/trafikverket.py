@@ -25,6 +25,8 @@ def _post(xml_body: str) -> dict:
         headers={"Content-Type": "application/xml"},
         timeout=15,
     )
+    if not resp.ok:
+        log.warning("Trafikverket API error %s: %s", resp.status_code, resp.text[:500])
     resp.raise_for_status()
     return resp.json()
 
