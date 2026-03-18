@@ -569,6 +569,7 @@ def vehicles():
         ts = _data["last_vehicle_update"]
 
     trains = _merge_trains(oxyfi.get_trains(), _tv_trains_from_positions())
+    trains = _annotate_oxyfi_from_announcements(trains)
     enriched = _enrich_vehicles(vehicle_list) + trains
     result = {"vehicles": enriched, "timestamp": ts, "count": len(enriched)}
     _cache_set("vehicles", result)
@@ -2081,6 +2082,92 @@ def _tv_trains_from_positions() -> list:
             "next_stop_name": "",
             "next_stop_platform": "",
         })
+    return result
+
+
+def _annotate_oxyfi_from_announcements(trains: list) -> list:
+    """For Oxyfi trains still missing tv_service_number, try to identify them
+    by finding the nearest configured station and matching the TV announcement
+    whose realtime/scheduled time is closest to now.
+
+    This is a fallback for when TV TrainPosition data is unavailable.  It works
+    purely from announcements (departures + arrivals), which are always fetched.
+    """
+    with _lock:
+        stops = _data.get("stops", {})
+        tv_ann = _data.get("tv_announcements", {})
+
+    if not tv_ann:
+        return trains
+
+    # Build list of (loc_sig, lat, lon) for every configured station
+    station_anchors: list[tuple] = []
+    for stop_id, loc_sig in config.TRAFIKVERKET_STATIONS.items():
+        stop = stops.get(stop_id, {})
+        lat = stop.get("stop_lat")
+        lon = stop.get("stop_lon")
+        if lat and lon:
+            station_anchors.append((loc_sig, float(lat), float(lon)))
+
+    if not station_anchors:
+        return trains
+
+    now = int(time.time())
+    result = []
+    for v in trains:
+        # Only try to annotate Oxyfi trains that don't already have a TV number
+        if v.get("tv_service_number") or (v.get("vehicle_id") or "").startswith("tv_"):
+            result.append(v)
+            continue
+
+        o_lat, o_lon = v.get("lat"), v.get("lon")
+        if not (o_lat and o_lon):
+            result.append(v)
+            continue
+
+        # Find nearest configured station (no distance limit — even between stations
+        # the nearest one tells us which line the Oxyfi train is on)
+        best_dist = float("inf")
+        nearest_loc_sig = None
+        for loc_sig, s_lat, s_lon in station_anchors:
+            dlat = math.radians(s_lat - o_lat)
+            dlon = math.radians(s_lon - o_lon)
+            a = (math.sin(dlat / 2) ** 2
+                 + math.cos(math.radians(o_lat)) * math.cos(math.radians(s_lat))
+                 * math.sin(dlon / 2) ** 2)
+            dist = 6_371_000 * 2 * math.asin(math.sqrt(max(0.0, a)))
+            if dist < best_dist:
+                best_dist = dist
+                nearest_loc_sig = loc_sig
+
+        if not nearest_loc_sig:
+            result.append(v)
+            continue
+
+        # Among all announcements for this station, pick TiB train closest to now
+        # (within a ±20 min window to cover trains currently en route between stops)
+        ann_bucket = tv_ann.get(nearest_loc_sig, {})
+        best_tn = None
+        best_diff = float("inf")
+        for entry in ann_bucket.get("departures", []) + ann_bucket.get("arrivals", []):
+            op = (entry.get("operator") or "").lower()
+            pr = (entry.get("product") or "").lower()
+            # Only match TiB trains — Oxyfi only tracks TiB rolling stock
+            if not ("arriva" in op or "bergslagen" in pr or "tib" in pr):
+                continue
+            rt = entry.get("realtime_time") or entry.get("scheduled_time")
+            if rt is None:
+                continue
+            diff = abs(rt - now)
+            if diff < best_diff and diff <= 1200:  # ±20 min
+                best_diff = diff
+                best_tn = entry.get("train_number")
+
+        if best_tn:
+            result.append({**v, "tv_service_number": best_tn})
+        else:
+            result.append(v)
+
     return result
 
 
