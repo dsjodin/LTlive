@@ -2440,10 +2440,10 @@ def _run_tv_position_stream() -> None:
                 _invalidate_cache()
                 last_event_id = None  # fresh endpoint, start from beginning
                 if not sseurl:
-                    log.warning("TV SSE: no SSEURL returned — position streaming unavailable")
+                    print("tv-sse: no SSEURL returned — position streaming unavailable")
                     return
 
-            log.info("TV SSE: connecting (last_event_id=%s)", last_event_id)
+            print(f"tv-sse: connecting (last_event_id={last_event_id})")
             with _lock:
                 _data["tv_sse_state"] = "connected"
             for event_id, positions in tv_api.iter_position_stream(sseurl, last_event_id):
@@ -2456,7 +2456,7 @@ def _run_tv_position_stream() -> None:
                     _data["tv_sse_state"] = "connected"
 
             # iter_position_stream exhausted without error → stream closed cleanly
-            log.info("TV SSE: stream closed, reconnecting")
+            print("tv-sse: stream closed, reconnecting")
             with _lock:
                 _data["tv_sse_state"] = "reconnecting"
             time.sleep(2)
@@ -2464,12 +2464,12 @@ def _run_tv_position_stream() -> None:
         except _requests.HTTPError as exc:
             status = exc.response.status_code if exc.response is not None else 0
             if status == 404:
-                log.info("TV SSE: endpoint expired (404), recreating")
+                print("tv-sse: endpoint expired (404), recreating")
                 sseurl = None
                 last_event_id = None
                 # no sleep — recreate immediately
             else:
-                log.warning("TV SSE HTTP %s, recreating endpoint", status)
+                print(f"tv-sse: HTTP {status}, recreating endpoint")
                 with _lock:
                     _data["tv_last_error"] = f"HTTP {status}"
                 sseurl = None
@@ -2480,7 +2480,7 @@ def _run_tv_position_stream() -> None:
                 _data["tv_sse_state"] = "reconnecting"
 
         except Exception as exc:
-            log.warning("TV SSE error: %s", exc)
+            print(f"tv-sse: error: {exc}")
             with _lock:
                 _data["tv_last_error"] = str(exc)
                 _data["tv_sse_state"] = "reconnecting"
