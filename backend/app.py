@@ -2529,8 +2529,8 @@ def start_background_tasks():
     scheduler.add_job(_refresh_static_departures, "cron", hour=0, minute=1, max_instances=1)
     # Retry GTFS static loading every 60s if it failed
     scheduler.add_job(_retry_gtfs_if_needed, "interval", seconds=60, max_instances=1)
-    # Push live train positions via SSE every 5 seconds (Oxyfi updates ~1/s per train)
-    scheduler.add_job(_push_train_positions, "interval", seconds=5, max_instances=1)
+    # Push live vehicle positions via SSE at the same cadence as RT polling
+    scheduler.add_job(_push_train_positions, "interval", seconds=config.RT_POLL_SECONDS, max_instances=1)
     # Poll Trafikverket positions (always) and announcements (when stations configured)
     if config.TRAFIKVERKET_API_KEY:
         scheduler.add_job(_poll_trafikverket, "interval",
