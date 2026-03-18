@@ -267,13 +267,14 @@ def fetch_train_positions(location_signatures: set | None = None) -> list:
             continue
         lon, lat = float(m.group(1)), float(m.group(2))
         ts = _ts_to_unix(pos.get("TimeStamp", ""))
+        speed_kmh = pos.get("Speed")
         result.append({
             "train_number": adv_num,
             "operator": "",  # InformationOwner not available in TrainPosition; resolved via announcements in app.py
             "lat": lat,
             "lon": lon,
             "bearing": pos.get("Bearing"),
-            "speed": pos.get("Speed"),
+            "speed": speed_kmh / 3.6 if speed_kmh is not None else None,  # API returns km/h, convert to m/s
             "timestamp": ts,
         })
 
