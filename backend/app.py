@@ -789,11 +789,14 @@ def departures_for_stop(stop_id):
             rt = route.get("route_type", 3)
             if not (rt == 2 or 100 <= rt <= 199):
                 continue
-        if tib_routes:
-            if route.get("route_short_name", "") not in tib_routes:
+            # Agency/routes filter applies only inside the train-only view.
+            # When showing a bus stop popup (only_trains=False) we skip filtering
+            # so that all operators serving that stop are shown.
+            if tib_routes:
+                if route.get("route_short_name", "") not in tib_routes:
+                    continue
+            elif tib_agency and route.get("agency_id", "") != tib_agency:
                 continue
-        elif tib_agency and route.get("agency_id", "") != tib_agency:
-            continue
         headsign = trip_headsigns.get(trip_id, "") or route.get("route_long_name", "")
         trip_short_name = (
             trips.get(trip_id, {}).get("trip_short_name", "")
@@ -837,8 +840,11 @@ def departures_for_stop(stop_id):
                     if diff < best_diff and diff <= 600:
                         best_diff = diff
                         best_tv = tv_dep
-            # Second pass: any operator if no preferred match found (tight 3-min window to
-            # avoid cross-operator mismatches where an SJ train happens to be nearby)
+            # Second pass: any operator.
+            # Window: tight 3-min when preferred operators are configured (reduces
+            # cross-operator mismatches); generous 10-min when no operator filter is
+            # set (single-operator setup where all TV trains belong to us).
+            fallback_window = 180 if tv_ops else 600
             if best_tv is None:
                 best_diff = float("inf")
                 for tv_dep in tv_ann[loc_sig].get("departures", []):
@@ -846,7 +852,7 @@ def departures_for_stop(stop_id):
                     if tv_key in used_tv_dep_keys:
                         continue
                     diff = abs(tv_dep["scheduled_time"] - dep_time)
-                    if diff < best_diff and diff <= 180:
+                    if diff < best_diff and diff <= fallback_window:
                         best_diff = diff
                         best_tv = tv_dep
             if best_tv:
@@ -907,6 +913,53 @@ def departures_for_stop(stop_id):
         if len(deps) >= limit:
             break
 
+    # TV-only trains: operators not in GTFS (e.g. Mälartåg, SJ).
+    # Only added when explicitly requesting trains (?route_type=train).
+    if only_trains and loc_sig and tv_ann.get(loc_sig):
+        for tv_dep in tv_ann[loc_sig].get("departures", []):
+            tv_key = (tv_dep["train_number"], tv_dep["scheduled_time"])
+            if tv_key in used_tv_dep_keys:
+                continue  # already matched to a GTFS entry
+            if tv_dep["scheduled_time"] < now - 60:
+                continue  # skip past departures
+            op = (tv_dep.get("operator") or "").lower()
+            pr = (tv_dep.get("product") or "").lower()
+            if "mälartåg" in op or "mälartåg" in pr:
+                tv_color, tv_rsn = "005B99", "MÅ"
+            elif "sj" in op:
+                tv_color, tv_rsn = "D4004C", "SJ"
+            elif "arriva" in op or "bergslagen" in pr:
+                tv_color, tv_rsn = "E87722", "TiB"
+            elif "snälltåget" in op:
+                tv_color, tv_rsn = "1A1A1A", "SNÅ"
+            else:
+                tv_color, tv_rsn = "555555", "?"
+            dest_name = tv_stations.get(tv_dep.get("dest_sig", ""), {}).get("name", "") if tv_dep.get("dest_sig") else ""
+            via_names = [tv_stations.get(v, {}).get("name", v) for v in tv_dep.get("via_sigs", [])[:3]]
+            sched_t = tv_dep["scheduled_time"]
+            rt_t = tv_dep.get("realtime_time")
+            track_chg = any("spår" in t.lower() for t in tv_dep.get("deviation", []))
+            deps.append({
+                "route_short_name": tv_rsn,
+                "trip_short_name": tv_dep["train_number"],
+                "route_color": tv_color,
+                "route_text_color": "FFFFFF",
+                "operator": tv_dep.get("operator", ""),
+                "product": tv_dep.get("product", ""),
+                "headsign": dest_name,
+                "departure_time": rt_t if rt_t else sched_t,
+                "scheduled_time": sched_t,
+                "is_realtime": bool(rt_t),
+                "trip_id": "",
+                "platform": tv_dep.get("track", ""),
+                "track_changed": track_chg,
+                "canceled": tv_dep.get("canceled", False),
+                "deviation": tv_dep.get("deviation", []),
+                "via": via_names,
+            })
+        # Re-sort after adding TV-only entries (they may not be in time order)
+        deps.sort(key=lambda x: x["departure_time"])
+
     # Deduplicate: same scheduled time + same headsign = same physical train
     # (happens when a GTFS trip split/join creates two entries for one train)
     seen_dep_keys = set()
@@ -916,7 +969,7 @@ def departures_for_stop(stop_id):
         if key not in seen_dep_keys:
             seen_dep_keys.add(key)
             deduped_deps.append(entry)
-    deps = deduped_deps
+    deps = deduped_deps[:limit]
 
     result = {"stop_id": stop_id, "departures": deps, "count": len(deps)}
     _cache_set(cache_key, result)
@@ -995,11 +1048,11 @@ def arrivals_for_stop(stop_id):
             rt = route.get("route_type", 3)
             if not (rt == 2 or 100 <= rt <= 199):
                 continue
-        if tib_routes:
-            if route.get("route_short_name", "") not in tib_routes:
+            if tib_routes:
+                if route.get("route_short_name", "") not in tib_routes:
+                    continue
+            elif tib_agency and route.get("agency_id", "") != tib_agency:
                 continue
-        elif tib_agency and route.get("agency_id", "") != tib_agency:
-            continue
         headsign = trip_headsigns.get(trip_id, "") or route.get("route_long_name", "")
         origin = trip_origin_map.get(trip_id, "")
         trip_short_name = (
@@ -1043,7 +1096,10 @@ def arrivals_for_stop(stop_id):
                     if diff < best_diff and diff <= 600:
                         best_diff = diff
                         best_tv = tv_arr
-            # Second pass: any operator (tight 3-min window)
+            # Second pass: any operator.
+            # Window: tight 3-min when preferred operators are configured;
+            # generous 10-min when no operator filter is set.
+            fallback_window = 180 if tv_ops else 600
             if best_tv is None:
                 best_diff = float("inf")
                 for tv_arr in tv_ann[loc_sig].get("arrivals", []):
@@ -1051,7 +1107,7 @@ def arrivals_for_stop(stop_id):
                     if tv_key in used_tv_arr_keys:
                         continue
                     diff = abs(tv_arr["scheduled_time"] - arr_time)
-                    if diff < best_diff and diff <= 180:
+                    if diff < best_diff and diff <= fallback_window:
                         best_diff = diff
                         best_tv = tv_arr
             if best_tv:
@@ -1102,6 +1158,52 @@ def arrivals_for_stop(stop_id):
         if len(arrs) >= limit:
             break
 
+    # TV-only arrivals: operators not in GTFS (e.g. Mälartåg, SJ).
+    if only_trains and loc_sig and tv_ann.get(loc_sig):
+        for tv_arr in tv_ann[loc_sig].get("arrivals", []):
+            tv_key = (tv_arr["train_number"], tv_arr["scheduled_time"])
+            if tv_key in used_tv_arr_keys:
+                continue
+            if tv_arr["scheduled_time"] < now - 300:
+                continue
+            op = (tv_arr.get("operator") or "").lower()
+            pr = (tv_arr.get("product") or "").lower()
+            # Skip arrivals originating at this station
+            origin_name = tv_stations.get(tv_arr.get("origin_sig", ""), {}).get("name", "") if tv_arr.get("origin_sig") else ""
+            if origin_name and origin_name in dest_stop_names:
+                continue
+            if "mälartåg" in op or "mälartåg" in pr:
+                tv_color, tv_rsn = "005B99", "MÅ"
+            elif "sj" in op:
+                tv_color, tv_rsn = "D4004C", "SJ"
+            elif "arriva" in op or "bergslagen" in pr:
+                tv_color, tv_rsn = "E87722", "TiB"
+            elif "snälltåget" in op:
+                tv_color, tv_rsn = "1A1A1A", "SNÅ"
+            else:
+                tv_color, tv_rsn = "555555", "?"
+            sched_t = tv_arr["scheduled_time"]
+            rt_t = tv_arr.get("realtime_time")
+            track_chg = any("spår" in t.lower() for t in tv_arr.get("deviation", []))
+            arrs.append({
+                "route_short_name": tv_rsn,
+                "trip_short_name": tv_arr["train_number"],
+                "route_color": tv_color,
+                "route_text_color": "FFFFFF",
+                "operator": tv_arr.get("operator", ""),
+                "product": tv_arr.get("product", ""),
+                "origin": origin_name,
+                "arrival_time": rt_t if rt_t else sched_t,
+                "scheduled_time": sched_t,
+                "is_realtime": bool(rt_t),
+                "trip_id": "",
+                "platform": tv_arr.get("track", ""),
+                "track_changed": track_chg,
+                "canceled": tv_arr.get("canceled", False),
+                "deviation": tv_arr.get("deviation", []),
+            })
+        arrs.sort(key=lambda x: x["arrival_time"])
+
     # Deduplicate: same scheduled time + same origin = same physical train
     # (happens when a GTFS trip split/join creates two entries for one train)
     seen_arr_keys = set()
@@ -1111,7 +1213,7 @@ def arrivals_for_stop(stop_id):
         if key not in seen_arr_keys:
             seen_arr_keys.add(key)
             deduped_arrs.append(entry)
-    arrs = deduped_arrs
+    arrs = deduped_arrs[:limit]
 
     return jsonify({"stop_id": stop_id, "arrivals": arrs, "count": len(arrs)})
 
