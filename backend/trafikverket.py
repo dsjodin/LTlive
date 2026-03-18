@@ -228,28 +228,18 @@ def fetch_train_positions(location_signatures: set | None = None) -> list:
     InformationOwner is included so callers can colour trains that are not
     matched via TrainAnnouncement data (e.g. radius-filtered trains).
 
-    A WITHIN geo-filter is applied server-side at the API level so we only
-    receive trains near the configured center point.  This avoids hitting the
-    query result limit (1000) which would silently drop trains from operators
-    like SJ whose records may appear later in an unfiltered result set.
-    The radius sent to the API is 20 % larger than the local filter radius so
-    that trains just outside our display area are still included (they'll be
-    dropped by the local haversine check in app.py).
+    Fetches all active trains in Sweden (limit=2000).  The geo-filtering to
+    TV_POSITION_RADIUS_KM is done locally in app.py after the fetch.
+    Sweden typically has ~300–500 active trains so 2000 gives ample headroom.
     """
     if not config.TRAFIKVERKET_API_KEY:
         return []
 
-    # Build a circle filter slightly larger than the display radius so trains
-    # near the boundary aren't clipped by API rounding.
-    api_radius_m = int(config.TV_POSITION_RADIUS_KM * 1000 * 1.2)
     xml = f"""<REQUEST>
   <LOGIN authenticationkey="{config.TRAFIKVERKET_API_KEY}" />
-  <QUERY objecttype="TrainPosition" schemaversion="1.1" limit="1000">
+  <QUERY objecttype="TrainPosition" schemaversion="1.1" limit="2000">
     <FILTER>
-      <AND>
-        <EQ name="Status.Active" value="true" />
-        <WITHIN name="Position.WGS84" shape="circle" value="{config.TV_POSITION_CENTER_LAT} {config.TV_POSITION_CENTER_LON}" radius="{api_radius_m}" />
-      </AND>
+      <EQ name="Status.Active" value="true" />
     </FILTER>
     <INCLUDE>Train.AdvertisedTrainNumber</INCLUDE>
     <INCLUDE>Train.OperationalTrainNumber</INCLUDE>
