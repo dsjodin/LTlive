@@ -2,7 +2,11 @@
 
 Fetches TrainAnnouncement (departure/arrival boards with train numbers)
 and TrainPosition (real-time GPS) from api.trafikinfo.trafikverket.se.
+
+TrainPosition is consumed via SSE streaming (sseurl=true) for near-real-time
+updates instead of periodic polling.
 """
+import json
 import logging
 import re
 import time
@@ -16,6 +20,7 @@ log = logging.getLogger(__name__)
 
 _TV_URL = "https://api.trafikinfo.trafikverket.se/v2/data.json"
 _SESSION = requests.Session()
+_SSE_SESSION = requests.Session()  # dedicated session for long-lived SSE connections
 
 
 def _post(xml_body: str) -> dict:
@@ -222,24 +227,51 @@ def fetch_announcements(location_signatures: list[str], minutes_ahead: int = 120
     return result
 
 
-def fetch_train_positions(location_signatures: set | None = None) -> list:
-    """Fetch active TrainPosition objects.
+def _parse_position(pos: dict) -> dict | None:
+    """Parse a single raw TrainPosition object into our dict format.
 
-    Returns list of dicts with:
-        train_number, operator, lat, lon, bearing, speed, timestamp
-    InformationOwner is included so callers can colour trains that are not
-    matched via TrainAnnouncement data (e.g. radius-filtered trains).
+    Returns None for invalid/missing geometry.
+    Returned dict has deleted=True for removed trains (lat/lon will be absent).
+    """
+    train = pos.get("Train", {})
+    adv_num = (train.get("AdvertisedTrainNumber", "")
+               or train.get("OperationalTrainNumber", ""))
+    if pos.get("Deleted"):
+        return {"train_number": adv_num, "deleted": True}
+    wgs = pos.get("Position", {}).get("WGS84", "")
+    m = re.search(r"POINT\s*\(([0-9.]+)\s+([0-9.]+)\)", wgs)
+    if not m:
+        return None
+    lon, lat = float(m.group(1)), float(m.group(2))
+    ts = _ts_to_unix(pos.get("TimeStamp", ""))
+    speed_kmh = pos.get("Speed")
+    return {
+        "train_number": adv_num,
+        "operator": "",  # resolved via announcements in app.py
+        "lat": lat,
+        "lon": lon,
+        "bearing": pos.get("Bearing"),
+        "speed": speed_kmh / 3.6 if speed_kmh is not None else None,
+        "timestamp": ts,
+        "deleted": False,
+    }
 
-    Fetches all active trains in Sweden (limit=2000).  The geo-filtering to
-    TV_POSITION_RADIUS_KM is done locally in app.py after the fetch.
-    Sweden typically has ~300–500 active trains so 2000 gives ample headroom.
+
+def fetch_position_sseurl() -> tuple[list, str]:
+    """Fetch initial TrainPositions and obtain an SSE streaming endpoint.
+
+    Returns (parsed_positions, sseurl).  The SSEURL points to a stream that
+    will push every future TrainPosition change after the snapshot returned here.
+    If TRV doesn't return an SSEURL the string will be empty — callers must
+    fall back to periodic polling in that case.
     """
     if not config.TRAFIKVERKET_API_KEY:
-        return []
+        return [], ""
 
     xml = f"""<REQUEST>
   <LOGIN authenticationkey="{config.TRAFIKVERKET_API_KEY}" />
-  <QUERY objecttype="TrainPosition" namespace="järnväg.trafikinfo" schemaversion="1.1" limit="2000">
+  <QUERY objecttype="TrainPosition" namespace="järnväg.trafikinfo"
+         schemaversion="1.1" sseurl="true" limit="2000">
     <FILTER>
       <GT name="TimeStamp" value="$dateadd(-0:10:00)" />
     </FILTER>
@@ -248,37 +280,68 @@ def fetch_train_positions(location_signatures: set | None = None) -> list:
 
     try:
         data = _post(xml)
-        positions = data["RESPONSE"]["RESULT"][0].get("TrainPosition", [])
+        result_obj = data["RESPONSE"]["RESULT"][0]
+        positions_raw = result_obj.get("TrainPosition", [])
+        sseurl = result_obj.get("INFO", {}).get("SSEURL", "")
     except Exception as exc:
-        log.warning("TrainPosition fetch failed: %s", exc)
-        return []
+        log.warning("TrainPosition initial fetch failed: %s", exc)
+        return [], ""
 
-    result = []
-    for pos in positions:
-        if pos.get("Deleted"):
-            continue
-        train = pos.get("Train", {})
-        # AdvertisedTrainNumber is the public-facing number (e.g. "10" for SJ)
-        # OperationalTrainNumber is the internal number — prefer Advertised
-        adv_num = train.get("AdvertisedTrainNumber", "") or train.get("OperationalTrainNumber", "")
-        wgs = pos.get("Position", {}).get("WGS84", "")
-        m = re.search(r"POINT\s*\(([0-9.]+)\s+([0-9.]+)\)", wgs)
-        if not m:
-            continue
-        lon, lat = float(m.group(1)), float(m.group(2))
-        ts = _ts_to_unix(pos.get("TimeStamp", ""))
-        speed_kmh = pos.get("Speed")
-        result.append({
-            "train_number": adv_num,
-            "operator": "",  # InformationOwner not available in TrainPosition; resolved via announcements in app.py
-            "lat": lat,
-            "lon": lon,
-            "bearing": pos.get("Bearing"),
-            "speed": speed_kmh / 3.6 if speed_kmh is not None else None,  # API returns km/h, convert to m/s
-            "timestamp": ts,
-        })
+    positions = [p for raw in positions_raw if (p := _parse_position(raw)) and not p.get("deleted")]
+    log.info("TrainPosition initial fetch: %d positions, sseurl=%s",
+             len(positions), sseurl[:80] if sseurl else "(none)")
+    return positions, sseurl
 
-    return result
+
+def iter_position_stream(sseurl: str, last_event_id: str | None = None):
+    """Iterate over TrainPosition SSE change events.
+
+    Yields (event_id, positions_list) for each SSE message received.
+    Each entry in positions_list is a parsed position dict; entries with
+    deleted=True indicate a train that should be removed from the cache.
+
+    Raises requests.HTTPError with status 404 when the dynamic endpoint has
+    been cleaned up by TRV — the caller must request a new SSEURL.
+    Other network/HTTP errors propagate as-is so the caller can apply
+    exponential back-off and reconnect using the same SSEURL + lasteventid.
+    """
+    params: dict = {}
+    if last_event_id:
+        params["lasteventid"] = last_event_id
+
+    with _SSE_SESSION.get(
+        sseurl,
+        params=params,
+        stream=True,
+        timeout=(15, None),  # connect timeout 15 s, no read timeout
+        headers={"Accept": "text/event-stream"},
+    ) as resp:
+        resp.raise_for_status()
+
+        event_id: str | None = None
+        data_lines: list[str] = []
+
+        for raw_line in resp.iter_lines(decode_unicode=True):
+            if raw_line is None:
+                continue
+            if raw_line.startswith("id:"):
+                event_id = raw_line[3:].strip()
+            elif raw_line.startswith("data:"):
+                data_lines.append(raw_line[5:].strip())
+            elif raw_line == "" and data_lines:
+                data_str = "\n".join(data_lines)
+                data_lines = []
+                try:
+                    msg = json.loads(data_str)
+                    results = msg.get("RESPONSE", {}).get("RESULT", [{}])
+                    positions_raw = results[0].get("TrainPosition", []) if results else []
+                    positions = [p for raw in positions_raw
+                                 if (p := _parse_position(raw)) is not None]
+                    if positions:
+                        yield event_id, positions
+                except (json.JSONDecodeError, KeyError, IndexError) as exc:
+                    log.warning("TV SSE parse error: %s | data=%s", exc, data_str[:200])
+                event_id = None
 
 
 _MSG_STATUS_ORDER = {"StortLage": 0, "Hog": 1, "Normal": 2, "Lag": 3}

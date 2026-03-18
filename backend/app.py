@@ -2383,40 +2383,125 @@ def _push_train_positions():
     _push_sse("vehicles", {"vehicles": combined, "timestamp": ts, "count": len(combined)})
 
 
+def _update_tv_positions(new_positions: list) -> None:
+    """Merge a batch of streaming TrainPosition updates into _data['tv_positions'].
+
+    Entries with deleted=True remove the train from the cache; all others
+    replace (or insert) the entry for that train_number.
+    """
+    with _lock:
+        current = {p["train_number"]: p
+                   for p in _data.get("tv_positions", [])
+                   if p.get("train_number")}
+        for p in new_positions:
+            tn = p.get("train_number")
+            if not tn:
+                continue
+            if p.get("deleted"):
+                current.pop(tn, None)
+            else:
+                current[tn] = p
+        _data["tv_positions"] = list(current.values())
+    _invalidate_cache()
+
+
+def _run_tv_position_stream() -> None:
+    """Background thread: subscribe to TrainPosition changes via Trafikverket SSE.
+
+    Flow (as recommended by TRV docs):
+      1. POST with sseurl=true  → get snapshot of current positions + SSEURL
+      2. Connect to SSEURL       → receive all future changes in real time
+      3. On 404 (endpoint expired) → go to step 1
+      4. On other errors           → reconnect to same SSEURL + lasteventid
+                                     with exponential back-off
+    """
+    import requests as _requests  # local import to avoid circular at module level
+
+    last_event_id: str | None = None
+    sseurl: str | None = None
+    backoff = 5
+
+    while True:
+        try:
+            if not sseurl:
+                positions, sseurl = tv_api.fetch_position_sseurl()
+                if not positions and not sseurl:
+                    # API key missing or fetch failed — wait and retry
+                    time.sleep(backoff)
+                    backoff = min(backoff * 2, 300)
+                    continue
+                with _lock:
+                    _data["tv_positions"] = positions
+                    _data["tv_last_poll"] = int(time.time())
+                    _data["tv_last_error"] = None
+                _invalidate_cache()
+                last_event_id = None  # fresh endpoint, start from beginning
+                if not sseurl:
+                    log.warning("TV SSE: no SSEURL returned — position streaming unavailable")
+                    return
+
+            log.info("TV SSE: connecting (last_event_id=%s)", last_event_id)
+            for event_id, positions in tv_api.iter_position_stream(sseurl, last_event_id):
+                last_event_id = event_id
+                backoff = 5  # reset on successful messages
+                _update_tv_positions(positions)
+                with _lock:
+                    _data["tv_last_poll"] = int(time.time())
+                    _data["tv_last_error"] = None
+
+            # iter_position_stream exhausted without error → stream closed cleanly
+            log.info("TV SSE: stream closed, reconnecting")
+            time.sleep(2)
+
+        except _requests.HTTPError as exc:
+            status = exc.response.status_code if exc.response is not None else 0
+            if status == 404:
+                log.info("TV SSE: endpoint expired (404), recreating")
+                sseurl = None
+                last_event_id = None
+                # no sleep — recreate immediately
+            else:
+                log.warning("TV SSE HTTP %s, recreating endpoint", status)
+                with _lock:
+                    _data["tv_last_error"] = f"HTTP {status}"
+                sseurl = None
+                last_event_id = None
+                time.sleep(backoff)
+                backoff = min(backoff * 2, 300)
+
+        except Exception as exc:
+            log.warning("TV SSE error: %s", exc)
+            with _lock:
+                _data["tv_last_error"] = str(exc)
+            # Keep sseurl + last_event_id so we can resume from where we left off
+            time.sleep(backoff)
+            backoff = min(backoff * 2, 300)
+
+
 def _init_trafikverket():
-    """Load TrainStation lookup table once at startup, then do first poll."""
+    """Load TrainStation lookup table, start SSE position stream, do first announcement poll."""
     stations = tv_api.fetch_train_stations()
     with _lock:
         _data["tv_stations"] = stations
+    threading.Thread(target=_run_tv_position_stream, daemon=True, name="tv-sse").start()
     _poll_trafikverket()
 
 
 def _poll_trafikverket():
-    """Fetch TrainAnnouncement + TrainPosition data and cache."""
+    """Fetch TrainAnnouncement + StationMessages (positions come via SSE stream)."""
     loc_sigs = list(config.TRAFIKVERKET_STATIONS.values())
-
-    # TrainPosition is independent of station config — always fetch when API key is set
-    pos_error = None
-    try:
-        positions = tv_api.fetch_train_positions()
-    except Exception as exc:
-        log.warning("TrainPosition poll failed: %s", exc)
-        positions = []
-        pos_error = str(exc)
+    if not loc_sigs:
+        return
 
     announcements = tv_api.fetch_announcements(
         loc_sigs, minutes_ahead=config.TRAFIKVERKET_LOOKAHEAD_MINUTES
-    ) if loc_sigs else {}
-    messages = tv_api.fetch_station_messages(loc_sigs) if loc_sigs else {}
+    )
+    messages = tv_api.fetch_station_messages(loc_sigs)
 
     with _lock:
-        if positions:
-            _data["tv_positions"] = positions
         if announcements:
             _data["tv_announcements"] = announcements
-        _data["tv_messages"] = messages  # empty dict = no messages, still valid
-        _data["tv_last_poll"] = int(time.time())
-        _data["tv_last_error"] = pos_error
+        _data["tv_messages"] = messages
     _invalidate_cache()
 
 
