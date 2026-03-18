@@ -239,7 +239,7 @@
             background: var(--bg3);
             border-bottom: 1px solid var(--border);
             color: var(--muted);
-            font-size: 0.72rem;
+            font-size: 0.8rem;
             font-weight: 600;
             letter-spacing: 0.5px;
             text-transform: uppercase;
@@ -275,8 +275,8 @@
         .row.arr-grid { grid-template-columns: 72px 1fr 52px 72px 72px 92px 1.4fr; }
 
         .via-row {
-            padding: 0 20px 7px 20px;
-            font-size: 0.72rem;
+            padding: 0 20px 8px 20px;
+            font-size: 0.82rem;
             color: var(--muted);
         }
 
@@ -288,9 +288,11 @@
         .bus-tag { background: #4a4a4a; color: #fff; font-size: 0.62em; padding: 1px 4px; border-radius: 3px; margin-left: 4px; vertical-align: middle; letter-spacing: 0.3px; }
 
         .time-col {
-            font-size: clamp(0.85rem, 1.7vw, 1.05rem);
+            font-size: clamp(1rem, 2vw, 1.3rem);
             font-variant-numeric: tabular-nums;
             font-family: monospace;
+            font-weight: 700;
+            color: var(--yellow);
             white-space: nowrap;
         }
         .time-orig {
@@ -303,7 +305,7 @@
 
         .dest-col {
             min-width: 0;
-            font-size: clamp(0.9rem, 2.2vw, 1.15rem);
+            font-size: clamp(1rem, 2.4vw, 1.4rem);
             font-weight: 500;
             white-space: nowrap;
             overflow: hidden;
@@ -312,7 +314,7 @@
         }
 
         .track {
-            font-size: 0.85rem;
+            font-size: 1rem;
             color: var(--muted);
             text-align: center;
         }
@@ -321,9 +323,9 @@
             background: var(--bg3);
             border: 1px solid var(--border);
             border-radius: 4px;
-            padding: 2px 7px;
-            font-weight: 600;
-            font-size: 0.8rem;
+            padding: 3px 8px;
+            font-weight: 700;
+            font-size: 0.95rem;
             color: var(--text);
         }
         .track-num.track-changed {
@@ -333,27 +335,27 @@
         }
 
         .trainno-col {
-            font-size: 0.9rem;
+            font-size: 1.05rem;
             font-variant-numeric: tabular-nums;
             font-family: monospace;
             color: var(--text);
         }
 
         .operator-col {
-            font-size: 0.75rem;
+            font-size: 0.88rem;
         }
         .op-tag {
-            font-size: 0.75rem;
+            font-size: 0.88rem;
             font-weight: 700;
             letter-spacing: 0.03em;
-            padding: 2px 6px;
+            padding: 3px 7px;
             border-radius: 4px;
             color: #fff;
             white-space: nowrap;
         }
 
         .eta-col {
-            font-size: clamp(0.95rem, 2.4vw, 1.3rem);
+            font-size: clamp(1.05rem, 2.5vw, 1.5rem);
             font-weight: 800;
             font-variant-numeric: tabular-nums;
             font-family: monospace;
@@ -364,10 +366,31 @@
         .eta-soon   { color: var(--orange); }
         .eta-normal { color: #58a6ff; }
         .eta-late   { color: var(--red); }
-        .eta-past   { color: var(--muted); font-size: 0.8rem; font-weight: 600; }
+        .eta-past   { color: var(--muted); font-size: 0.9rem; font-weight: 600; }
+
+        /* ── Signal lamp (järnvägssignal) ── */
+        .eta-signal {
+            text-align: right;
+            line-height: 1;
+        }
+        .signal-svg {
+            display: inline-block;
+            vertical-align: middle;
+        }
+        @keyframes sig-lamp-l {
+            0%,  49.9% { fill: #ee1111; filter: drop-shadow(0 0 7px #ff4400); }
+            50%, 100%  { fill: #2a2a2a; filter: none; }
+        }
+        @keyframes sig-lamp-r {
+            0%,  49.9% { fill: #2a2a2a; filter: none; }
+            50%, 100%  { fill: #ee1111; filter: drop-shadow(0 0 7px #ff4400); }
+        }
+        .sig-l { animation: sig-lamp-l 1.4s linear infinite; }
+        .sig-r { animation: sig-lamp-r 1.4s linear infinite; }
+        .row-wrap.row-signal { background: #1a1200; border-left: 3px solid var(--yellow); }
 
         .remark-col {
-            font-size: 0.78rem;
+            font-size: 0.9rem;
             min-width: 0;
             overflow: hidden;
             text-overflow: ellipsis;
@@ -782,14 +805,22 @@ function buildRemarkText(item) {
     return parts.join(" ");
 }
 
+// ── Signal SVG (järnvägssignal) ───────────────────────
+const SIGNAL_SVG = `<svg class="signal-svg" viewBox="0 0 70 76" width="46" height="50">
+  <path d="M10,22 Q7,8 22,5 L48,5 Q63,8 60,22 L58,56 Q56,72 35,74 Q14,72 12,56 Z"
+        fill="#111" stroke="white" stroke-width="3.5"/>
+  <circle class="sig-l" cx="24" cy="26" r="11"/>
+  <circle class="sig-r" cx="46" cy="26" r="11"/>
+  <circle cx="35" cy="53" r="11" fill="#252525"/>
+</svg>`;
+
 // ── ETA helper ────────────────────────────────────────
 function formatEta(secs, mode) {
-    if (secs < -60) return { text: mode === "arr" ? "Ankommit" : "Avgått", cls: "eta-past" };
-    if (secs <= 0)  return { text: "Nu",            cls: "eta-now" };
-    if (secs < 60)  return { text: `${secs} s`,     cls: "eta-now" };
-    const m = Math.floor(secs / 60), s = secs % 60;
-    const cls = m < 3 ? "eta-soon" : "eta-normal";
-    return { text: `${m}:${String(s).padStart(2,"0")}`, cls };
+    if (secs < -120) return { text: mode === "arr" ? "Ankommit" : "Avgått", cls: "eta-past" };
+    if (secs <= 60)  return { text: "Nu", cls: "eta-now" };
+    const m = Math.round(secs / 60);
+    const cls = m <= 2 ? "eta-soon" : "eta-normal";
+    return { text: `${m} min`, cls };
 }
 
 function startCountdown() {
@@ -797,12 +828,35 @@ function startCountdown() {
     countdownTimer = setInterval(() => {
         const now = Date.now() / 1000;
         document.querySelectorAll(".eta-col[data-ts]").forEach(el => {
+            // Already showing signal – keep it, just prevent row-past fading
+            if (el.dataset.signal === "true") {
+                const row = el.closest(".row-wrap");
+                if (row) {
+                    row.classList.remove("row-past", "row-now");
+                }
+                return;
+            }
             const ts   = parseFloat(el.dataset.ts);
             const secs = Math.round(ts - now);
             const mode = el.dataset.mode || "dep";
+            const isCanceled = !!el.closest(".row-wrap")?.classList.contains("row-canceled");
+
+            if (!isCanceled && secs <= 120) {
+                // Activate signal mode
+                el.dataset.signal = "true";
+                el.innerHTML  = SIGNAL_SVG;
+                el.className  = "eta-col eta-signal";
+                const row = el.closest(".row-wrap");
+                if (row) {
+                    row.classList.remove("row-now", "row-past");
+                    row.classList.add("row-signal");
+                }
+                return;
+            }
+
             const { text, cls } = formatEta(secs, mode);
-            el.textContent = text;
-            el.className   = `eta-col ${cls}`;
+            el.innerHTML = text;
+            el.className = `eta-col ${cls}`;
             const row = el.closest(".row-wrap");
             if (row) {
                 row.classList.toggle("row-now",  secs <= 30 && secs > -60);
@@ -922,14 +976,19 @@ async function loadDepartures(board) {
             ? `<div class="via-row">${rtDot}via ${d.via.join(" · ")}</div>`
             : (d.is_realtime ? `<div class="via-row">${rtDot}Realtid</div>` : "");
         const remarkText = buildRemarkText(d);
-        return `<div class="row-wrap ${nowClass}${pastClass}${canceledClass}">
+        const useSignal  = !d.canceled && secs <= 120;
+        const etaInner   = useSignal ? SIGNAL_SVG : etaText;
+        const etaClass   = useSignal ? "eta-signal" : etaCls;
+        const signalAttr = useSignal ? ' data-signal="true"' : '';
+        const wrapExtra  = useSignal ? " row-signal" : (nowClass + pastClass + canceledClass);
+        return `<div class="row-wrap${useSignal ? " row-signal" + canceledClass : " " + nowClass + pastClass + canceledClass}">
             <div class="row dep-grid">
                 <span class="time-col">${clockHtml}</span>
                 <span class="dest-col">${headsignText}${liveTag}</span>
                 <span class="track"><span class="track-num${trackChangedClass}">${d.platform || "–"}</span></span>
                 <span class="trainno-col">${trainLabel}</span>
                 <span class="operator-col">${opTag}</span>
-                <span class="eta-col ${etaCls}" data-ts="${d.departure_time}" data-mode="dep">${etaText}</span>
+                <span class="eta-col ${etaClass}" data-ts="${d.departure_time}" data-mode="dep"${signalAttr}>${etaInner}</span>
                 <span class="remark-col">${remarkText}</span>
             </div>
             ${viaRow}
@@ -985,14 +1044,18 @@ async function loadArrivals(board) {
             ? `<div class="via-row">${rtDot}via ${a.via.join(" · ")}</div>`
             : (a.is_realtime ? `<div class="via-row">${rtDot}Realtid</div>` : "");
         const remarkText = buildRemarkText(a);
-        return `<div class="row-wrap ${nowClass}${pastClass}${canceledClass}">
+        const useSignal  = !a.canceled && secs <= 120;
+        const etaInner   = useSignal ? SIGNAL_SVG : etaText;
+        const etaClass   = useSignal ? "eta-signal" : etaCls;
+        const signalAttr = useSignal ? ' data-signal="true"' : '';
+        return `<div class="row-wrap${useSignal ? " row-signal" + canceledClass : " " + nowClass + pastClass + canceledClass}">
             <div class="row arr-grid">
                 <span class="time-col">${arrClockHtml}</span>
                 <span class="dest-col">${fromDisplay}${liveTag}</span>
                 <span class="track"><span class="track-num${arrTrackChangedClass}">${a.platform || "–"}</span></span>
                 <span class="trainno-col">${trainLabel}</span>
                 <span class="operator-col">${opTag}</span>
-                <span class="eta-col ${etaCls}" data-ts="${a.arrival_time}" data-mode="arr">${etaText}</span>
+                <span class="eta-col ${etaClass}" data-ts="${a.arrival_time}" data-mode="arr"${signalAttr}>${etaInner}</span>
                 <span class="remark-col">${remarkText}</span>
             </div>
             ${viaRow}
