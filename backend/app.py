@@ -818,6 +818,8 @@ def departures_for_stop(stop_id):
         tv_rt_time = None
         tv_sched_override = None
         tv_track_changed = False
+        tv_operator = ""
+        tv_product = ""
         if loc_sig and tv_ann.get(loc_sig):
             dep_time = d["time"]
             tv_ops = config.TRAFIKVERKET_OPERATORS
@@ -849,8 +851,21 @@ def departures_for_stop(stop_id):
                         best_tv = tv_dep
             if best_tv:
                 used_tv_dep_keys.add((best_tv["train_number"], best_tv["scheduled_time"]))
-                if not trip_short_name:
-                    trip_short_name = best_tv["train_number"]
+                # TV AdvertisedTrainIdent is always authoritative — overrides GTFS
+                # trip_short_name which is often set to the route/line name (e.g. "T53")
+                trip_short_name = best_tv["train_number"]
+                tv_operator = best_tv.get("operator", "")
+                tv_product = best_tv.get("product", "")
+                # Update color based on operator if no explicit override configured
+                if not config.ROUTE_COLOR_OVERRIDES.get(rsn):
+                    op_l = tv_operator.lower()
+                    pr_l = tv_product.lower()
+                    if "mälartåg" in op_l or "mälartåg" in pr_l:
+                        color = "005B99"
+                    elif "sj" in op_l:
+                        color = "D4004C"
+                    elif "arriva" in op_l or "bergslagen" in pr_l:
+                        color = "E87722"
                 tv_track = best_tv["track"]
                 tv_canceled = best_tv["canceled"]
                 tv_deviation = best_tv["deviation"]
@@ -876,6 +891,8 @@ def departures_for_stop(stop_id):
             "trip_short_name": trip_short_name,
             "route_color": color,
             "route_text_color": route.get("route_text_color", "FFFFFF"),
+            "operator": tv_operator,
+            "product": tv_product,
             "headsign": headsign,
             "departure_time": rt_time if rt_time else sched_time,
             "scheduled_time": sched_time,
@@ -997,6 +1014,8 @@ def arrivals_for_stop(stop_id):
         tv_track = ""
         tv_canceled = False
         tv_deviation = []
+        tv_arr_operator = ""
+        tv_arr_product = ""
         loc_sig = config.TRAFIKVERKET_STATIONS.get(stop_id, "")
         if not loc_sig:
             for qid in query_ids:
@@ -1037,8 +1056,18 @@ def arrivals_for_stop(stop_id):
                         best_tv = tv_arr
             if best_tv:
                 used_tv_arr_keys.add((best_tv["train_number"], best_tv["scheduled_time"]))
-                if not trip_short_name:
-                    trip_short_name = best_tv["train_number"]
+                trip_short_name = best_tv["train_number"]
+                tv_arr_operator = best_tv.get("operator", "")
+                tv_arr_product = best_tv.get("product", "")
+                if not config.ROUTE_COLOR_OVERRIDES.get(rsn):
+                    op_l = tv_arr_operator.lower()
+                    pr_l = tv_arr_product.lower()
+                    if "mälartåg" in op_l or "mälartåg" in pr_l:
+                        color = "005B99"
+                    elif "sj" in op_l:
+                        color = "D4004C"
+                    elif "arriva" in op_l or "bergslagen" in pr_l:
+                        color = "E87722"
                 tv_track = best_tv["track"]
                 tv_canceled = best_tv["canceled"]
                 tv_deviation = best_tv["deviation"]
@@ -1058,6 +1087,8 @@ def arrivals_for_stop(stop_id):
             "trip_short_name": trip_short_name,
             "route_color": color,
             "route_text_color": route.get("route_text_color", "FFFFFF"),
+            "operator": tv_arr_operator,
+            "product": tv_arr_product,
             "origin": origin,
             "arrival_time": tv_rt_arr_time if tv_rt_arr_time else arr_sched_time,
             "scheduled_time": arr_sched_time,

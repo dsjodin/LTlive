@@ -417,6 +417,24 @@
         #live-status-text { }
         #live-status .tib-live { color: var(--tib); font-weight: 600; }
 
+        /* Operator sub-label below train badge */
+        .badge-cell {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 3px;
+        }
+        .op-tag {
+            font-size: 0.6rem;
+            font-weight: 700;
+            letter-spacing: 0.03em;
+            padding: 1px 4px;
+            border-radius: 3px;
+            color: #fff;
+            opacity: 0.9;
+            white-space: nowrap;
+        }
+
         /* Station messages banner */
         #station-messages {
             display: none;
@@ -727,6 +745,21 @@ function setMode(mode) {
     refreshBoard();
 }
 
+// ── Operator tag helper ───────────────────────────────
+function operatorTag(operator, product) {
+    const op = (operator || "").toLowerCase();
+    const pr = (product  || "").toLowerCase();
+    if (op.includes("mälartåg") || pr.includes("mälartåg"))
+        return `<span class="op-tag" style="background:#005B99">Mälartåg</span>`;
+    if (op.includes("sj"))
+        return `<span class="op-tag" style="background:#D4004C">SJ</span>`;
+    if (op.includes("arriva") || pr.includes("bergslagen"))
+        return `<span class="op-tag" style="background:#E87722">TiB</span>`;
+    if (op.includes("snälltåget"))
+        return `<span class="op-tag" style="background:#1a1a1a">Snälltåget</span>`;
+    return "";
+}
+
 // ── ETA helper ────────────────────────────────────────
 function formatEta(secs, mode) {
     if (secs < -60) return { text: mode === "arr" ? "Ankommit" : "Avgått", cls: "eta-past" };
@@ -848,6 +881,7 @@ async function loadDepartures(board) {
             : "";
 
         const trainLabel = d.trip_short_name || d.route_short_name || "?";
+        const opTag = operatorTag(d.operator, d.product);
         const canceledClass = d.canceled ? " row-canceled" : "";
         const headsignText = d.canceled
             ? `<s>${d.headsign || ""}</s> <span class="canceled-badge">Inställt</span>`
@@ -865,7 +899,10 @@ async function loadDepartures(board) {
             ? `<span class="time-orig">${schedClock}</span><span class="time-new">${clock}</span>`
             : clock;
         return `<div class="row dep-grid ${nowClass}${pastClass}${canceledClass}">
-            <span class="badge" style="background:${bg};color:${fg}">${trainLabel}</span>
+            <div class="badge-cell">
+                <span class="badge" style="background:${bg};color:${fg}">${trainLabel}</span>
+                ${opTag}
+            </div>
             <div class="destination">
                 <div class="destination-main">${headsignText}${liveTag}</div>
                 <div class="destination-sub">${depSubText}${deviationText}</div>
@@ -913,6 +950,7 @@ async function loadArrivals(board) {
             : "";
 
         const trainLabel = a.trip_short_name || a.route_short_name || "?";
+        const opTag = operatorTag(a.operator, a.product);
         const canceledClass = a.canceled ? " row-canceled" : "";
         const fromDisplay = a.canceled ? `<s>${fromLabel}</s> <span class="canceled-badge">Inställt</span>` : fromLabel;
         const deviationText = (a.deviation && a.deviation.length)
@@ -926,7 +964,10 @@ async function loadArrivals(board) {
             ? `<span class="time-orig">${arrSchedClock}</span><span class="time-new">${clock}</span>`
             : clock;
         return `<div class="row arr-grid ${nowClass}${pastClass}${canceledClass}">
-            <span class="badge" style="background:${bg};color:${fg}">${trainLabel}</span>
+            <div class="badge-cell">
+                <span class="badge" style="background:${bg};color:${fg}">${trainLabel}</span>
+                ${opTag}
+            </div>
             <div class="destination">
                 <div class="destination-main">${fromDisplay}${liveTag}</div>
                 <div class="destination-sub">${sub}${deviationText}</div>
