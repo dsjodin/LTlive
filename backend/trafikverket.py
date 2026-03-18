@@ -224,10 +224,9 @@ def fetch_train_positions(location_signatures: set | None = None) -> list:
     """Fetch active TrainPosition objects.
 
     Returns list of dicts with:
-        train_number, lat, lon, bearing, speed, timestamp
-    If location_signatures is given, only return trains whose
-    AdvertisedTrainNumber matches trains expected at those stations
-    (caller must filter by train_number whitelist).
+        train_number, operator, lat, lon, bearing, speed, timestamp
+    InformationOwner is included so callers can colour trains that are not
+    matched via TrainAnnouncement data (e.g. radius-filtered trains).
     """
     if not config.TRAFIKVERKET_API_KEY:
         return []
@@ -240,6 +239,7 @@ def fetch_train_positions(location_signatures: set | None = None) -> list:
     </FILTER>
     <INCLUDE>Train.AdvertisedTrainNumber</INCLUDE>
     <INCLUDE>Train.OperationalTrainNumber</INCLUDE>
+    <INCLUDE>InformationOwner</INCLUDE>
     <INCLUDE>Position.WGS84</INCLUDE>
     <INCLUDE>Bearing</INCLUDE>
     <INCLUDE>Speed</INCLUDE>
@@ -269,6 +269,7 @@ def fetch_train_positions(location_signatures: set | None = None) -> list:
         ts = _ts_to_unix(pos.get("TimeStamp", ""))
         result.append({
             "train_number": adv_num,
+            "operator": pos.get("InformationOwner", ""),
             "lat": lat,
             "lon": lon,
             "bearing": pos.get("Bearing"),

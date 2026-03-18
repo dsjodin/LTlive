@@ -2071,61 +2071,88 @@ def stops_next_departure():
 
 # --- Startup ---
 
+def _tv_operator_style(op: str, prod: str) -> tuple[str, str]:
+    """Return (hex_color, long_name) for a train operator string."""
+    op_l = op.lower()
+    prod_l = prod.lower()
+    if "mälartåg" in op_l or "mälartåg" in prod_l:
+        return "005B99", "Mälartåg"
+    if "sj" in op_l:
+        return "D4004C", "SJ"
+    if "arriva" in op_l or "tib" in prod_l or "bergslagen" in prod_l:
+        return "E87722", "Tåg i Bergslagen"
+    if "snälltåget" in op_l:
+        return "1A1A1A", "Snälltåget"
+    if "mtr" in op_l:
+        return "007BC0", "MTR"
+    return "555555", op.title() or "Tåg"
+
+
 def _tv_trains_from_positions() -> list:
     """Build vehicle-like dicts from Trafikverket TrainPosition data.
 
-    Only includes trains that appear in tv_announcements (i.e. expected at a
-    configured station) so we don't flood the map with irrelevant trains.
-    Positions older than 5 minutes are discarded.
+    Includes every train whose GPS position is within
+    config.TV_POSITION_RADIUS_KM of the configured center point
+    (default: Örebro C).  Operator/colour is resolved first from
+    tv_announcements (most accurate) and falls back to the
+    InformationOwner field in the TrainPosition record itself.
+    Positions older than 10 minutes are discarded.
     """
     with _lock:
         tv_positions = list(_data.get("tv_positions", []))
         tv_announcements = dict(_data.get("tv_announcements", {}))
 
-    # Build train_number → {operator, product} from announcement data
-    expected: dict[str, dict] = {}
+    # Build train_number → {operator, product} from announcement data (preferred source)
+    ann_info: dict[str, dict] = {}
     for bucket in tv_announcements.values():
         for entry in bucket.get("departures", []) + bucket.get("arrivals", []):
             tn = entry.get("train_number", "")
-            if tn and tn not in expected:
-                expected[tn] = {
-                    "operator": entry.get("operator", "").lower(),
-                    "product": entry.get("product", "").lower(),
+            if tn and tn not in ann_info:
+                ann_info[tn] = {
+                    "operator": entry.get("operator", ""),
+                    "product": entry.get("product", ""),
                 }
 
-    if not expected:
-        return []
+    center_lat = config.TV_POSITION_CENTER_LAT
+    center_lon = config.TV_POSITION_CENTER_LON
+    radius_m = config.TV_POSITION_RADIUS_KM * 1000
+    cos_clat = math.cos(math.radians(center_lat))
 
     cutoff = int(time.time()) - 600  # discard positions older than 10 min
     result = []
     for pos in tv_positions:
         tn = pos.get("train_number", "")
-        if tn not in expected:
+        if not tn:
             continue
         ts = pos.get("timestamp") or 0
         if ts and ts < cutoff:
             continue
 
-        info = expected[tn]
-        op = info["operator"]
-        prod = info["product"]
-        if "mälartåg" in op or "mälartåg" in prod:
-            color, long_name = "005B99", "Mälartåg"
-        elif "sj" in op:
-            color, long_name = "D4004C", "SJ"
-        elif "arriva" in op or "tib" in prod or "bergslagen" in prod:
-            color, long_name = "E87722", "Tåg i Bergslagen"
-        elif "snälltåget" in op:
-            color, long_name = "1A1A1A", "Snälltåget"
+        # Radius filter
+        plat, plon = pos["lat"], pos["lon"]
+        dlat = math.radians(plat - center_lat)
+        dlon = math.radians(plon - center_lon)
+        a = math.sin(dlat / 2) ** 2 + cos_clat * math.cos(math.radians(plat)) * math.sin(dlon / 2) ** 2
+        dist_m = 2 * 6_371_000 * math.asin(math.sqrt(max(0.0, a)))
+        if dist_m > radius_m:
+            continue
+
+        # Resolve operator: announcement data first, then InformationOwner from position
+        if tn in ann_info:
+            op = ann_info[tn]["operator"]
+            prod = ann_info[tn]["product"]
         else:
-            color, long_name = "555555", op.title() or "Tåg"
+            op = pos.get("operator", "")
+            prod = ""
+
+        color, long_name = _tv_operator_style(op, prod)
 
         result.append({
             "id": f"tv_{tn}",
             "vehicle_id": f"tv_{tn}",
             "label": tn,
-            "lat": pos["lat"],
-            "lon": pos["lon"],
+            "lat": plat,
+            "lon": plon,
             "bearing": pos.get("bearing"),
             "speed": pos.get("speed"),
             "current_status": "I trafik",

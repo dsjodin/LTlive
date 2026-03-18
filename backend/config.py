@@ -85,6 +85,14 @@ TRAFIKVERKET_LOOKAHEAD_MINUTES = int(os.environ.get("TRAFIKVERKET_LOOKAHEAD_MINU
 # How often to refresh TV announcement data (seconds).
 TRAFIKVERKET_POLL_SECONDS = int(os.environ.get("TRAFIKVERKET_POLL_SECONDS", "60"))
 
+# Center point + radius for Trafikverket TrainPosition filtering.
+# All active trains within TV_POSITION_RADIUS_KM of the center are shown on
+# the live map (regardless of whether they appear in TV announcements).
+# Defaults to Örebro C; override via environment variables.
+TV_POSITION_CENTER_LAT = float(os.environ.get("TV_POSITION_CENTER_LAT", "59.2753"))
+TV_POSITION_CENTER_LON = float(os.environ.get("TV_POSITION_CENTER_LON", "15.2134"))
+TV_POSITION_RADIUS_KM = float(os.environ.get("TV_POSITION_RADIUS_KM", "150"))
+
 # Oxyfi Realtidspositionering — train positions via WebSocket
 # Register at trafiklab.se and add the "Oxyfi-Realtidspositionering" API to your project.
 OXYFI_API_KEY = os.environ.get("OXYFI_API_KEY", "")
