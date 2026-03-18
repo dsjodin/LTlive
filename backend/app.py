@@ -2113,20 +2113,18 @@ def _annotate_oxyfi_from_announcements(trains: list) -> list:
         return trains
 
     now = int(time.time())
-    result = []
-    for v in trains:
-        # Only try to annotate Oxyfi trains that don't already have a TV number
-        if v.get("tv_service_number") or (v.get("vehicle_id") or "").startswith("tv_"):
-            result.append(v)
-            continue
+    WINDOW = 600  # ±10 min — tight enough to find the right service
 
+    # Phase 1: collect all (time_diff, oxyfi_index, train_number, sched_time) candidates
+    candidates = []
+    for idx, v in enumerate(trains):
+        if v.get("tv_service_number") or (v.get("vehicle_id") or "").startswith("tv_"):
+            continue
         o_lat, o_lon = v.get("lat"), v.get("lon")
         if not (o_lat and o_lon):
-            result.append(v)
             continue
 
-        # Find nearest configured station (no distance limit — even between stations
-        # the nearest one tells us which line the Oxyfi train is on)
+        # Nearest configured station
         best_dist = float("inf")
         nearest_loc_sig = None
         for loc_sig, s_lat, s_lon in station_anchors:
@@ -2141,34 +2139,39 @@ def _annotate_oxyfi_from_announcements(trains: list) -> list:
                 nearest_loc_sig = loc_sig
 
         if not nearest_loc_sig:
-            result.append(v)
             continue
 
-        # Among all announcements for this station, pick TiB train closest to now
-        # (within a ±20 min window to cover trains currently en route between stops)
         ann_bucket = tv_ann.get(nearest_loc_sig, {})
-        best_tn = None
-        best_diff = float("inf")
         for entry in ann_bucket.get("departures", []) + ann_bucket.get("arrivals", []):
             op = (entry.get("operator") or "").lower()
             pr = (entry.get("product") or "").lower()
-            # Only match TiB trains — Oxyfi only tracks TiB rolling stock
             if not ("arriva" in op or "bergslagen" in pr or "tib" in pr):
                 continue
             rt = entry.get("realtime_time") or entry.get("scheduled_time")
             if rt is None:
                 continue
             diff = abs(rt - now)
-            if diff < best_diff and diff <= 1200:  # ±20 min
-                best_diff = diff
-                best_tn = entry.get("train_number")
+            if diff <= WINDOW:
+                candidates.append((diff, idx,
+                                   entry.get("train_number", ""),
+                                   entry.get("scheduled_time", 0)))
 
-        if best_tn:
-            result.append({**v, "tv_service_number": best_tn})
-        else:
-            result.append(v)
+    # Phase 2: greedy exclusive assignment — sort by time_diff (best match first).
+    # Each (train_number, scheduled_time) key can only be assigned to one Oxyfi train.
+    # This prevents all vehicles from matching the same through-running service.
+    candidates.sort()
+    used_keys: set = set()
+    assigned: dict = {}  # oxyfi_index -> train_number
+    for diff, idx, tn, sched_t in candidates:
+        ann_key = (tn, sched_t)
+        if idx not in assigned and ann_key not in used_keys:
+            assigned[idx] = tn
+            used_keys.add(ann_key)
 
-    return result
+    return [
+        ({**v, "tv_service_number": assigned[i]} if i in assigned else v)
+        for i, v in enumerate(trains)
+    ]
 
 
 def _merge_trains(oxyfi_trains: list, tv_trains: list) -> list:
