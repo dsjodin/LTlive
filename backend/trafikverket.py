@@ -257,3 +257,61 @@ def fetch_train_positions(location_signatures: set | None = None) -> list:
         })
 
     return result
+
+
+def fetch_station_messages(location_signatures: list[str]) -> dict:
+    """Fetch TrainStationMessage for given LocationSignatures.
+
+    Returns {location_sig: [{"header": str, "body": str, "start": int|None, "end": int|None}]}.
+    Only returns messages whose PrognosticatedEndOfEffect is in the future.
+    """
+    if not config.TRAFIKVERKET_API_KEY or not location_signatures:
+        return {}
+
+    if len(location_signatures) == 1:
+        loc_filter = f'<EQ name="LocationSignature" value="{location_signatures[0]}" />'
+    else:
+        parts = "".join(
+            f'<EQ name="LocationSignature" value="{s}" />'
+            for s in location_signatures
+        )
+        loc_filter = f"<OR>{parts}</OR>"
+
+    xml = f"""<REQUEST>
+  <LOGIN authenticationkey="{config.TRAFIKVERKET_API_KEY}" />
+  <QUERY objecttype="TrainStationMessage" schemaversion="1.0" limit="100"
+         orderby="SortOrder">
+    <FILTER>
+      <AND>
+        {loc_filter}
+        <GT name="PrognosticatedEndOfEffect" value="$dateadd(-0:01:00)" />
+      </AND>
+    </FILTER>
+    <INCLUDE>LocationSignature</INCLUDE>
+    <INCLUDE>Header</INCLUDE>
+    <INCLUDE>Body</INCLUDE>
+    <INCLUDE>PrognosticatedStartOfEffect</INCLUDE>
+    <INCLUDE>PrognosticatedEndOfEffect</INCLUDE>
+    <INCLUDE>SortOrder</INCLUDE>
+  </QUERY>
+</REQUEST>"""
+
+    try:
+        data = _post(xml)
+        messages = data["RESPONSE"]["RESULT"][0].get("TrainStationMessage", [])
+    except Exception as exc:
+        log.warning("TrainStationMessage fetch failed: %s", exc)
+        return {}
+
+    result: dict[str, list] = {}
+    for msg in messages:
+        loc_sig = msg.get("LocationSignature", "")
+        if not loc_sig:
+            continue
+        result.setdefault(loc_sig, []).append({
+            "header": msg.get("Header", ""),
+            "body": msg.get("Body", ""),
+            "start": _ts_to_unix(msg.get("PrognosticatedStartOfEffect", "")),
+            "end": _ts_to_unix(msg.get("PrognosticatedEndOfEffect", "")),
+        })
+    return result

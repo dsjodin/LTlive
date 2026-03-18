@@ -74,6 +74,7 @@ _data = {
     "tv_announcements": {},   # {location_sig: {departures: [...], arrivals: [...]}}
     "tv_stations": {},        # {location_sig: {name, lat, lon}}
     "tv_positions": [],       # list of {train_number, lat, lon, bearing, ...}
+    "tv_messages": {},        # {location_sig: [{header, body, start, end}]}
     "tv_last_poll": 0,
     "tv_last_error": None,
 }
@@ -567,7 +568,8 @@ def vehicles():
         vehicle_list = list(_data["vehicles"])
         ts = _data["last_vehicle_update"]
 
-    enriched = _enrich_vehicles(vehicle_list) + oxyfi.get_trains()
+    trains = _merge_trains(oxyfi.get_trains(), _tv_trains_from_positions())
+    enriched = _enrich_vehicles(vehicle_list) + trains
     result = {"vehicles": enriched, "timestamp": ts, "count": len(enriched)}
     _cache_set("vehicles", result)
     return jsonify(result)
@@ -1383,6 +1385,34 @@ def debug_tv_stations():
     })
 
 
+@app.route("/api/station-messages/<stop_id>")
+def station_messages(stop_id):
+    """Return current Trafikverket TrainStationMessages for a stop."""
+    with _lock:
+        tv_messages = dict(_data.get("tv_messages", {}))
+        tv_stations = dict(_data.get("tv_stations", {}))
+
+    loc_sig = config.TRAFIKVERKET_STATIONS.get(stop_id, "")
+    if not loc_sig:
+        # Try child stops — parent station may be passed
+        with _lock:
+            all_stops = _data["stops"]
+        target = all_stops.get(stop_id, {})
+        if target.get("location_type", 0) == 1:
+            for child_id in [s["stop_id"] for s in all_stops.values()
+                              if s.get("parent_station") == stop_id]:
+                loc_sig = config.TRAFIKVERKET_STATIONS.get(child_id, "")
+                if loc_sig:
+                    break
+
+    msgs = tv_messages.get(loc_sig, [])
+    return jsonify({
+        "messages": msgs,
+        "count": len(msgs),
+        "station_name": tv_stations.get(loc_sig, {}).get("name", "") if loc_sig else "",
+    })
+
+
 @app.route("/api/debug/tv-announcements")
 @_debug_only
 def debug_tv_announcements():
@@ -1845,9 +1875,93 @@ def stops_next_departure():
 
 # --- Startup ---
 
+def _tv_trains_from_positions() -> list:
+    """Build vehicle-like dicts from Trafikverket TrainPosition data.
+
+    Only includes trains that appear in tv_announcements (i.e. expected at a
+    configured station) so we don't flood the map with irrelevant trains.
+    Positions older than 5 minutes are discarded.
+    """
+    with _lock:
+        tv_positions = list(_data.get("tv_positions", []))
+        tv_announcements = dict(_data.get("tv_announcements", {}))
+
+    # Build train_number → {operator, product} from announcement data
+    expected: dict[str, dict] = {}
+    for bucket in tv_announcements.values():
+        for entry in bucket.get("departures", []) + bucket.get("arrivals", []):
+            tn = entry.get("train_number", "")
+            if tn and tn not in expected:
+                expected[tn] = {
+                    "operator": entry.get("operator", "").lower(),
+                    "product": entry.get("product", "").lower(),
+                }
+
+    if not expected:
+        return []
+
+    cutoff = int(time.time()) - 300  # discard positions older than 5 min
+    result = []
+    for pos in tv_positions:
+        tn = pos.get("train_number", "")
+        if tn not in expected:
+            continue
+        ts = pos.get("timestamp") or 0
+        if ts and ts < cutoff:
+            continue
+
+        info = expected[tn]
+        op = info["operator"]
+        prod = info["product"]
+        if "mälartåg" in op or "mälartåg" in prod:
+            color, long_name = "005B99", "Mälartåg"
+        elif "sj" in op:
+            color, long_name = "D4004C", "SJ"
+        elif "arriva" in op or "tib" in prod or "bergslagen" in prod:
+            color, long_name = "E87722", "Tåg i Bergslagen"
+        elif "snälltåget" in op:
+            color, long_name = "1A1A1A", "Snälltåget"
+        else:
+            color, long_name = "555555", op.title() or "Tåg"
+
+        result.append({
+            "id": f"tv_{tn}",
+            "vehicle_id": f"tv_{tn}",
+            "label": tn,
+            "lat": pos["lat"],
+            "lon": pos["lon"],
+            "bearing": pos.get("bearing"),
+            "speed": pos.get("speed"),
+            "current_status": "I trafik",
+            "current_stop_id": "",
+            "trip_id": "",
+            "route_id": "",
+            "direction_id": None,
+            "start_date": "",
+            "timestamp": ts or int(time.time()),
+            "vehicle_type": "train",
+            "route_short_name": tn,
+            "route_long_name": long_name,
+            "route_color": color,
+            "route_text_color": "FFFFFF",
+            "trip_headsign": "",
+            "next_stop_name": "",
+            "next_stop_platform": "",
+        })
+    return result
+
+
+def _merge_trains(oxyfi_trains: list, tv_trains: list) -> list:
+    """Merge Oxyfi and TV trains; Oxyfi takes priority for duplicate train numbers."""
+    oxyfi_labels = {t.get("label", "") for t in oxyfi_trains}
+    return oxyfi_trains + [t for t in tv_trains if t.get("label", "") not in oxyfi_labels]
+
+
 def _push_train_positions():
     """Push merged bus+train positions via SSE (runs every 5 s if trains are active)."""
-    trains = oxyfi.get_trains()
+    oxyfi_trains = oxyfi.get_trains()
+    tv_trains = _tv_trains_from_positions()
+    trains = _merge_trains(oxyfi_trains, tv_trains)
     if not trains:
         return
     with _lock:
@@ -1876,11 +1990,13 @@ def _poll_trafikverket():
         loc_sigs, minutes_ahead=config.TRAFIKVERKET_LOOKAHEAD_MINUTES
     )
     positions = tv_api.fetch_train_positions()
+    messages = tv_api.fetch_station_messages(loc_sigs)
     with _lock:
         if announcements:
             _data["tv_announcements"] = announcements
         if positions:
             _data["tv_positions"] = positions
+        _data["tv_messages"] = messages  # empty dict = no messages, still valid
         _data["tv_last_poll"] = int(time.time())
         _data["tv_last_error"] = None
     _invalidate_cache()

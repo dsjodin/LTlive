@@ -416,6 +416,33 @@
         }
         #live-status-text { }
         #live-status .tib-live { color: var(--tib); font-weight: 600; }
+
+        /* Station messages banner */
+        #station-messages {
+            display: none;
+            flex-direction: column;
+            gap: 0;
+            background: #fff8e1;
+            border-bottom: 2px solid #f0b429;
+        }
+        .msg-card {
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+            padding: 8px 20px;
+            border-top: 1px solid #f0d080;
+            font-size: 0.82rem;
+            color: #5a3e00;
+        }
+        .msg-card:first-child { border-top: none; }
+        .msg-icon {
+            font-size: 1rem;
+            flex-shrink: 0;
+            margin-top: 1px;
+        }
+        .msg-body { display: flex; flex-direction: column; gap: 2px; }
+        .msg-header { font-weight: 700; }
+        .msg-text { color: #7a5a00; }
     </style>
 </head>
 <body>
@@ -451,6 +478,8 @@
 </div>
 
 <div id="refresh-bar"></div>
+
+<div id="station-messages"></div>
 
 <div id="col-header" class="dep-grid">
     <span>Tåg</span>
@@ -728,6 +757,33 @@ function startCountdown() {
     }, 1000);
 }
 
+// ── Station messages ──────────────────────────────────
+async function loadMessages() {
+    if (!currentStopId) return;
+    try {
+        const data = await fetch(`${API}/station-messages/${encodeURIComponent(currentStopId)}`).then(r => r.json());
+        const el = document.getElementById("station-messages");
+        const msgs = data.messages || [];
+        if (!msgs.length) {
+            el.style.display = "none";
+            el.innerHTML = "";
+            return;
+        }
+        el.innerHTML = msgs.map(m => `
+            <div class="msg-card">
+                <span class="msg-icon">&#9888;&#65039;</span>
+                <div class="msg-body">
+                    ${m.header ? `<span class="msg-header">${m.header}</span>` : ""}
+                    ${m.body   ? `<span class="msg-text">${m.body}</span>`     : ""}
+                </div>
+            </div>`).join("");
+        el.style.display = "flex";
+    } catch {
+        // Non-critical — hide on error
+        document.getElementById("station-messages").style.display = "none";
+    }
+}
+
 // ── Refresh ───────────────────────────────────────────
 async function refreshBoard() {
     if (!currentStopId) return;
@@ -739,6 +795,7 @@ async function refreshBoard() {
     }
 
     try {
+        await loadMessages();
         if (currentMode === "dep") {
             await loadDepartures(board);
         } else {
