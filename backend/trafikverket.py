@@ -241,13 +241,6 @@ def fetch_train_positions(location_signatures: set | None = None) -> list:
   <LOGIN authenticationkey="{config.TRAFIKVERKET_API_KEY}" />
   <QUERY objecttype="TrainPosition" schemaversion="1.1" limit="2000">
     <FILTER />
-    <INCLUDE>Train.OperationalTrainNumber</INCLUDE>
-    <INCLUDE>InformationOwner</INCLUDE>
-    <INCLUDE>Position.WGS84</INCLUDE>
-    <INCLUDE>Bearing</INCLUDE>
-    <INCLUDE>Speed</INCLUDE>
-    <INCLUDE>TimeStamp</INCLUDE>
-    <INCLUDE>Deleted</INCLUDE>
   </QUERY>
 </REQUEST>"""
 
@@ -257,6 +250,12 @@ def fetch_train_positions(location_signatures: set | None = None) -> list:
     except Exception as exc:
         log.warning("TrainPosition fetch failed: %s", exc)
         return []
+
+    if positions:
+        log.info("TrainPosition sample keys: %s", list(positions[0].keys()))
+        train_obj = positions[0].get("Train") or positions[0].get("train")
+        if train_obj:
+            log.info("TrainPosition Train sub-keys: %s", list(train_obj.keys()) if isinstance(train_obj, dict) else train_obj)
 
     result = []
     for pos in positions:
