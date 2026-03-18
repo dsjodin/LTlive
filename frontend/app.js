@@ -343,11 +343,16 @@ function updateVehicles(vehicles) {
         currentIds.add(id);
 
         // Skip vehicles not in our configured lines
-        // Trains: filter by vehicleId prefix against ALLOWED_TRAIN_IDS
+        // Trains: filter by vehicleId prefix against ALLOWED_TRAIN_IDS.
+        // TV-sourced trains (vehicle_id starts with "tv_") bypass the Oxyfi
+        // prefix filter — they're already geo-filtered server-side and include
+        // operators like Mälartåg and SJ that have no Oxyfi vehicle IDs.
         // Buses: filter by route_short_name against ALLOWED_LINE_NUMBERS
+        const isTvTrain = v.vehicle_type === "train" && (v.vehicle_id || "").startsWith("tv_");
         const trainIdPrefix = v.vehicle_type === "train" ? (v.vehicle_id || "").split(".")[0] : null;
-        if (v.vehicle_type === "train" ? (ALLOWED_TRAIN_IDS.size > 0 && !ALLOWED_TRAIN_IDS.has(trainIdPrefix))
-                                       : (ALLOWED_LINE_NUMBERS.size > 0 && !ALLOWED_LINE_NUMBERS.has(v.route_short_name))) {
+        if (isTvTrain ? false
+                      : v.vehicle_type === "train" ? (ALLOWED_TRAIN_IDS.size > 0 && !ALLOWED_TRAIN_IDS.has(trainIdPrefix))
+                                                   : (ALLOWED_LINE_NUMBERS.size > 0 && !ALLOWED_LINE_NUMBERS.has(v.route_short_name))) {
             if (vehicleMarkers[id]) {
                 map.removeLayer(vehicleMarkers[id]);
                 delete vehicleMarkers[id];
