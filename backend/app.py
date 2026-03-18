@@ -281,8 +281,13 @@ def init_gtfs_static():
             _data["gtfs_loaded"] = True
             _data["gtfs_error"] = None
 
+        active_services = gtfs_loader.active_service_ids_today()
+        active_trip_count = sum(
+            1 for t in trips.values()
+            if t.get("service_id", "") in active_services
+        )
         print(f"GTFS loaded: {len(routes)} routes, {len(stops)} stops, "
-              f"{len(trips)} trips, {len(shapes)} shapes, "
+              f"{len(trips)} trips ({active_trip_count} active today), {len(shapes)} shapes, "
               f"{len(trip_headsigns)} trip headsigns, "
               f"{len(static_stop_departures)} stops with static departures today")
     except Exception as e:
@@ -473,6 +478,7 @@ def status():
             "operator": config.OPERATOR,
             "has_static_key": bool(config.TRAFIKLAB_GTFS_STATIC_KEY),
             "has_rt_key": bool(config.TRAFIKLAB_GTFS_RT_KEY),
+            "static_stops_with_departures": len(_data.get("static_stop_departures", {})),
         })
 
 
@@ -860,7 +866,9 @@ def departures_for_stop(stop_id):
         platform = tv_track or d.get("_platform", "")
         # Use TV scheduled time as base when matched (more accurate than GTFS)
         sched_time = tv_sched_override if tv_sched_override else d["time"]
-        rt_time = tv_rt_time or (d["time"] if d["is_realtime"] else None)
+        # When TV is matched, only use TV realtime (don't fall back to GTFS-RT —
+        # that would show a delay TV doesn't know about)
+        rt_time = tv_rt_time if tv_sched_override else (d["time"] if d["is_realtime"] else None)
         deps.append({
             "route_short_name": rsn,
             "trip_short_name": trip_short_name,
@@ -933,6 +941,13 @@ def arrivals_for_stop(stop_id):
         rt_trip_short_names = _data.get("rt_trip_short_names", {})
         tv_ann = _data.get("tv_announcements", {})
         tv_stations = _data.get("tv_stations", {})
+        # Names of the destination station — used to filter out arrivals that
+        # originate from this very station (GTFS trips that start here).
+        dest_stop_names = {
+            all_stops_data.get(qid, {}).get("stop_name", "") for qid in query_ids
+        }
+        dest_stop_names.add(target_stop.get("stop_name", ""))
+        dest_stop_names.discard("")
 
     upcoming_raw = sorted(
         [a for a in static_arrs if a["time"] >= now - 600],
@@ -1030,6 +1045,10 @@ def arrivals_for_stop(stop_id):
                 tv_arr_track_changed = any("spår" in t.lower() for t in tv_deviation)
                 if best_tv["origin_sig"]:
                     origin = tv_stations.get(best_tv["origin_sig"], {}).get("name", best_tv["origin_sig"])
+
+        # Skip arrivals that originate from this very station
+        if origin and origin in dest_stop_names:
+            continue
 
         arr_sched_time = tv_arr_sched_override if tv_arr_sched_override else a["time"]
         arrs.append({

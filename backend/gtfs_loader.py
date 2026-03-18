@@ -181,7 +181,7 @@ def load_stop_times_for_trips(trip_ids):
 _GTFS_WEEKDAYS = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
 
 
-def _active_service_ids_today():
+def active_service_ids_today():
     """Return the set of service_ids active for today from calendar + calendar_dates."""
     today = datetime.datetime.now(_TZ_SWEDEN).date()
     today_str = today.strftime("%Y%m%d")
@@ -216,7 +216,7 @@ def load_trip_headsigns_and_stop_route_map(stops, trips):
         static_stop_arrivals: dict stop_id -> list of arrival dicts for today
         trip_origin_map: dict trip_id -> origin stop_name (first stop of trip)
     """
-    active_services = _active_service_ids_today()
+    active_services = active_service_ids_today()
 
     # Map trip_id -> route_id, and which trips are active today
     trip_to_route = {}
