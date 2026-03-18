@@ -2106,8 +2106,13 @@ def _merge_trains(oxyfi_trains: list, tv_trains: list) -> list:
             result.append({**oxyfi, "tv_service_number": tv_exact["label"]})
             continue
 
-        # Pass 2: position proximity (within 2 km)
+        # Pass 2: position + bearing proximity.
+        # Tight distance threshold (300 m) avoids matching different trains at the
+        # same station. When both sides have a bearing we also require them to be
+        # within 45° of each other so northbound and southbound trains on parallel
+        # tracks are never confused.
         o_lat, o_lon = oxyfi.get("lat"), oxyfi.get("lon")
+        o_bearing = oxyfi.get("bearing")
         best_tv = None
         best_dist = float("inf")
         if o_lat and o_lon:
@@ -2123,7 +2128,15 @@ def _merge_trains(oxyfi_trains: list, tv_trains: list) -> list:
                      + math.cos(math.radians(o_lat)) * math.cos(math.radians(t_lat))
                      * math.sin(dlon / 2) ** 2)
                 dist = 6_371_000 * 2 * math.asin(math.sqrt(max(0.0, a)))
-                if dist < best_dist and dist < 2000:
+                if dist >= 300:
+                    continue
+                # Bearing check: if both sides report heading, require < 45° difference
+                t_bearing = t.get("bearing")
+                if o_bearing is not None and t_bearing is not None:
+                    diff = abs((o_bearing - t_bearing + 180) % 360 - 180)
+                    if diff > 45:
+                        continue
+                if dist < best_dist:
                     best_dist = dist
                     best_tv = t
 
