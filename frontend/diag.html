@@ -422,10 +422,12 @@ function buildTvPositions(d) {
 
   const cfg = d.config || {};
   const trains = d.trains || [];
-  const pollAgeS = d.last_poll ? Math.round(Date.now() / 1000 - d.last_poll) : null;
+  const updateAgeS = d.last_update ? Math.round(Date.now() / 1000 - d.last_update) : null;
+  const sseState = d.sse_state || 'disconnected';
+  const sseColor = sseState === 'connected' ? '#4caf50' : sseState === 'reconnecting' ? '#f5a623' : '#f05050';
 
   hdr.querySelector('.meta').textContent =
-    `${d.filtered_count} inom radien / ${d.raw_count} från API · poll ${pollAgeS != null ? pollAgeS + 's sedan' : '–'}`;
+    `${d.filtered_count} inom radien / ${d.raw_count} från API · uppdaterad ${updateAgeS != null ? updateAgeS + 's sedan' : '–'}`;
 
   // API key warning
   if (!d.api_key_set) {
@@ -434,6 +436,13 @@ function buildTvPositions(d) {
     noKey.textContent = '⚠ TRAFIKVERKET_API_KEY är inte satt — ingen data hämtas';
     body.appendChild(noKey);
   }
+
+  // SSE connection state badge
+  const sseBadge = document.createElement('div');
+  sseBadge.style.cssText = 'font-size:12px;margin-bottom:8px;display:flex;align-items:center;gap:6px';
+  sseBadge.innerHTML = `<span style="width:8px;height:8px;border-radius:50%;background:${sseColor};display:inline-block;flex-shrink:0"></span>
+    <span>SSE-ström: <strong style="color:${sseColor}">${sseState}</strong></span>`;
+  body.appendChild(sseBadge);
 
   // Config info row
   const cfgRow = document.createElement('div');

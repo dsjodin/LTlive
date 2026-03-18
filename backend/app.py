@@ -77,6 +77,7 @@ _data = {
     "tv_messages": {},        # {location_sig: [{header, body, start, end}]}
     "tv_last_poll": 0,
     "tv_last_error": None,
+    "tv_sse_state": "disconnected",  # "connected" | "reconnecting" | "disconnected"
 }
 _lock = threading.Lock()
 _gtfs_retry_count = 0
@@ -1715,6 +1716,7 @@ def debug_tv_positions():
         raw_positions = list(_data.get("tv_positions", []))
         last_poll = _data.get("tv_last_poll", 0)
         last_error = _data.get("tv_last_error")
+        sse_state = _data.get("tv_sse_state", "disconnected")
 
     filtered = _tv_trains_from_positions()
 
@@ -1731,7 +1733,8 @@ def debug_tv_positions():
             "center_lon": config.TV_POSITION_CENTER_LON,
             "radius_km": config.TV_POSITION_RADIUS_KM,
         },
-        "last_poll": last_poll,
+        "sse_state": sse_state,
+        "last_update": last_poll,
         "last_error": last_error,
         "raw_count": len(raw_positions),
         "filtered_count": len(filtered),
@@ -2441,6 +2444,8 @@ def _run_tv_position_stream() -> None:
                     return
 
             log.info("TV SSE: connecting (last_event_id=%s)", last_event_id)
+            with _lock:
+                _data["tv_sse_state"] = "connected"
             for event_id, positions in tv_api.iter_position_stream(sseurl, last_event_id):
                 last_event_id = event_id
                 backoff = 5  # reset on successful messages
@@ -2448,9 +2453,12 @@ def _run_tv_position_stream() -> None:
                 with _lock:
                     _data["tv_last_poll"] = int(time.time())
                     _data["tv_last_error"] = None
+                    _data["tv_sse_state"] = "connected"
 
             # iter_position_stream exhausted without error → stream closed cleanly
             log.info("TV SSE: stream closed, reconnecting")
+            with _lock:
+                _data["tv_sse_state"] = "reconnecting"
             time.sleep(2)
 
         except _requests.HTTPError as exc:
@@ -2468,11 +2476,14 @@ def _run_tv_position_stream() -> None:
                 last_event_id = None
                 time.sleep(backoff)
                 backoff = min(backoff * 2, 300)
+            with _lock:
+                _data["tv_sse_state"] = "reconnecting"
 
         except Exception as exc:
             log.warning("TV SSE error: %s", exc)
             with _lock:
                 _data["tv_last_error"] = str(exc)
+                _data["tv_sse_state"] = "reconnecting"
             # Keep sseurl + last_event_id so we can resume from where we left off
             time.sleep(backoff)
             backoff = min(backoff * 2, 300)
