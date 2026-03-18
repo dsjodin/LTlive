@@ -812,6 +812,9 @@ def departures_for_stop(stop_id):
         tv_canceled = False
         tv_deviation = []
         tv_via = []
+        tv_other_info = []
+        tv_preliminary = False
+        tv_traffic_type = ""
         loc_sig = config.TRAFIKVERKET_STATIONS.get(stop_id, "")
         if not loc_sig:
             for qid in query_ids:
@@ -876,6 +879,9 @@ def departures_for_stop(stop_id):
                 tv_track = best_tv["track"]
                 tv_canceled = best_tv["canceled"]
                 tv_deviation = best_tv["deviation"]
+                tv_other_info = best_tv.get("other_info", [])
+                tv_preliminary = best_tv.get("preliminary", False)
+                tv_traffic_type = best_tv.get("traffic_type", "")
                 tv_rt_time = best_tv.get("realtime_time")
                 tv_sched_override = best_tv["scheduled_time"]
                 tv_track_changed = any("spår" in t.lower() for t in tv_deviation)
@@ -909,6 +915,9 @@ def departures_for_stop(stop_id):
             "track_changed": tv_track_changed,
             "canceled": tv_canceled,
             "deviation": tv_deviation,
+            "other_info": tv_other_info,
+            "preliminary": tv_preliminary,
+            "traffic_type": tv_traffic_type,
             "via": tv_via,
         })
         if len(deps) >= limit:
@@ -956,6 +965,9 @@ def departures_for_stop(stop_id):
                 "track_changed": track_chg,
                 "canceled": tv_dep.get("canceled", False),
                 "deviation": tv_dep.get("deviation", []),
+                "other_info": tv_dep.get("other_info", []),
+                "preliminary": tv_dep.get("preliminary", False),
+                "traffic_type": tv_dep.get("traffic_type", ""),
                 "via": via_names,
             })
         # Re-sort after adding TV-only entries (they may not be in time order)
@@ -1068,6 +1080,9 @@ def arrivals_for_stop(stop_id):
         tv_track = ""
         tv_canceled = False
         tv_deviation = []
+        tv_other_info = []
+        tv_preliminary = False
+        tv_traffic_type = ""
         tv_arr_operator = ""
         tv_arr_product = ""
         loc_sig = config.TRAFIKVERKET_STATIONS.get(stop_id, "")
@@ -1128,6 +1143,9 @@ def arrivals_for_stop(stop_id):
                 tv_track = best_tv["track"]
                 tv_canceled = best_tv["canceled"]
                 tv_deviation = best_tv["deviation"]
+                tv_other_info = best_tv.get("other_info", [])
+                tv_preliminary = best_tv.get("preliminary", False)
+                tv_traffic_type = best_tv.get("traffic_type", "")
                 tv_rt_arr_time = best_tv.get("realtime_time")
                 tv_arr_sched_override = best_tv["scheduled_time"]
                 tv_arr_track_changed = any("spår" in t.lower() for t in tv_deviation)
@@ -1155,6 +1173,9 @@ def arrivals_for_stop(stop_id):
             "track_changed": tv_arr_track_changed,
             "canceled": tv_canceled,
             "deviation": tv_deviation,
+            "other_info": tv_other_info,
+            "preliminary": tv_preliminary,
+            "traffic_type": tv_traffic_type,
         })
         if len(arrs) >= limit:
             break
@@ -1202,6 +1223,9 @@ def arrivals_for_stop(stop_id):
                 "track_changed": track_chg,
                 "canceled": tv_arr.get("canceled", False),
                 "deviation": tv_arr.get("deviation", []),
+                "other_info": tv_arr.get("other_info", []),
+                "preliminary": tv_arr.get("preliminary", False),
+                "traffic_type": tv_arr.get("traffic_type", ""),
             })
         arrs.sort(key=lambda x: x["arrival_time"])
 

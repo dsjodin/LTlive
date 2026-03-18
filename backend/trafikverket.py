@@ -58,6 +58,7 @@ def fetch_train_stations() -> dict:
     </FILTER>
     <INCLUDE>LocationSignature</INCLUDE>
     <INCLUDE>AdvertisedLocationName</INCLUDE>
+    <INCLUDE>AdvertisedShortLocationName</INCLUDE>
     <INCLUDE>Geometry.WGS84</INCLUDE>
   </QUERY>
 </REQUEST>"""
@@ -72,7 +73,8 @@ def fetch_train_stations() -> dict:
             m = re.search(r"POINT\s*\(([0-9.]+)\s+([0-9.]+)\)", wgs)
             if m:
                 lon, lat = float(m.group(1)), float(m.group(2))
-            result[sig] = {"name": name, "lat": lat, "lon": lon}
+            short_name = st.get("AdvertisedShortLocationName", "") or name
+            result[sig] = {"name": name, "short_name": short_name, "lat": lat, "lon": lon}
         log.info("Loaded %d train stations from Trafikverket", len(result))
         return result
     except Exception as exc:
@@ -132,6 +134,9 @@ def fetch_announcements(location_signatures: list[str], minutes_ahead: int = 120
     <INCLUDE>Operator</INCLUDE>
     <INCLUDE>InformationOwner</INCLUDE>
     <INCLUDE>Deviation</INCLUDE>
+    <INCLUDE>OtherInformation</INCLUDE>
+    <INCLUDE>TypeOfTraffic</INCLUDE>
+    <INCLUDE>EstimatedTimeIsPreliminary</INCLUDE>
   </QUERY>
 </REQUEST>"""
 
@@ -178,11 +183,22 @@ def fetch_announcements(location_signatures: list[str], minutes_ahead: int = 120
         deviation = ann.get("Deviation", []) or []
         deviation_texts = [d.get("Description", "") for d in deviation if d.get("Description")]
 
+        other_info_list = ann.get("OtherInformation", []) or []
+        other_info_texts = [o.get("Description", "") for o in other_info_list if o.get("Description")]
+
+        traffic_type_list = ann.get("TypeOfTraffic", []) or []
+        traffic_type = traffic_type_list[0].get("Description", "") if traffic_type_list else ""
+
+        # Mark as preliminary only when there's an estimated time (not actual) and the flag is set
+        est_is_prelim = ann.get("EstimatedTimeIsPreliminary", False)
+        preliminary = bool(est_is_prelim and rt_time and not actual_ts)
+
         entry = {
             "train_number": ann.get("AdvertisedTrainIdent", ""),
             "scheduled_time": sched_time,
             "realtime_time": rt_time,
             "is_realtime": is_realtime,
+            "preliminary": preliminary,
             "track": ann.get("TrackAtLocation", ""),
             "dest_sig": dest_sig,
             "origin_sig": origin_sig,
@@ -191,6 +207,8 @@ def fetch_announcements(location_signatures: list[str], minutes_ahead: int = 120
             "product": product,
             "operator": ann.get("Operator", "") or ann.get("InformationOwner", ""),
             "deviation": deviation_texts,
+            "other_info": other_info_texts,
+            "traffic_type": traffic_type,
         }
 
         bucket = result.setdefault(loc_sig, {"departures": [], "arrivals": []})
@@ -261,40 +279,46 @@ def fetch_train_positions(location_signatures: set | None = None) -> list:
     return result
 
 
+_MSG_STATUS_ORDER = {"StortLage": 0, "Hog": 1, "Normal": 2, "Lag": 3}
+
+
 def fetch_station_messages(location_signatures: list[str]) -> dict:
     """Fetch TrainStationMessage for given LocationSignatures.
 
-    Returns {location_sig: [{"header": str, "body": str, "start": int|None, "end": int|None}]}.
-    Only returns messages whose PrognosticatedEndOfEffect is in the future.
+    Returns {location_sig: [{"body": str, "media_type": str, "status": str,
+                              "start": int|None, "end": int|None}]}.
+    Only returns non-deleted messages whose EndDateTime is in the future,
+    sorted by importance (StortLage → Hog → Normal → Lag).
     """
     if not config.TRAFIKVERKET_API_KEY or not location_signatures:
         return {}
 
+    # TrainStationMessage uses LocationCode (= LocationSignature value)
     if len(location_signatures) == 1:
-        loc_filter = f'<EQ name="LocationSignature" value="{location_signatures[0]}" />'
+        loc_filter = f'<EQ name="LocationCode" value="{location_signatures[0]}" />'
     else:
         parts = "".join(
-            f'<EQ name="LocationSignature" value="{s}" />'
+            f'<EQ name="LocationCode" value="{s}" />'
             for s in location_signatures
         )
         loc_filter = f"<OR>{parts}</OR>"
 
     xml = f"""<REQUEST>
   <LOGIN authenticationkey="{config.TRAFIKVERKET_API_KEY}" />
-  <QUERY objecttype="TrainStationMessage" schemaversion="1.0" limit="100"
-         orderby="SortOrder">
+  <QUERY objecttype="TrainStationMessage" schemaversion="1.0" limit="100">
     <FILTER>
       <AND>
         {loc_filter}
-        <GT name="PrognosticatedEndOfEffect" value="$dateadd(-0:01:00)" />
+        <GT name="EndDateTime" value="$dateadd(-0:01:00)" />
+        <EQ name="Deleted" value="false" />
       </AND>
     </FILTER>
-    <INCLUDE>LocationSignature</INCLUDE>
-    <INCLUDE>Header</INCLUDE>
-    <INCLUDE>Body</INCLUDE>
-    <INCLUDE>PrognosticatedStartOfEffect</INCLUDE>
-    <INCLUDE>PrognosticatedEndOfEffect</INCLUDE>
-    <INCLUDE>SortOrder</INCLUDE>
+    <INCLUDE>LocationCode</INCLUDE>
+    <INCLUDE>FreeText</INCLUDE>
+    <INCLUDE>MediaType</INCLUDE>
+    <INCLUDE>Status</INCLUDE>
+    <INCLUDE>StartDateTime</INCLUDE>
+    <INCLUDE>EndDateTime</INCLUDE>
   </QUERY>
 </REQUEST>"""
 
@@ -307,13 +331,19 @@ def fetch_station_messages(location_signatures: list[str]) -> dict:
 
     result: dict[str, list] = {}
     for msg in messages:
-        loc_sig = msg.get("LocationSignature", "")
+        loc_sig = msg.get("LocationCode", "")
         if not loc_sig:
             continue
         result.setdefault(loc_sig, []).append({
-            "header": msg.get("Header", ""),
-            "body": msg.get("Body", ""),
-            "start": _ts_to_unix(msg.get("PrognosticatedStartOfEffect", "")),
-            "end": _ts_to_unix(msg.get("PrognosticatedEndOfEffect", "")),
+            "body": msg.get("FreeText", ""),
+            "media_type": msg.get("MediaType", ""),
+            "status": msg.get("Status", "Normal"),
+            "start": _ts_to_unix(msg.get("StartDateTime", "")),
+            "end": _ts_to_unix(msg.get("EndDateTime", "")),
         })
+
+    # Sort each station's messages by importance (highest first)
+    for msgs in result.values():
+        msgs.sort(key=lambda m: _MSG_STATUS_ORDER.get(m["status"], 2))
+
     return result
