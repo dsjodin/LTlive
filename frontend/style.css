@@ -187,37 +187,22 @@ body {
 }
 
 /* Vehicle type filter buttons */
-#type-filter-buttons {
-    display: flex;
-    gap: 5px;
-    flex-shrink: 0;
-    padding: 4px 0;
-}
-
-#type-filter-sep {
-    width: 1px;
-    height: 20px;
-    background: var(--border);
-    margin: 0 6px;
-    flex-shrink: 0;
-    align-self: center;
-}
-
 .type-btn {
     border: 1.5px solid var(--border);
-    border-radius: 6px;
-    padding: 3px 9px;
-    font-size: 0.8em;
-    font-weight: 700;
+    border-radius: 20px;
+    padding: 3px 10px;
+    font-size: 0.78em;
+    font-weight: 600;
     cursor: pointer;
     background: var(--bg2);
     color: var(--fg);
     transition: opacity 0.2s, transform 0.1s;
     white-space: nowrap;
     flex-shrink: 0;
+    line-height: 1.4;
 }
-.type-btn:hover { transform: scale(1.08); }
-.type-btn.inactive { opacity: 0.28; }
+.type-btn:hover { transform: scale(1.06); }
+.type-btn.inactive { opacity: 0.35; }
 
 .line-btn {
     border: none;
