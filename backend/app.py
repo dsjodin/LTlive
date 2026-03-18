@@ -2094,18 +2094,19 @@ def _annotate_oxyfi_from_announcements(trains: list) -> list:
     purely from announcements (departures + arrivals), which are always fetched.
     """
     with _lock:
-        stops = _data.get("stops", {})
         tv_ann = _data.get("tv_announcements", {})
+        tv_stations = _data.get("tv_stations", {})
 
     if not tv_ann:
         return trains
 
-    # Build list of (loc_sig, lat, lon) for every configured station
+    # Build station anchors using authoritative Trafikverket WGS84 coordinates.
+    # tv_stations is populated from the TrainStation API at startup so its
+    # coordinates are guaranteed to match the same reference frame as TrainPosition.
     station_anchors: list[tuple] = []
-    for stop_id, loc_sig in config.TRAFIKVERKET_STATIONS.items():
-        stop = stops.get(stop_id, {})
-        lat = stop.get("stop_lat")
-        lon = stop.get("stop_lon")
+    for loc_sig in tv_ann:
+        st = tv_stations.get(loc_sig, {})
+        lat, lon = st.get("lat"), st.get("lon")
         if lat and lon:
             station_anchors.append((loc_sig, float(lat), float(lon)))
 
