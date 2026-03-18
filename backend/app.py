@@ -2152,7 +2152,9 @@ def _tv_trains_from_positions() -> list:
     cos_clat = math.cos(math.radians(center_lat))
 
     cutoff = int(time.time()) - 600  # discard positions older than 10 min
-    result = []
+
+    # Deduplicate: keep only the newest position per train number
+    newest: dict[str, dict] = {}
     for pos in tv_positions:
         tn = pos.get("train_number", "")
         if not tn:
@@ -2160,6 +2162,12 @@ def _tv_trains_from_positions() -> list:
         ts = pos.get("timestamp") or 0
         if ts and ts < cutoff:
             continue
+        if tn not in newest or (ts or 0) > (newest[tn].get("timestamp") or 0):
+            newest[tn] = pos
+
+    result = []
+    for tn, pos in newest.items():
+        ts = pos.get("timestamp") or 0
 
         # Radius filter
         plat, plon = pos["lat"], pos["lon"]
