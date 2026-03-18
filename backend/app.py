@@ -456,10 +456,8 @@ def poll_realtime():
 
     _invalidate_cache()
 
-    enriched = _enrich_vehicles(vehicles)
-    _push_sse("vehicles", {"vehicles": enriched,
-                            "timestamp": _data["last_vehicle_update"],
-                            "count": len(enriched)})
+    # Vehicles SSE is handled by _push_train_positions (runs every 5 s)
+    # which merges buses + trains in one push, avoiding double events.
     if alerts:
         _push_sse("alerts", {"alerts": alerts, "count": len(alerts)})
 
@@ -2373,12 +2371,10 @@ def _merge_trains(oxyfi_trains: list, tv_trains: list) -> list:
 
 
 def _push_train_positions():
-    """Push merged bus+train positions via SSE (runs every 5 s if trains are active)."""
+    """Push merged bus+train positions via SSE every 5 s."""
     oxyfi_trains = oxyfi.get_trains()
     tv_trains = _tv_trains_from_positions()
     trains = _merge_trains(oxyfi_trains, tv_trains)
-    if not trains:
-        return
     with _lock:
         vehicle_list = list(_data["vehicles"])
         ts = _data["last_vehicle_update"]
