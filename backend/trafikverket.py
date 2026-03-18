@@ -240,7 +240,15 @@ def fetch_train_positions(location_signatures: set | None = None) -> list:
     xml = f"""<REQUEST>
   <LOGIN authenticationkey="{config.TRAFIKVERKET_API_KEY}" />
   <QUERY objecttype="TrainPosition" schemaversion="1.1" limit="2000">
-    <FILTER />
+    <FILTER>
+      <GT name="TimeStamp" value="$dateadd(-0:10:00)" />
+    </FILTER>
+    <INCLUDE>Train</INCLUDE>
+    <INCLUDE>Position.WGS84</INCLUDE>
+    <INCLUDE>Bearing</INCLUDE>
+    <INCLUDE>Speed</INCLUDE>
+    <INCLUDE>TimeStamp</INCLUDE>
+    <INCLUDE>Deleted</INCLUDE>
   </QUERY>
 </REQUEST>"""
 
@@ -251,18 +259,14 @@ def fetch_train_positions(location_signatures: set | None = None) -> list:
         log.warning("TrainPosition fetch failed: %s", exc)
         return []
 
-    if positions:
-        log.info("TrainPosition sample keys: %s", list(positions[0].keys()))
-        train_obj = positions[0].get("Train") or positions[0].get("train")
-        if train_obj:
-            log.info("TrainPosition Train sub-keys: %s", list(train_obj.keys()) if isinstance(train_obj, dict) else train_obj)
-
     result = []
     for pos in positions:
         if pos.get("Deleted"):
             continue
         train = pos.get("Train", {})
-        adv_num = train.get("OperationalTrainNumber", "")
+        # AdvertisedTrainNumber is the public-facing number (e.g. "10" for SJ)
+        # OperationalTrainNumber is the internal number — prefer Advertised
+        adv_num = train.get("AdvertisedTrainNumber", "") or train.get("OperationalTrainNumber", "")
         wgs = pos.get("Position", {}).get("WGS84", "")
         m = re.search(r"POINT\s*\(([0-9.]+)\s+([0-9.]+)\)", wgs)
         if not m:
@@ -271,7 +275,7 @@ def fetch_train_positions(location_signatures: set | None = None) -> list:
         ts = _ts_to_unix(pos.get("TimeStamp", ""))
         result.append({
             "train_number": adv_num,
-            "operator": pos.get("InformationOwner", ""),
+            "operator": "",  # InformationOwner not available in TrainPosition; resolved via announcements in app.py
             "lat": lat,
             "lon": lon,
             "bearing": pos.get("Bearing"),
