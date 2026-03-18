@@ -1,0 +1,9 @@
+flask==3.1.0
+flask-cors==5.0.1
+gtfs-realtime-bindings==1.0.0
+protobuf==5.29.3
+requests==2.32.3
+apscheduler==3.11.0
+gunicorn==23.0.0
+python-dotenv==1.0.1
+websocket-client==1.8.0

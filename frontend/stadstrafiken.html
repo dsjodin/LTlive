@@ -1,0 +1,809 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0">
+  <title>Stadstrafiken Örebro – LTlive</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; overflow: hidden; background: #0d1117; color: #e0e0e0;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+
+    #header {
+      position: fixed; top: 0; left: 0; right: 0; height: 52px;
+      background: #161b22; border-bottom: 1px solid #30363d;
+      display: flex; align-items: center; padding: 0 16px; gap: 12px; z-index: 100;
+    }
+    #header a { color: #8b949e; text-decoration: none; font-size: 13px; white-space: nowrap; }
+    #header a:hover { color: #e0e0e0; }
+    #header h1 { font-size: 15px; font-weight: 700; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .line-badges { display: flex; gap: 4px; flex-shrink: 0; }
+    .line-badge {
+      width: 22px; height: 22px; border-radius: 50%; display: flex;
+      align-items: center; justify-content: center;
+      font-size: 11px; font-weight: 800; color: #fff; cursor: pointer;
+      transition: opacity .15s; border: none; outline: none;
+    }
+    .line-badge.faded { opacity: .25; }
+    #vehicle-counts { display: flex; gap: 5px; font-size: 11px; color: #8b949e; flex-shrink: 0; }
+    .vc-item { display: flex; align-items: center; gap: 2px; }
+    .vc-dot { width: 7px; height: 7px; border-radius: 50%; }
+    #toolbar { display: flex; gap: 6px; align-items: center; flex-shrink: 0; }
+    #toolbar button {
+      background: #21262d; border: 1px solid #30363d;
+      color: #e0e0e0; padding: 4px 10px; border-radius: 6px;
+      font-size: 12px; cursor: pointer;
+    }
+    #toolbar button:hover { background: #30363d; }
+
+    #map-wrapper {
+      position: fixed; top: 52px; left: 0; right: 0; bottom: 0;
+      overflow: hidden; touch-action: none; background: #0d1117;
+    }
+    #main-svg {
+      width: 100%; height: 100%; display: block; cursor: grab; user-select: none;
+    }
+    #main-svg:active { cursor: grabbing; }
+
+    .stop-hit { cursor: pointer; }
+    .stop-hit:hover circle { fill: rgba(255,255,255,.25); }
+    .vehicle-marker { pointer-events: none; }
+
+    #dep-panel {
+      position: fixed; bottom: 0; left: 0; right: 0;
+      background: #161b22; box-shadow: 0 -4px 32px rgba(0,0,0,.6);
+      border-radius: 16px 16px 0 0; padding: 0;
+      transform: translateY(100%); transition: transform .3s ease;
+      z-index: 200; max-height: 65vh; display: flex; flex-direction: column;
+    }
+    #dep-panel.open { transform: translateY(0); }
+    #dep-handle { width: 40px; height: 4px; background: #30363d; border-radius: 2px; margin: 10px auto 0; }
+    #dep-header { display: flex; align-items: center; padding: 12px 20px 8px; gap: 10px; flex-shrink: 0; }
+    #dep-stop-name { font-size: 17px; font-weight: 700; flex: 1; }
+    #dep-close {
+      width: 28px; height: 28px; border-radius: 50%; border: none;
+      background: #21262d; cursor: pointer; font-size: 16px;
+      display: flex; align-items: center; justify-content: center; color: #e0e0e0;
+    }
+    #dep-lines { display: flex; gap: 6px; padding: 0 20px 10px; flex-wrap: wrap; }
+    .dep-line-badge { padding: 2px 9px; border-radius: 12px; font-size: 12px; font-weight: 700; color: #fff; }
+    #dep-content { overflow-y: auto; flex: 1; }
+    .dep-direction { padding: 8px 20px 4px; border-top: 1px solid #21262d; }
+    .dep-direction-label { font-size: 11px; font-weight: 600; color: #8b949e; text-transform: uppercase; letter-spacing: .5px; margin-bottom: 6px; }
+    .dep-row { display: flex; align-items: center; padding: 7px 0; gap: 12px; border-bottom: 1px solid #21262d; }
+    .dep-row:last-child { border-bottom: none; }
+    .dep-line { min-width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 800; color: #fff; }
+    .dep-dest { flex: 1; font-size: 14px; }
+    .dep-time { font-size: 18px; font-weight: 700; }
+    .dep-time.realtime { color: #3fb950; }
+    .dep-time.soon { color: #f78166; }
+    .no-deps, .loading-deps { padding: 20px; text-align: center; color: #8b949e; font-size: 14px; }
+
+    #loading-overlay {
+      position: fixed; top: 52px; left: 0; right: 0; bottom: 0;
+      display: flex; align-items: center; justify-content: center;
+      background: #0d1117; z-index: 90; font-size: 14px; color: #8b949e;
+    }
+    #last-update { position: fixed; bottom: 8px; right: 12px; font-size: 11px; color: #30363d; z-index: 50; pointer-events: none; }
+    #err-bar {
+      position: fixed; top: 52px; left: 50%; transform: translateX(-50%);
+      background: #b62324; color: #fff; padding: 4px 14px; border-radius: 0 0 8px 8px;
+      font-size: 12px; z-index: 150; display: none;
+    }
+  </style>
+</head>
+<body>
+  <div id="header">
+    <a href="/">← Karta</a>
+    <h1>Stadstrafiken Örebro</h1>
+    <div class="line-badges" id="line-badges"></div>
+    <div id="vehicle-counts"></div>
+    <div id="toolbar">
+      <button id="btn-labels" title="Visa/dölj hållplatsnamn">Etiketter</button>
+    </div>
+  </div>
+
+  <div id="map-wrapper">
+    <svg id="main-svg" viewBox="0 0 2481 3508" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <filter id="shadow" x="-30%" y="-30%" width="160%" height="160%">
+          <feDropShadow dx="0" dy="1" stdDeviation="3" flood-color="#000" flood-opacity="0.8"/>
+        </filter>
+      </defs>
+      <g id="g-pan">
+        <!-- Background: official Länstrafiken schematic SVG -->
+        <image id="bg-map" href="lt_karta.svg" x="0" y="0" width="2481" height="3508"/>
+        <!-- Interactive overlay layers -->
+        <g id="g-stops"></g>
+        <g id="g-labels" style="display:none"></g>
+        <g id="g-vehicles"></g>
+      </g>
+    </svg>
+  </div>
+
+  <div id="loading-overlay">Laddar kartdata…</div>
+  <div id="err-bar"></div>
+
+  <div id="dep-panel">
+    <div id="dep-handle"></div>
+    <div id="dep-header">
+      <div id="dep-stop-name">Hållplats</div>
+      <button id="dep-close">×</button>
+    </div>
+    <div id="dep-lines"></div>
+    <div id="dep-content"></div>
+  </div>
+  <div id="last-update"></div>
+
+  <script>
+  "use strict";
+
+  // ── CONSTANTS ──────────────────────────────────────────────────────────────
+  const CITY_LINES = ["1","2","3","4","5","6","7"];
+  const LINE_COLORS = {
+    "1": { bg: "#421e55", fg: "#fff" },
+    "2": { bg: "#57aa35", fg: "#fff" },
+    "3": { bg: "#f04752", fg: "#fff" },
+    "4": { bg: "#456670", fg: "#fff" },
+    "5": { bg: "#26538f", fg: "#fff" },
+    "6": { bg: "#f58232", fg: "#fff" },
+    "7": { bg: "#b27ac3", fg: "#fff" },
+  };
+
+  // SVG coordinate system: viewBox "0 0 2481 3508"
+  // Schematic paths for each city line, extracted from official Länstrafiken SVG.
+  // Direction: path[0] = one terminal, path[last] = other terminal.
+  const SVG_LINE_PATHS = {
+    "1": [[1921.826,3004.525],[1921.826,2353.614],[1108.610,2353.744],[1108.610,2233.301],
+          [1112.845,2233.301],[1113.330,2147.444],[1113.330,2143.864],[1115.430,1918.669],
+          [953.467,1918.669],[956.006,1559.961],[814.795,1559.961]],
+    "2": [[1932.829,2606.315],[1932.829,2342.480],[1142.823,2343.863],[1142.563,2232.763],
+          [1124.350,2234.325],[1124.789,2115.949],[1126.693,1905.699],[760.629,1905.699],
+          [528.012,1673.110],[458.139,1673.110]],
+    "3": [[556.055,2241.227],[642.367,2326.888],[1177.425,2326.888],[1177.425,2233.100],
+          [1146.515,2233.268],[1146.515,2086.829],[1137.755,2086.829],[1137.495,1893.798],
+          [966.943,1893.538],[968.327,1549.951],[980.519,1549.951],[980.519,1293.638]],
+    "4": [[1770.719,1719.010],[1770.752,1740.039],[1587.142,1809.066],[1587.142,1892.692],
+          [1587.272,1936.296],[1588.151,1998.812],[1671.387,1998.812],[1670.606,1936.296],
+          [1547.826,1936.475],[1173.326,1937.574],[1173.326,2067.841],[1158.606,2067.841],
+          [1158.606,2233.268],[1209.039,2233.268],[1209.039,2382.568],[1103.174,2382.568],
+          [1103.565,2451.733],[1103.288,2597.233],[742.580,2595.712],[742.580,3138.721]],
+    "5": [[1105.355,864.209],[1247.087,864.209],[1247.087,1721.582],[1197.054,1815.283],
+          [1197.054,2042.841],[1344.026,2042.841],[1344.026,2086.634],[1344.319,2330.127],
+          [1344.514,2335.920],[1344.644,2461.279],[1427.930,2508.592],[1428.426,2511.921],
+          [1428.515,2745.296],[1428.564,2756.641],[1451.172,2756.672],[1548.731,2757.895],
+          [1805.436,2625.960],[1805.696,2624.187]],
+    "6": [[1949.805,2604.932],[2171.972,2603.011],[2172.167,2312.012],[1961.360,2312.012],
+          [1961.295,2195.264],[1961.295,2083.139],[1962.923,1921.873],[1149.414,1922.851],
+          [1149.414,2035.938],[1135.547,2035.938],[1135.547,2235.839],[1240.591,2234.277],
+          [1240.544,2280.762],[980.356,2282.666],[980.356,2143.970],[630.599,2143.970],
+          [587.485,2100.856],[501.294,2014.665],[458.139,1971.614]],
+    // Line 7: use main body of the route (Almby area south to Rosta area)
+    "7": [[1387.322,1300.910],[1441.634,1300.910],[1441.634,1496.021],[1386.947,1496.021],
+          [1386.947,1735.596],[1382.630,1760.674],[1366.699,1792.706],[1358.447,1847.096],
+          [1358.447,1883.919],[1362.121,2038.428],[1331.364,2053.613],[1331.096,2083.528],
+          [1330.468,2213.030],[1330.451,2295.175],[1332.349,2423.015],[1333.016,2461.165],
+          [1261.694,2521.924],[1261.694,2842.188],[1223.016,2842.352],[1222.641,2912.598]],
+  };
+
+  // SVG stop circle positions (extracted from official SVG).
+  // Used to render clickable stop areas.
+  const SVG_STOP_CIRCLES = [
+    [401.2,2140.9],[436.7,1949.0],[461.7,1977.9],[462.4,1679.4],[495.9,2010.4],
+    [531.6,2045.4],[536.3,2217.4],[558.0,2243.7],[565.9,2080.5],[577.2,1723.1],
+    [588.7,2274.4],[601.3,2115.5],[620.2,1765.4],[625.4,2310.7],[631.5,2143.2],
+    [655.3,1800.5],[666.1,2326.8],[696.4,1842.2],[713.0,2143.2],[739.4,1884.9],
+    [744.1,2659.1],[744.1,2728.5],[744.1,2758.6],[744.1,2827.0],[744.1,2940.4],
+    [744.1,3016.0],[744.1,3057.1],[744.1,3138.7],[758.9,2883.6],[759.0,2969.8],
+    [772.0,2327.0],[787.0,2143.9],[793.6,1905.6],[797.7,2970.1],[804.2,2596.1],
+    [813.9,1553.0],[820.1,3270.9],[823.0,3343.5],[839.3,3133.5],[841.5,3034.0],
+    [841.8,3004.2],[861.4,2143.9],[872.9,2327.0],[879.0,2842.2],[893.3,1563.3],
+    [898.8,1905.6],[902.4,2595.8],[934.5,2143.9],[948.2,2327.0],[954.7,1637.7],
+    [954.7,1678.1],[966.5,1896.2],[966.5,1921.9],[980.2,1263.9],[980.4,1345.5],
+    [980.4,1392.8],[980.4,1440.3],[980.4,1481.3],[984.0,1300.0],[1000.2,2596.6],
+    [1000.2,2842.2],[1032.7,2327.0],[1064.5,871.5],[1073.8,2041.7],[1085.9,2041.7],
+    [1094.9,2112.0],[1097.7,2018.6],[1097.7,2597.4],[1098.5,2041.7],[1104.9,2425.5],
+    [1104.9,2479.9],[1108.9,870.5],[1114.7,2210.8],[1122.5,2842.2],[1122.9,2018.6],
+    [1125.0,2041.7],[1128.0,2112.4],[1137.7,2489.0],[1141.1,2210.8],[1143.0,2082.1],
+    [1162.3,1242.5],[1167.1,1176.2],[1168.0,2041.7],[1174.0,2489.0],[1178.6,2831.8],
+    [1179.0,2240.1],[1187.3,2210.8],[1191.4,1304.3],[1200.8,863.7],[1201.0,2489.0],
+    [1220.7,2210.8],[1224.5,2875.1],[1224.5,2941.9],[1242.1,2240.5],[1243.4,2210.8],
+    [1246.2,910.4],[1246.2,952.4],[1246.2,997.7],[1246.2,1038.2],[1246.2,1081.4],
+    [1246.2,1166.2],[1246.2,1210.5],[1246.2,1253.7],[1246.2,1389.5],[1246.2,1457.0],
+    [1246.2,1527.2],[1246.2,1627.6],[1246.2,1705.7],[1248.1,2830.6],[1262.8,2799.4],
+    [1262.9,2592.5],[1270.6,2516.2],[1285.1,1751.6],[1322.6,1304.1],[1330.5,2068.1],
+    [1330.5,2213.0],[1330.5,2295.2],[1332.3,2423.0],[1343.1,2213.0],[1343.2,2068.1],
+    [1343.3,2295.2],[1343.7,2423.2],[1358.4,1847.1],[1358.5,1883.9],[1362.1,2038.4],
+    [1366.7,1792.7],[1382.6,1760.7],[1386.3,1520.9],[1386.3,1580.3],[1386.3,1644.5],
+    [1386.3,1676.7],[1386.3,1708.9],[1386.3,1735.6],[1420.9,2353.8],[1427.6,2740.3],
+    [1429.4,2518.6],[1429.4,2559.2],[1430.1,2602.0],[1430.1,2637.5],[1430.1,2687.3],
+    [1440.7,1324.3],[1440.7,1356.0],[1440.7,1388.1],[1440.7,1419.5],[1440.7,1452.4],
+    [1440.7,1499.3],[1538.3,2761.3],[1583.4,2342.2],[1583.4,2353.6],[1585.8,1878.2],
+    [1629.4,1925.6],[1658.6,2704.3],[1672.7,1959.0],[1693.5,1772.0],[1745.2,2342.3],
+    [1745.2,2353.7],[1749.7,1921.9],[1772.9,1725.6],[1809.0,2631.2],[1824.5,1925.3],
+    [1844.5,2628.0],[1893.8,2342.3],[1893.8,2353.6],[1919.8,1925.3],[1923.0,2470.6],
+    [1923.0,2605.0],[1923.1,2785.2],[1923.1,2840.4],[1923.1,2894.5],[1925.2,3009.4],
+    [1934.3,2470.6],[1936.4,2612.4],[1953.4,2612.4],[1959.8,2219.9],[1960.9,2040.5],
+    [1967.6,2768.4],[1999.2,2604.4],[2003.4,2768.4],[2011.7,2756.9],[2090.0,2312.0],
+    [2115.7,2603.3],[2142.1,2653.3],[2174.1,2380.6],[2174.1,2424.7],[2174.1,2473.9],
+    [2174.1,2515.0],
+  ];
+
+
+
+  // ── STATE ──────────────────────────────────────────────────────────────────
+  let canonicalShapes = {};    // lineNum → [[lat,lon],...]
+  let canonicalDists  = {};    // lineNum → cumulative distances
+  let shapeIsForward  = {};    // lineNum → bool (GTFS shape direction vs SVG path)
+  let svgPathDists    = {};    // lineNum → cumulative SVG distances
+  let gtfsStops       = [];    // [{stop_id, stop_name, stop_lat, stop_lon}]
+  let svgCircleStops  = [];    // [{cx, cy, stop_id, stop_name}] matched SVG circles
+  let labelsVisible   = false;
+  let hiddenLines     = new Set();
+  let svgPan = { x:0, y:0, scale:1, dragging:false, sx:0, sy:0, px:0, py:0 };
+  const RT_POLL_MS = (window.__RT_POLL_SECONDS || 30) * 1000;
+
+  // ── SVG HELPERS ────────────────────────────────────────────────────────────
+  const NS = "http://www.w3.org/2000/svg";
+  function el(tag, attrs = {}, parent = null) {
+    const e = document.createElementNS(NS, tag);
+    for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
+    if (parent) parent.appendChild(e);
+    return e;
+  }
+
+  // ── GEOMETRY HELPERS ───────────────────────────────────────────────────────
+  function buildCumDist(pts) {
+    const d = [0];
+    for (let i = 1; i < pts.length; i++) {
+      const dx = pts[i][0] - pts[i-1][0], dy = pts[i][1] - pts[i-1][1];
+      d.push(d[d.length-1] + Math.sqrt(dx*dx + dy*dy));
+    }
+    return d;
+  }
+  function buildCumDistGeo(pts) {
+    const d = [0];
+    for (let i = 1; i < pts.length; i++) {
+      const dlat = pts[i][0] - pts[i-1][0], dlon = pts[i][1] - pts[i-1][1];
+      // Use simple Euclidean (degrees) — fine for fraction computation
+      d.push(d[d.length-1] + Math.sqrt(dlat*dlat + dlon*dlon));
+    }
+    return d;
+  }
+  function getPosAtFraction(pts, cumDist, f) {
+    const total = cumDist[cumDist.length-1];
+    if (total === 0) return {x: pts[0][0], y: pts[0][1]};
+    const target = Math.max(0, Math.min(1, f)) * total;
+    let lo = 0, hi = pts.length - 1;
+    while (lo < hi - 1) {
+      const mid = (lo + hi) >> 1;
+      if (cumDist[mid] <= target) lo = mid; else hi = mid;
+    }
+    const segLen = cumDist[hi] - cumDist[lo];
+    const t = segLen > 0 ? (target - cumDist[lo]) / segLen : 0;
+    return {
+      x: pts[lo][0] + t * (pts[hi][0] - pts[lo][0]),
+      y: pts[lo][1] + t * (pts[hi][1] - pts[lo][1]),
+    };
+  }
+
+  // Project a lat/lon point onto a GTFS shape polyline.
+  // Returns {f: fraction_along_shape, dist: min_distance_in_degrees}
+  function projectOntoShape(lat, lon, shapePts, cumDistGeo) {
+    const total = cumDistGeo[cumDistGeo.length - 1];
+    if (total === 0) return {f: 0, dist: Infinity};
+    let bestF = 0, bestDist = Infinity, cumD = 0;
+    for (let i = 0; i < shapePts.length - 1; i++) {
+      const ax = shapePts[i][1], ay = shapePts[i][0];
+      const bx = shapePts[i+1][1], by = shapePts[i+1][0];
+      const abx = bx-ax, aby = by-ay, len2 = abx*abx + aby*aby;
+      let t = len2 > 0 ? ((lon-ax)*abx + (lat-ay)*aby) / len2 : 0;
+      t = t < 0 ? 0 : t > 1 ? 1 : t;
+      const cx = ax+t*abx, cy = ay+t*aby;
+      const d = Math.sqrt((lon-cx)*(lon-cx)+(lat-cy)*(lat-cy));
+      if (d < bestDist) {
+        bestDist = d;
+        const segLen = cumDistGeo[i+1] - cumDistGeo[i];
+        bestF = (cumD + t * segLen) / total;
+      }
+      cumD += cumDistGeo[i+1] - cumDistGeo[i];
+    }
+    return {f: bestF, dist: bestDist};
+  }
+
+  // Determine if a GTFS shape runs in the same direction as the SVG path.
+  //
+  // Uses pure N/S/E/W reasoning — no affine transform needed:
+  //   SVG y increases downward  → larger y = more south
+  //   SVG x increases rightward → larger x = more east
+  //   GTFS lat increases upward → larger lat = more north
+  //   GTFS lon increases right  → larger lon = more east
+  //
+  // If the SVG path start is more-south than its end, and the GTFS shape
+  // start is also more-south (smaller lat) than its end → same direction.
+  // We vote on both N-S and E-W axes; majority wins.
+  function isShapeForward(lineNum, shapePts) {
+    const svgPath = SVG_LINE_PATHS[lineNum];
+    const svgSY = svgPath[0][1], svgEY = svgPath[svgPath.length-1][1];
+    const svgSX = svgPath[0][0], svgEX = svgPath[svgPath.length-1][0];
+
+    const gSLat = shapePts[0][0], gELat = shapePts[shapePts.length-1][0];
+    const gSLon = shapePts[0][1], gELon = shapePts[shapePts.length-1][1];
+
+    // N-S: SVG start more south ↔ GTFS start has smaller lat
+    const svgStartSouth  = svgSY > svgEY;
+    const shapeStartSouth = gSLat < gELat;
+    const nsAgree = svgStartSouth === shapeStartSouth;
+
+    // E-W: SVG start more east ↔ GTFS start has larger lon
+    const svgStartEast  = svgSX > svgEX;
+    const shapeStartEast = gSLon > gELon;
+    const ewAgree = svgStartEast === shapeStartEast;
+
+    // Prefer N-S when they disagree (latitude spread is larger in Örebro)
+    if (nsAgree !== ewAgree) return nsAgree;
+    return nsAgree; // both agree
+  }
+
+  // Get SVG position + travel direction for a vehicle on a given line.
+  // Returns {x, y, angle} where angle is degrees clockwise from east (SVG convention).
+  function getSvgPosForLatLon(lineNum, lat, lon) {
+    const shape = canonicalShapes[lineNum];
+    const cumDist = canonicalDists[lineNum];
+    if (!shape || !cumDist) return null;
+    const {f, dist} = projectOntoShape(lat, lon, shape, cumDist);
+    if (dist > 0.02) return null; // too far from route (~2km)
+    const finalF = shapeIsForward[lineNum] ? f : (1 - f);
+    const svgPath = SVG_LINE_PATHS[lineNum];
+    const svgDists = svgPathDists[lineNum];
+    const pos = getPosAtFraction(svgPath, svgDists, finalF);
+
+    // Tangent angle: sample a small step forward/back along the path
+    const eps = 0.025;
+    const p1 = getPosAtFraction(svgPath, svgDists, Math.max(0, finalF - eps));
+    const p2 = getPosAtFraction(svgPath, svgDists, Math.min(1, finalF + eps));
+    const angle = Math.atan2(p2.y - p1.y, p2.x - p1.x) * 180 / Math.PI;
+
+    return {x: pos.x, y: pos.y, angle};
+  }
+
+  // ── INITIALIZATION ─────────────────────────────────────────────────────────
+  async function loadAndBuild() {
+    // 1. Get routes for city lines 1-7
+    let routesData;
+    try {
+      routesData = await fetch("/api/routes/all").then(r => r.json());
+    } catch (e) {
+      showErr("Kunde inte hämta linjedata");
+      return;
+    }
+
+    const cityRoutes = routesData.routes.filter(r => CITY_LINES.includes(r.route_short_name));
+    if (!cityRoutes.length) {
+      document.getElementById("loading-overlay").textContent = "Inga stadstrafik-linjer hittades.";
+      return;
+    }
+
+    // Group route_ids by line short name
+    const byName = {};
+    for (const r of cityRoutes) {
+      if (!byName[r.route_short_name]) byName[r.route_short_name] = [];
+      byName[r.route_short_name].push(r.route_id);
+    }
+
+    // 2. Precompute SVG path distances
+    for (const [line, pts] of Object.entries(SVG_LINE_PATHS)) {
+      svgPathDists[line] = buildCumDist(pts);
+    }
+
+    // 3. Fetch shapes and stops in parallel
+    const allRouteIds = cityRoutes.map(r => r.route_id).join(",");
+    const [stopResult] = await Promise.all([
+      fetch(`/api/stops?route_ids=${allRouteIds}`).then(r => r.json()),
+      ...Object.entries(byName).map(async ([lineNum, routeIds]) => {
+        const allShapes = {};
+        await Promise.all(routeIds.map(async rid => {
+          try {
+            const d = await fetch(`/api/shapes/${rid}`).then(r => r.json());
+            Object.assign(allShapes, d.shapes || {});
+          } catch {}
+        }));
+        // Pick the longest shape for this line
+        let longest = null, longestLen = 0;
+        for (const pts of Object.values(allShapes)) {
+          if (pts.length > longestLen) { longest = pts; longestLen = pts.length; }
+        }
+        if (longest && longest.length > 1) {
+          canonicalShapes[lineNum] = longest;
+          canonicalDists[lineNum] = buildCumDistGeo(longest);
+          shapeIsForward[lineNum] = isShapeForward(lineNum, longest);
+        }
+      }),
+    ]);
+
+    gtfsStops = (stopResult.stops || []).filter(s => s.stop_lat && s.stop_lon && s.location_type === 0);
+
+    // 4. Match SVG circles to GTFS stops
+    matchCirclesToStops();
+
+    // 5. Render stops
+    renderStops();
+
+    // 6. Build line badges
+    buildLineBadges(byName);
+
+    // 7. Hide loading, start vehicle polling
+    document.getElementById("loading-overlay").style.display = "none";
+    await fetchVehicles();
+    setInterval(fetchVehicles, RT_POLL_MS);
+  }
+
+  // Project an SVG (x,y) point onto an SVG polyline path.
+  // Returns {f: fraction_along_path, dist: min_distance_in_SVG_units}
+  function projectSvgPointOntoPath(cx, cy, pts, cumDist) {
+    const total = cumDist[cumDist.length - 1];
+    if (total === 0) return {f: 0, dist: Infinity};
+    let bestF = 0, bestDist = Infinity, cumD = 0;
+    for (let i = 0; i < pts.length - 1; i++) {
+      const ax = pts[i][0], ay = pts[i][1];
+      const bx = pts[i+1][0], by = pts[i+1][1];
+      const abx = bx-ax, aby = by-ay, len2 = abx*abx + aby*aby;
+      let t = len2 > 0 ? ((cx-ax)*abx + (cy-ay)*aby) / len2 : 0;
+      t = t < 0 ? 0 : t > 1 ? 1 : t;
+      const nearX = ax+t*abx, nearY = ay+t*aby;
+      const d = Math.sqrt((cx-nearX)**2 + (cy-nearY)**2);
+      if (d < bestDist) {
+        bestDist = d;
+        const segLen = cumDist[i+1] - cumDist[i];
+        bestF = (cumD + t * segLen) / total;
+      }
+      cumD += cumDist[i+1] - cumDist[i];
+    }
+    return {f: bestF, dist: bestDist};
+  }
+
+  // Match each SVG stop circle to the nearest GTFS stop using route-fraction.
+  // 1. Find the nearest SVG line path → fraction f_svg
+  // 2. Apply shapeIsForward to get f_gtfs
+  // 3. Interpolate canonical GTFS shape at f_gtfs → geographic (lat, lon)
+  // 4. Find nearest GTFS stop to that position
+  function matchCirclesToStops() {
+    svgCircleStops = [];
+    for (const [cx, cy] of SVG_STOP_CIRCLES) {
+      // 1. Nearest SVG path
+      let bestLine = null, bestF = 0, bestSvgDist = Infinity;
+      for (const [lineNum, svgPath] of Object.entries(SVG_LINE_PATHS)) {
+        if (!canonicalShapes[lineNum]) continue;
+        const {f, dist} = projectSvgPointOntoPath(cx, cy, svgPath, svgPathDists[lineNum]);
+        if (dist < bestSvgDist) { bestSvgDist = dist; bestLine = lineNum; bestF = f; }
+      }
+      if (!bestLine || bestSvgDist > 120) continue;
+
+      // 2-3. SVG fraction → GTFS geographic position
+      const f_gtfs = shapeIsForward[bestLine] ? bestF : (1 - bestF);
+      const geoPos = getPosAtFraction(
+        canonicalShapes[bestLine], canonicalDists[bestLine], f_gtfs);
+      // geoPos.x = lat, geoPos.y = lon
+
+      // 4. Nearest GTFS stop
+      let bestStop = null, bestStopDist = Infinity;
+      for (const s of gtfsStops) {
+        const d = (s.stop_lat - geoPos.x) ** 2 + (s.stop_lon - geoPos.y) ** 2;
+        if (d < bestStopDist) { bestStopDist = d; bestStop = s; }
+      }
+      if (bestStop && bestStopDist < 0.003 * 0.003) { // ~330 m
+        svgCircleStops.push({cx, cy, stop_id: bestStop.stop_id, stop_name: bestStop.stop_name});
+      }
+    }
+  }
+
+  // Render clickable stop circles in the overlay SVG.
+  function renderStops() {
+    const gStops = document.getElementById("g-stops");
+    const gLabels = document.getElementById("g-labels");
+    gStops.innerHTML = "";
+    gLabels.innerHTML = "";
+
+    const rendered = new Set();
+    for (const sc of svgCircleStops) {
+      const key = `${Math.round(sc.cx)},${Math.round(sc.cy)}`;
+      if (rendered.has(key)) continue;
+      rendered.add(key);
+
+      const g = el("g", {class: "stop-hit"}, gStops);
+      g.addEventListener("click", (e) => { e.stopPropagation(); onStopClick(sc); });
+      // Hit area (invisible circle)
+      el("circle", {cx: sc.cx, cy: sc.cy, r: 22, fill: "transparent"}, g);
+
+      // Label
+      el("text", {
+        x: sc.cx + 14, y: sc.cy + 5,
+        "font-size": "18", fill: "#e0e0e0",
+        "font-family": "sans-serif", "pointer-events": "none",
+        stroke: "#0d1117", "stroke-width": "4", "stroke-linejoin": "round",
+        "paint-order": "stroke",
+      }, gLabels).textContent = sc.stop_name;
+    }
+  }
+
+  // ── VEHICLES ───────────────────────────────────────────────────────────────
+  async function fetchVehicles() {
+    try {
+      const data = await fetch("/api/vehicles").then(r => r.json());
+      renderVehicles(data.vehicles || []);
+      updateVehicleCounts(data.vehicles || []);
+      document.getElementById("last-update").textContent =
+        "Uppdaterad " + new Date().toLocaleTimeString("sv-SE");
+    } catch (e) { console.warn("Vehicle fetch failed:", e); }
+  }
+
+  function renderVehicles(vehicles) {
+    const g = document.getElementById("g-vehicles");
+    g.innerHTML = "";
+    for (const v of vehicles) {
+      const ln = v.route_short_name;
+      if (!ln || !LINE_COLORS[ln]) continue;
+      if (hiddenLines.has(ln)) continue;
+      if (!v.lat || !v.lon) continue;
+
+      // Get SVG position via route-fraction
+      const pos = getSvgPosForLatLon(ln, v.lat, v.lon);
+      if (!pos) continue;
+
+      const { bg, fg } = LINE_COLORS[ln];
+      // Outer group: positioned + rotated to face direction of travel
+      const vg = el("g", {
+        transform: `translate(${pos.x.toFixed(1)},${pos.y.toFixed(1)}) rotate(${pos.angle.toFixed(1)})`,
+        class: "vehicle-marker",
+      }, g);
+
+      // Drop shadow on the whole shape
+      el("circle", {cx: 0, cy: 0, r: 22, fill: bg, filter: "url(#shadow)"}, vg);
+      // Circle body
+      el("circle", {cx: 0, cy: 0, r: 22, fill: bg, stroke: "#fff", "stroke-width": 4}, vg);
+      // Directional tip pointing right (=direction of travel after rotation)
+      el("path", {
+        d: "M 17,-8 L 30,0 L 17,8 Z",
+        fill: bg, stroke: "#fff", "stroke-width": 3, "stroke-linejoin": "round",
+      }, vg);
+
+      // Line number: counter-rotated so it always reads upright
+      const tg = el("g", {transform: `rotate(${(-pos.angle).toFixed(1)})`}, vg);
+      el("text", {
+        x: 0, y: 0, "text-anchor": "middle", "dominant-baseline": "central",
+        "font-size": "24", "font-weight": "800", fill: fg,
+        "font-family": "sans-serif",
+      }, tg).textContent = ln;
+
+      // Tooltip
+      const title = document.createElementNS(NS, "title");
+      title.textContent = `Linje ${ln}${v.trip_headsign ? " → " + v.trip_headsign : ""}`;
+      vg.appendChild(title);
+    }
+  }
+
+  function updateVehicleCounts(vehicles) {
+    const byLine = {};
+    for (const v of vehicles) {
+      const ln = v.route_short_name;
+      if (!ln || !LINE_COLORS[ln]) continue;
+      byLine[ln] = (byLine[ln] || 0) + 1;
+    }
+    const vcEl = document.getElementById("vehicle-counts");
+    vcEl.innerHTML = CITY_LINES.filter(l => byLine[l])
+      .map(l => `<span class="vc-item"><span class="vc-dot" style="background:${LINE_COLORS[l].bg}"></span>${byLine[l]}</span>`)
+      .join("");
+  }
+
+  // ── STOP CLICK & DEPARTURES ────────────────────────────────────────────────
+  function onStopClick(sc) {
+    const panel = document.getElementById("dep-panel");
+    document.getElementById("dep-stop-name").textContent = sc.stop_name;
+    document.getElementById("dep-lines").innerHTML = "";
+    document.getElementById("dep-content").innerHTML = '<div class="loading-deps">Hämtar avgångar…</div>';
+    panel.classList.add("open");
+    loadDepartures(sc.stop_id);
+  }
+
+  async function loadDepartures(stopId) {
+    const contentEl = document.getElementById("dep-content");
+    const linesEl = document.getElementById("dep-lines");
+    try {
+      const data = await fetch(`/api/departures/${stopId}`).then(r => r.json());
+      const deps = data.departures || [];
+      if (!deps.length) {
+        contentEl.innerHTML = '<div class="no-deps">Inga avgångar hittades just nu.</div>';
+        return;
+      }
+      // Group by direction/headsign
+      const grouped = {};
+      for (const d of deps) {
+        const key = d.trip_headsign || d.route_long_name || "Okänd";
+        if (!grouped[key]) grouped[key] = [];
+        grouped[key].push(d);
+      }
+      // Unique lines
+      const lineSet = new Set(deps.map(d => d.route_short_name).filter(Boolean));
+      linesEl.innerHTML = [...lineSet].sort().map(l => {
+        const c = LINE_COLORS[l] || {bg:"#555"};
+        return `<span class="dep-line-badge" style="background:${c.bg}">${l}</span>`;
+      }).join("");
+
+      contentEl.innerHTML = "";
+      for (const [dest, list] of Object.entries(grouped)) {
+        const sec = document.createElement("div");
+        sec.className = "dep-direction";
+        sec.innerHTML = `<div class="dep-direction-label">${dest}</div>`;
+        for (const dep of list.slice(0, 5)) {
+          const row = document.createElement("div");
+          row.className = "dep-row";
+          const col = (LINE_COLORS[dep.route_short_name] || {bg:"#555"}).bg;
+          const mins = dep.minutes_until !== undefined ? dep.minutes_until : "–";
+          let timeClass = "dep-time";
+          if (typeof dep.minutes_until === "number") {
+            if (dep.minutes_until <= 2) timeClass += " soon";
+            else if (dep.realtime) timeClass += " realtime";
+          }
+          row.innerHTML = `
+            <div class="dep-line" style="background:${col}">${dep.route_short_name || "?"}</div>
+            <div class="dep-dest">${dep.trip_headsign || dep.stop_headsign || "–"}</div>
+            <div class="${timeClass}">${mins === 0 ? "Nu" : mins + " min"}</div>`;
+          sec.appendChild(row);
+        }
+        contentEl.appendChild(sec);
+      }
+    } catch (e) {
+      contentEl.innerHTML = '<div class="no-deps">Fel vid hämtning av avgångar.</div>';
+    }
+  }
+
+  // ── LINE BADGES ────────────────────────────────────────────────────────────
+  function buildLineBadges(byName) {
+    const container = document.getElementById("line-badges");
+    container.innerHTML = "";
+    for (const ln of CITY_LINES) {
+      if (!byName[ln]) continue;
+      const {bg, fg} = LINE_COLORS[ln];
+      const btn = document.createElement("button");
+      btn.className = "line-badge";
+      btn.style.background = bg;
+      btn.textContent = ln;
+      btn.title = `Linje ${ln} – klicka för att dölja`;
+      btn.addEventListener("click", () => {
+        if (hiddenLines.has(ln)) { hiddenLines.delete(ln); btn.classList.remove("faded"); }
+        else { hiddenLines.add(ln); btn.classList.add("faded"); }
+        fetchVehicles(); // Re-render (quick redraw from cache)
+      });
+      container.appendChild(btn);
+    }
+  }
+
+  // ── PAN / ZOOM ─────────────────────────────────────────────────────────────
+  const svg = document.getElementById("main-svg");
+  const gPan = document.getElementById("g-pan");
+
+  function applyTransform() {
+    gPan.setAttribute("transform",
+      `translate(${svgPan.x},${svgPan.y}) scale(${svgPan.scale})`);
+  }
+
+  // Mouse/touch handling
+  svg.addEventListener("mousedown", (e) => {
+    if (e.button !== 0) return;
+    svgPan.dragging = true;
+    svgPan.sx = e.clientX; svgPan.sy = e.clientY;
+    svgPan.px = svgPan.x; svgPan.py = svgPan.y;
+  });
+  window.addEventListener("mousemove", (e) => {
+    if (!svgPan.dragging) return;
+    svgPan.x = svgPan.px + (e.clientX - svgPan.sx);
+    svgPan.y = svgPan.py + (e.clientY - svgPan.sy);
+    applyTransform();
+  });
+  window.addEventListener("mouseup", () => { svgPan.dragging = false; });
+
+  svg.addEventListener("wheel", (e) => {
+    e.preventDefault();
+    const rect = svg.getBoundingClientRect();
+    const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+    // Zoom toward cursor
+    const vb = [0, 0, 2481, 3508];
+    const scaleW = rect.width / vb[2], scaleH = rect.height / vb[3];
+    const displayScale = Math.min(scaleW, scaleH);
+    const factor = e.deltaY < 0 ? 1.15 : 1/1.15;
+    const newScale = Math.max(0.3, Math.min(20, svgPan.scale * factor));
+    // Adjust pan so zoom is centered on cursor
+    const ratio = newScale / svgPan.scale;
+    svgPan.x = mx - ratio * (mx - svgPan.x);
+    svgPan.y = my - ratio * (my - svgPan.y);
+    svgPan.scale = newScale;
+    applyTransform();
+  }, {passive: false});
+
+  // Touch (pinch zoom + pan)
+  let touches = {};
+  svg.addEventListener("touchstart", (e) => {
+    e.preventDefault();
+    for (const t of e.changedTouches) touches[t.identifier] = {x: t.clientX, y: t.clientY};
+    const ids = Object.keys(touches);
+    if (ids.length === 1) {
+      svgPan.dragging = true;
+      const t = touches[ids[0]];
+      svgPan.sx = t.x; svgPan.sy = t.y;
+      svgPan.px = svgPan.x; svgPan.py = svgPan.y;
+    }
+  }, {passive: false});
+  svg.addEventListener("touchmove", (e) => {
+    e.preventDefault();
+    const prev = {};
+    for (const id of Object.keys(touches)) prev[id] = {...touches[id]};
+    for (const t of e.changedTouches) touches[t.identifier] = {x: t.clientX, y: t.clientY};
+    const ids = Object.keys(touches);
+    if (ids.length === 1 && svgPan.dragging) {
+      const t = touches[ids[0]];
+      svgPan.x = svgPan.px + (t.x - svgPan.sx);
+      svgPan.y = svgPan.py + (t.y - svgPan.sy);
+      applyTransform();
+    } else if (ids.length === 2) {
+      const [id0, id1] = ids;
+      const p0 = prev[id0]||touches[id0], p1 = prev[id1]||touches[id1];
+      const c0 = touches[id0], c1 = touches[id1];
+      const prevDist = Math.hypot(p1.x-p0.x, p1.y-p0.y);
+      const curDist  = Math.hypot(c1.x-c0.x, c1.y-c0.y);
+      if (prevDist > 0) {
+        const factor = curDist / prevDist;
+        const midX = (c0.x + c1.x) / 2, midY = (c0.y + c1.y) / 2;
+        const newScale = Math.max(0.3, Math.min(20, svgPan.scale * factor));
+        const ratio = newScale / svgPan.scale;
+        svgPan.x = midX - ratio * (midX - svgPan.x);
+        svgPan.y = midY - ratio * (midY - svgPan.y);
+        svgPan.scale = newScale;
+        applyTransform();
+      }
+    }
+  }, {passive: false});
+  svg.addEventListener("touchend", (e) => {
+    for (const t of e.changedTouches) delete touches[t.identifier];
+    if (Object.keys(touches).length === 0) svgPan.dragging = false;
+  }, {passive: false});
+
+  // ── LABEL TOGGLE ───────────────────────────────────────────────────────────
+  document.getElementById("btn-labels").addEventListener("click", () => {
+    labelsVisible = !labelsVisible;
+    document.getElementById("g-labels").style.display = labelsVisible ? "" : "none";
+    document.getElementById("btn-labels").textContent = labelsVisible ? "Dölj namn" : "Etiketter";
+  });
+
+  // ── DEP PANEL CLOSE ────────────────────────────────────────────────────────
+  document.getElementById("dep-close").addEventListener("click", () => {
+    document.getElementById("dep-panel").classList.remove("open");
+  });
+  // Close on background click (not on panel)
+  document.getElementById("dep-panel").addEventListener("click", e => e.stopPropagation());
+  svg.addEventListener("click", () => {
+    if (document.getElementById("dep-panel").classList.contains("open")) {
+      document.getElementById("dep-panel").classList.remove("open");
+    }
+  });
+
+  // ── ERROR BAR ──────────────────────────────────────────────────────────────
+  function showErr(msg) {
+    const bar = document.getElementById("err-bar");
+    bar.textContent = msg;
+    bar.style.display = "block";
+    setTimeout(() => bar.style.display = "none", 4000);
+  }
+
+  // ── START ─────────────────────────────────────────────────────────────────
+  loadAndBuild();
+  </script>
+  <script>
+  (function(){var s=Math.random().toString(36).slice(2),t=Date.now(),p=location.pathname;
+  fetch('/api/stats/visit',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:s,page:p}),keepalive:true}).catch(function(){});
+  function leave(){navigator.sendBeacon('/api/stats/leave',JSON.stringify({session_id:s,duration:Math.round((Date.now()-t)/1000)}));}
+  window.addEventListener('beforeunload',leave);
+  document.addEventListener('visibilitychange',function(){if(document.hidden)leave();});
+  })();
+  </script>
+</body>
+</html>

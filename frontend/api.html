@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LTlive – API-utforskare</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: "Segoe UI", system-ui, sans-serif;
+      background: #0f1117;
+      color: #e0e0e0;
+      font-size: 13px;
+      line-height: 1.5;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+    }
+
+    #topbar {
+      background: #1a1d27;
+      border-bottom: 1px solid #2a2d3d;
+      padding: 10px 18px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-shrink: 0;
+    }
+    #topbar a { color: #7eb8f7; font-size: 0.85em; text-decoration: none; }
+    #topbar a:hover { text-decoration: underline; }
+    #topbar h1 { font-size: 1em; font-weight: 600; color: #fff; }
+
+    #layout {
+      display: flex;
+      flex: 1;
+      overflow: hidden;
+    }
+
+    /* ── Sidebar ─────────────────────────────────────────── */
+    #sidebar {
+      width: 260px;
+      flex-shrink: 0;
+      background: #13161f;
+      border-right: 1px solid #2a2d3d;
+      overflow-y: auto;
+      padding: 10px 0;
+    }
+
+    .ep-group-label {
+      font-size: 0.7em;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: #666;
+      padding: 12px 14px 4px;
+    }
+
+    .ep-btn {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      width: 100%;
+      padding: 5px 14px;
+      background: none;
+      border: none;
+      cursor: pointer;
+      text-align: left;
+      color: #bbb;
+      font-size: 0.82em;
+      font-family: "Consolas", monospace;
+      transition: background 0.1s;
+    }
+    .ep-btn:hover { background: #1e2133; color: #fff; }
+    .ep-btn.active { background: #1e3a5f; color: #7eb8f7; }
+    .ep-method {
+      font-size: 0.7em;
+      font-weight: 700;
+      padding: 1px 5px;
+      border-radius: 3px;
+      flex-shrink: 0;
+    }
+    .m-get { background: #1a4731; color: #4ade80; }
+    .m-post { background: #3b1f00; color: #fb923c; }
+
+    /* ── Main panel ──────────────────────────────────────── */
+    #main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    #req-panel {
+      background: #1a1d27;
+      border-bottom: 1px solid #2a2d3d;
+      padding: 14px 18px;
+      flex-shrink: 0;
+    }
+
+    #req-panel .ep-path {
+      font-family: "Consolas", monospace;
+      font-size: 1.05em;
+      color: #fff;
+      margin-bottom: 10px;
+    }
+    #req-panel .ep-desc {
+      color: #888;
+      font-size: 0.82em;
+      margin-bottom: 10px;
+    }
+
+    .params-grid {
+      display: grid;
+      grid-template-columns: 140px 1fr;
+      gap: 6px 10px;
+      align-items: center;
+      margin-bottom: 10px;
+    }
+    .params-grid label {
+      font-family: "Consolas", monospace;
+      font-size: 0.82em;
+      color: #aaa;
+    }
+    .params-grid input {
+      background: #0f1117;
+      border: 1px solid #333;
+      border-radius: 4px;
+      color: #e0e0e0;
+      font-family: "Consolas", monospace;
+      font-size: 0.85em;
+      padding: 4px 8px;
+      outline: none;
+      width: 100%;
+    }
+    .params-grid input:focus { border-color: #4a7cc9; }
+
+    #send-btn {
+      background: #1e4a8a;
+      color: #fff;
+      border: none;
+      border-radius: 5px;
+      padding: 6px 18px;
+      font-size: 0.85em;
+      cursor: pointer;
+      font-weight: 600;
+    }
+    #send-btn:hover { background: #2560b0; }
+    #send-btn:disabled { opacity: 0.5; cursor: default; }
+
+    /* ── Response ────────────────────────────────────────── */
+    #resp-panel {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    #resp-meta {
+      padding: 8px 18px;
+      background: #161922;
+      border-bottom: 1px solid #2a2d3d;
+      font-size: 0.8em;
+      color: #777;
+      display: flex;
+      gap: 16px;
+      flex-shrink: 0;
+    }
+    #resp-meta .ok { color: #4ade80; }
+    #resp-meta .err { color: #f87171; }
+
+    #resp-body {
+      flex: 1;
+      overflow: auto;
+      padding: 14px 18px;
+      font-family: "Consolas", monospace;
+      font-size: 0.82em;
+      line-height: 1.55;
+      white-space: pre;
+    }
+
+    /* JSON syntax coloring */
+    .j-key   { color: #93c5fd; }
+    .j-str   { color: #86efac; }
+    .j-num   { color: #fbbf24; }
+    .j-bool  { color: #c084fc; }
+    .j-null  { color: #94a3b8; }
+
+    #empty-hint {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      color: #444;
+      gap: 8px;
+    }
+    #empty-hint .big { font-size: 2em; }
+  </style>
+</head>
+<body>
+
+<div id="topbar">
+  <h1>API-utforskare</h1>
+  <a href="/">← Kartan</a>
+  <a href="/diag.html">Diagnostik</a>
+</div>
+
+<div id="layout">
+  <div id="sidebar"></div>
+  <div id="main">
+    <div id="req-panel">
+      <div class="ep-path" id="ep-path">Välj en endpoint i menyn</div>
+      <div class="ep-desc" id="ep-desc"></div>
+      <div class="params-grid" id="params-grid"></div>
+      <button id="send-btn" disabled>Skicka</button>
+    </div>
+    <div id="resp-panel">
+      <div id="resp-meta"></div>
+      <div id="resp-body">
+        <div id="empty-hint">
+          <span class="big">↖</span>
+          <span>Välj en endpoint och klicka Skicka</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const ENDPOINTS = [
+  {
+    group: "Status",
+    items: [
+      { method: "GET", path: "/api/health",  desc: "Enkel liveliness-check" },
+      { method: "GET", path: "/api/status",  desc: "Systemstatus, GTFS-info, config" },
+      { method: "GET", path: "/api/alerts",  desc: "Trafikstörningar" },
+    ]
+  },
+  {
+    group: "Fordon & avgångar",
+    items: [
+      { method: "GET", path: "/api/vehicles", desc: "Alla aktiva fordon (RT-positioner)" },
+      { method: "GET", path: "/api/routes",   desc: "Rutter med aktiva fordon" },
+      { method: "GET", path: "/api/routes/all", desc: "Alla rutter i GTFS" },
+      {
+        method: "GET", path: "/api/departures/{stop_id}",
+        desc: "Kommande avgångar för en hållplats",
+        params: [
+          { name: "stop_id", placeholder: "t.ex. 740025490", inPath: true },
+          { name: "limit",   placeholder: "10 (max 30)" }
+        ]
+      },
+      {
+        method: "GET", path: "/api/nearby-departures",
+        desc: "Avgångar vid hållplatser nära en koordinat",
+        params: [
+          { name: "lat",    placeholder: "t.ex. 59.2753" },
+          { name: "lon",    placeholder: "t.ex. 15.2134" },
+          { name: "radius", placeholder: "400 (meter)" }
+        ]
+      },
+      {
+        method: "GET", path: "/api/stops/next-departure",
+        desc: "Nästa avgång per hållplats (för karta-badges)",
+        params: [
+          { name: "stop_ids", placeholder: "kommaseparerade stop_id" }
+        ]
+      },
+      {
+        method: "GET", path: "/api/line/{route_id}",
+        desc: "Linjedetaljer: hållplatser, headsigns, färg",
+        params: [
+          { name: "route_id", placeholder: "t.ex. 9011014001200000", inPath: true }
+        ]
+      },
+      {
+        method: "GET", path: "/api/line-departures/{route_id}",
+        desc: "Alla avgångar för en linje",
+        params: [
+          { name: "route_id", placeholder: "t.ex. 9011014001200000", inPath: true }
+        ]
+      },
+    ]
+  },
+  {
+    group: "Hållplatser & geometri",
+    items: [
+      {
+        method: "GET", path: "/api/stops",
+        desc: "Hållplatser för valda rutter",
+        params: [
+          { name: "route_ids", placeholder: "kommaseparerade route_id" }
+        ]
+      },
+      { method: "GET", path: "/api/stops/stations", desc: "Bara parent-stationer (location_type=1)" },
+      {
+        method: "GET", path: "/api/shapes/{route_id}",
+        desc: "GeoJSON-shape för en rutt",
+        params: [
+          { name: "route_id", placeholder: "t.ex. 9011014001200000", inPath: true }
+        ]
+      },
+      {
+        method: "GET", path: "/api/shapes/bulk",
+        desc: "Shapes för flera rutter",
+        params: [
+          { name: "route_ids", placeholder: "kommaseparerade route_id" }
+        ]
+      },
+    ]
+  },
+  {
+    group: "Debug",
+    items: [
+      { method: "GET", path: "/api/debug/stops-fields", desc: "Täckning av platform_code / stop_desc i GTFS" },
+      { method: "GET", path: "/api/debug/matching",    desc: "RT-matchning mot GTFS-trips" },
+      { method: "GET", path: "/api/debug/routes",      desc: "Alla rutter med trip-count" },
+      { method: "GET", path: "/api/debug/rt-feed",     desc: "Rådata från RT-feeden (urval)" },
+    ]
+  },
+  {
+    group: "Statistik",
+    items: [
+      { method: "GET",  path: "/api/stats",         desc: "Besöksstatistik" },
+    ]
+  }
+];
+
+// ── Build sidebar ──────────────────────────────────────────
+const sidebar = document.getElementById("sidebar");
+ENDPOINTS.forEach(group => {
+  const label = document.createElement("div");
+  label.className = "ep-group-label";
+  label.textContent = group.group;
+  sidebar.appendChild(label);
+
+  group.items.forEach(ep => {
+    const btn = document.createElement("button");
+    btn.className = "ep-btn";
+    btn.dataset.ep = JSON.stringify(ep);
+    btn.innerHTML = `<span class="ep-method m-${ep.method.toLowerCase()}">${ep.method}</span>${ep.path}`;
+    btn.addEventListener("click", () => selectEndpoint(ep, btn));
+    sidebar.appendChild(btn);
+  });
+});
+
+// ── Select endpoint ────────────────────────────────────────
+let activeBtn = null;
+function selectEndpoint(ep, btn) {
+  if (activeBtn) activeBtn.classList.remove("active");
+  btn.classList.add("active");
+  activeBtn = btn;
+
+  document.getElementById("ep-path").textContent = ep.method + "  " + ep.path;
+  document.getElementById("ep-desc").textContent = ep.desc || "";
+
+  const grid = document.getElementById("params-grid");
+  grid.innerHTML = "";
+  (ep.params || []).forEach(p => {
+    const lbl = document.createElement("label");
+    lbl.textContent = p.name;
+    const inp = document.createElement("input");
+    inp.placeholder = p.placeholder || "";
+    inp.dataset.pname = p.name;
+    inp.dataset.inPath = p.inPath ? "1" : "";
+    inp.addEventListener("keydown", e => { if (e.key === "Enter") doSend(ep); });
+    grid.appendChild(lbl);
+    grid.appendChild(inp);
+  });
+
+  document.getElementById("send-btn").disabled = false;
+  document.getElementById("send-btn").onclick = () => doSend(ep);
+
+  // Clear previous response
+  document.getElementById("resp-meta").innerHTML = "";
+  document.getElementById("resp-body").innerHTML = `<div id="empty-hint"><span class="big">↵</span><span>Klicka Skicka</span></div>`;
+}
+
+// ── Send request ───────────────────────────────────────────
+async function doSend(ep) {
+  const btn = document.getElementById("send-btn");
+  btn.disabled = true;
+  btn.textContent = "…";
+
+  const inputs = document.querySelectorAll("#params-grid input");
+  const queryParams = new URLSearchParams();
+  let urlPath = ep.path;
+
+  inputs.forEach(inp => {
+    const val = inp.value.trim();
+    if (!val) return;
+    if (inp.dataset.inPath) {
+      urlPath = urlPath.replace(`{${inp.dataset.pname}}`, encodeURIComponent(val));
+    } else {
+      queryParams.set(inp.dataset.pname, val);
+    }
+  });
+
+  const qs = queryParams.toString();
+  const url = qs ? `${urlPath}?${qs}` : urlPath;
+  const t0 = Date.now();
+
+  try {
+    const resp = await fetch(url);
+    const elapsed = Date.now() - t0;
+    const text = await resp.text();
+    let parsed;
+    try { parsed = JSON.parse(text); } catch { parsed = null; }
+
+    const meta = document.getElementById("resp-meta");
+    const okClass = resp.ok ? "ok" : "err";
+    const size = new Blob([text]).size;
+    meta.innerHTML = `
+      <span class="${okClass}">${resp.status} ${resp.statusText}</span>
+      <span>${elapsed} ms</span>
+      <span>${fmtBytes(size)}</span>
+      <span style="margin-left:auto;color:#555">${url}</span>
+    `;
+
+    const body = document.getElementById("resp-body");
+    if (parsed !== null) {
+      body.innerHTML = highlight(JSON.stringify(parsed, null, 2));
+    } else {
+      body.textContent = text;
+    }
+  } catch (err) {
+    document.getElementById("resp-meta").innerHTML = `<span class="err">Nätverksfel: ${err.message}</span>`;
+    document.getElementById("resp-body").textContent = "";
+  }
+
+  btn.disabled = false;
+  btn.textContent = "Skicka";
+}
+
+// ── JSON syntax highlighting ───────────────────────────────
+function highlight(json) {
+  return json.replace(
+    /("(?:[^"\\]|\\.)*")(\s*:)?|(\b\d+\.?\d*(?:[eE][+-]?\d+)?\b)|(true|false)|(null)/g,
+    (match, str, colon, num, bool, nil) => {
+      if (str && colon) return `<span class="j-key">${esc(str)}</span>:`;
+      if (str)          return `<span class="j-str">${esc(str)}</span>`;
+      if (num)          return `<span class="j-num">${num}</span>`;
+      if (bool)         return `<span class="j-bool">${bool}</span>`;
+      if (nil)          return `<span class="j-null">null</span>`;
+      return match;
+    }
+  );
+}
+function esc(s) {
+  return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+}
+function fmtBytes(b) {
+  if (b < 1024) return b + " B";
+  if (b < 1048576) return (b/1024).toFixed(1) + " KB";
+  return (b/1048576).toFixed(1) + " MB";
+}
+</script>
+</body>
+</html>

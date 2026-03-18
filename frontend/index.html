@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LTlive - Bussar i Örebro</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+    <!-- ===== Top bar ===== -->
+    <header id="topbar">
+        <div id="topbar-main">
+            <div class="topbar-brand">
+                <span class="brand-name">LTlive</span>
+                <span class="brand-sub">Örebro</span>
+            </div>
+
+            <div class="topbar-controls" id="topbar-controls">
+                <label class="ctrl-pill" for="toggle-stops" title="Visa hållplatser">
+                    <input type="checkbox" id="toggle-stops" checked />
+                    <span>Hållplatser</span>
+                </label>
+                <label class="ctrl-pill" for="toggle-routes" title="Visa linjesträckningar">
+                    <input type="checkbox" id="toggle-routes" checked />
+                    <span>Linjer</span>
+                </label>
+                <label class="ctrl-pill" for="toggle-labels" title="Visa linjenummer">
+                    <input type="checkbox" id="toggle-labels" checked />
+                    <span>Nummer</span>
+                </label>
+                <label class="ctrl-pill" for="toggle-darkmode" title="Mörkt tema">
+                    <input type="checkbox" id="toggle-darkmode" />
+                    <span>Mörkt</span>
+                </label>
+            </div>
+
+            <div class="topbar-stats">
+                <div class="topbar-stat">
+                    <span class="ts-value" id="vehicle-count">0</span>
+                    <span class="ts-label">fordon</span>
+                </div>
+                <div class="topbar-stat">
+                    <span class="ts-value" id="route-count">0</span>
+                    <span class="ts-label">linjer</span>
+                </div>
+                <div class="topbar-stat wide">
+                    <span class="ts-value" id="last-update">--:--:--</span>
+                    <span class="ts-label">uppdaterad</span>
+                </div>
+            </div>
+
+
+            <button id="hamburger-btn" aria-label="Inställningar" aria-expanded="false">
+                <span></span><span></span><span></span>
+            </button>
+        </div>
+
+        <!-- Line filter row -->
+        <div id="topbar-lines">
+            <div id="line-buttons"></div>
+        </div>
+    </header>
+
+    <!-- ===== Map ===== -->
+    <div id="map"></div>
+
+    <!-- GPS locate button -->
+    <button id="gps-btn" title="Visa min position">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="3"/>
+            <path d="M12 2v3M12 19v3M2 12h3M19 12h3"/>
+            <circle cx="12" cy="12" r="8" stroke-opacity="0.35"/>
+        </svg>
+    </button>
+
+    <!-- ===== Line departure panel ===== -->
+    <div id="line-panel">
+        <div id="line-panel-header">
+            <div id="line-panel-title"></div>
+            <button id="line-panel-close" aria-label="Stäng">&#x2715;</button>
+        </div>
+        <div id="line-panel-body">
+            <div id="line-panel-content"></div>
+        </div>
+    </div>
+
+    <!-- ===== Nearby stops panel ===== -->
+    <div id="nearby-panel">
+        <div id="nearby-panel-header">
+            <div id="nearby-panel-title">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>
+                <span>Hållplatser nära dig</span>
+            </div>
+            <button id="nearby-panel-close" aria-label="Stäng">&#x2715;</button>
+        </div>
+        <div id="nearby-panel-body"></div>
+    </div>
+
+    <!-- ===== Bottom ticker ===== -->
+    <div id="bottom-ticker">
+        <span class="ticker-label">TRAFIK</span>
+        <div class="ticker-wrap">
+            <div class="ticker-move" id="ticker-content">Laddar trafikinformation…</div>
+        </div>
+        <button id="ticker-toggle" title="Dölj trafikinfo">&#8964;</button>
+    </div>
+    <button id="ticker-reopener" title="Visa trafikinfo">TRAFIK &#8963;</button>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="config.js"></script>
+    <script src="app.js"></script>
+    <script>
+    (function(){var s=Math.random().toString(36).slice(2),t=Date.now(),p=location.pathname;
+    fetch('/api/stats/visit',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:s,page:p}),keepalive:true}).catch(function(){});
+    function leave(){navigator.sendBeacon('/api/stats/leave',JSON.stringify({session_id:s,duration:Math.round((Date.now()-t)/1000)}));}
+    window.addEventListener('beforeunload',leave);
+    document.addEventListener('visibilitychange',function(){if(document.hidden)leave();});
+    })();
+    </script>
+</body>
+</html>
