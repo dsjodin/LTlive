@@ -272,9 +272,6 @@ def fetch_position_sseurl() -> tuple[list, str]:
   <LOGIN authenticationkey="{config.TRAFIKVERKET_API_KEY}" />
   <QUERY objecttype="TrainPosition" namespace="järnväg.trafikinfo"
          schemaversion="1.1" sseurl="true" limit="2000">
-    <FILTER>
-      <GT name="TimeStamp" value="$dateadd(-0:10:00)" />
-    </FILTER>
   </QUERY>
 </REQUEST>"""
 
