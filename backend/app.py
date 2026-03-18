@@ -840,6 +840,7 @@ def departures_for_stop(stop_id):
         tv_track_changed = False
         tv_operator = ""
         tv_product = ""
+        best_tv = None
         if loc_sig and tv_ann.get(loc_sig):
             # Use static scheduled time for matching when available (RT time may be delayed)
             dep_time = d.get("sched_time") or d["time"]
