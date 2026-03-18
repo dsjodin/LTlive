@@ -225,7 +225,7 @@ def fetch_train_positions(location_signatures: set | None = None) -> list:
     <INCLUDE>Position.WGS84</INCLUDE>
     <INCLUDE>Bearing</INCLUDE>
     <INCLUDE>Speed</INCLUDE>
-    <INCLUDE>TimeStamp</INCLUDE>
+    <INCLUDE>Status.TimeStamp</INCLUDE>
     <INCLUDE>Deleted</INCLUDE>
   </QUERY>
 </REQUEST>"""
@@ -248,7 +248,8 @@ def fetch_train_positions(location_signatures: set | None = None) -> list:
         if not m:
             continue
         lon, lat = float(m.group(1)), float(m.group(2))
-        ts = _ts_to_unix(pos.get("TimeStamp", ""))
+        # TimeStamp is nested under Status per the API schema
+        ts = _ts_to_unix((pos.get("Status") or {}).get("TimeStamp", ""))
         result.append({
             "train_number": adv_num,
             "lat": lat,

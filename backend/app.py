@@ -2034,7 +2034,7 @@ def _tv_trains_from_positions() -> list:
     if not expected:
         return []
 
-    cutoff = int(time.time()) - 300  # discard positions older than 5 min
+    cutoff = int(time.time()) - 600  # discard positions older than 10 min
     result = []
     for pos in tv_positions:
         tn = pos.get("train_number", "")
@@ -2113,7 +2113,7 @@ def _annotate_oxyfi_from_announcements(trains: list) -> list:
         return trains
 
     now = int(time.time())
-    WINDOW = 600  # ±10 min — tight enough to find the right service
+    WINDOW = 1200  # ±20 min — covers trains currently between stops
 
     # Phase 1: collect all (time_diff, oxyfi_index, train_number, sched_time) candidates
     candidates = []
