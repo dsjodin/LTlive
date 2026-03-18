@@ -907,6 +907,10 @@ def departures_for_stop(stop_id):
                     vname = tv_stations.get(vsig, {}).get("name", vsig)
                     tv_via.append(vname)
 
+        # If TV confirms actual departure (TimeAtLocation set) and it was >60s ago, skip
+        if best_tv and best_tv.get("has_actual_time") and tv_rt_time and tv_rt_time < now - 60:
+            continue
+
         platform = tv_track or d.get("_platform", "")
         # Use TV scheduled time as base when matched (more accurate than GTFS).
         # For unmatched GTFS-RT entries, prefer the static scheduled time so
@@ -948,6 +952,8 @@ def departures_for_stop(stop_id):
                 continue  # already matched to a GTFS entry
             if tv_dep["scheduled_time"] < now - 60:
                 continue  # skip past departures
+            if tv_dep.get("has_actual_time") and tv_dep.get("realtime_time") and tv_dep["realtime_time"] < now - 60:
+                continue  # TV confirms actual departure has happened >60s ago
             op = (tv_dep.get("operator") or "").lower()
             pr = (tv_dep.get("product") or "").lower()
             if "mälartåg" in op or "mälartåg" in pr:

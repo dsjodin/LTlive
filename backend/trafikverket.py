@@ -205,6 +205,7 @@ def fetch_announcements(location_signatures: list[str], minutes_ahead: int = 120
             "scheduled_time": sched_time,
             "realtime_time": rt_time,
             "is_realtime": is_realtime,
+            "has_actual_time": bool(actual_ts),  # True when TimeAtLocation is set = train has physically passed
             "preliminary": preliminary,
             "track": ann.get("TrackAtLocation", ""),
             "dest_sig": dest_sig,
