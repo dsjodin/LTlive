@@ -143,7 +143,7 @@ docker compose up -d
 | `NEARBY_RADIUS_METERS` | `400` | Sökradie för GPS-funktionen (meter) |
 | `FRONTEND_POLL_INTERVAL_MS` | `5000` | Fallback-pollintervall om SSE ej tillgänglig (ms) |
 | `GTFS_REFRESH_HOURS` | `48` | Hur ofta GTFS Static laddas om |
-| `RT_POLL_SECONDS` | `180` | Hur ofta GTFS-RT-feeds hämtas från Trafiklab |
+| `RT_POLL_SECONDS` | `180` | Hur ofta GTFS-RT-feeds hämtas från Trafiklab — styr även hur ofta fordonspositioner pushas via SSE |
 | `ENABLE_DEBUG_ENDPOINTS` | `false` | Aktivera `/api/debug/*`-endpoints (ej i prod) |
 
 ### Trafikverket stationskoder
@@ -185,7 +185,7 @@ python -m http.server 3000
 │  (Leaflet)  │◀────│  :8080       │◀────│  :5000           │
 └─────────────┘     └──────────────┘     └────────┬─────────┘
    SSE stream        static files                  │
-   /api/stream       /frontend/*                   ├─ GTFS-RT poll (var RT_POLL_SECONDS s)
+   /api/stream       /frontend/*                   ├─ GTFS-RT poll + SSE-push (var RT_POLL_SECONDS s)
                                                    │         ▼
                                                    │  ┌──────────────────┐
                                                    │  │   Trafiklab API  │
