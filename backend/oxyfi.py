@@ -61,24 +61,29 @@ def _strip_checksum(field: str) -> str:
 def parse_oxyfi_message(msg: str):
     """Parse one Oxyfi NMEA GPRMC message string.
 
-    Expected format (18 comma-separated fields, 0-indexed):
-      0  $GPRMC
-      1  HHMMSS          UTC time
-      2  A/V             status  (A = active / valid)
-      3  DDMM.MMMM       latitude
-      4  N/S
-      5  DDDMM.MMMM      longitude
-      6  E/W
-      7  speed (knots)
-      8  bearing (degrees)
-      9  DDMMYY          date
-      10 magnetic variation
-      11 E/W + *checksum
-      12 (empty)
-      13 vehicleId       e.g. "1421.trains.se"
-      14 (empty)
-      15 train numbers   semicolon-separated, e.g. "8955.public.trains.se@2012-12-10"
-      16 "oxyfi"
+    The Oxyfi format is standard GPRMC (fields 1–12) extended with
+    additional fields.  Field numbers below are 1-indexed per the spec;
+    the 0-indexed Python index is shown in parentheses.
+
+      Field 1  (idx  0)  $GPRMC / $GNRMC
+      Field 2  (idx  1)  HHMMSS          UTC time
+      Field 3  (idx  2)  A/V             status  (A = active / valid)
+      Field 4  (idx  3)  DDMM.MMMM       latitude
+      Field 5  (idx  4)  N/S
+      Field 6  (idx  5)  DDDMM.MMMM      longitude
+      Field 7  (idx  6)  E/W
+      Field 8  (idx  7)  speed (knots)
+      Field 9  (idx  8)  bearing (degrees true)
+      Field 10 (idx  9)  DDMMYY          date
+      Field 11 (idx 10)  magnetic variation
+      Field 12 (idx 11)  E/W + NMEA *checksum
+      Field 13 (idx 12)  (empty)
+      Field 14 (idx 13)  (empty)
+      Field 15 (idx 14)  vehicleId       e.g. "1421.trains.se"
+      Field 16 (idx 15)  (empty)
+      Field 17 (idx 16)  train numbers   semicolon-separated,
+                         e.g. "8955.public.trains.se@2012-12-10"
+      Field 18 (idx 17)  "oxyfi"         data origin
 
     Returns a vehicle dict or None.
     """
@@ -106,12 +111,12 @@ def parse_oxyfi_message(msg: str):
     except ValueError:
         bearing = None
 
-    # Field 14: vehicleId (field 12 is mode+checksum, 13 is empty)
+    # Spec field 15 (idx 14): vehicleId
     vehicle_id = parts[14].strip() if len(parts) > 14 else ""
     if not vehicle_id:
         return None
 
-    # Parse public train numbers from field 16
+    # Spec field 17 (idx 16): train numbers, semicolon-separated
     train_numbers_raw = parts[16].strip() if len(parts) > 16 else ""
     public_numbers = []
     for entry in train_numbers_raw.split(";"):
