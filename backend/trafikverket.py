@@ -241,7 +241,6 @@ def fetch_train_positions(location_signatures: set | None = None) -> list:
   <LOGIN authenticationkey="{config.TRAFIKVERKET_API_KEY}" />
   <QUERY objecttype="TrainPosition" schemaversion="1.1" limit="2000">
     <FILTER />
-    <INCLUDE>Train.AdvertisedTrainNumber</INCLUDE>
     <INCLUDE>Train.OperationalTrainNumber</INCLUDE>
     <INCLUDE>InformationOwner</INCLUDE>
     <INCLUDE>Position.WGS84</INCLUDE>
@@ -264,7 +263,7 @@ def fetch_train_positions(location_signatures: set | None = None) -> list:
         if pos.get("Deleted"):
             continue
         train = pos.get("Train", {})
-        adv_num = train.get("AdvertisedTrainNumber", "") or train.get("OperationalTrainNumber", "")
+        adv_num = train.get("OperationalTrainNumber", "")
         wgs = pos.get("Position", {}).get("WGS84", "")
         m = re.search(r"POINT\s*\(([0-9.]+)\s+([0-9.]+)\)", wgs)
         if not m:
