@@ -186,6 +186,24 @@ body {
     padding: 4px 0;
 }
 
+/* Vehicle type filter buttons */
+.type-btn {
+    border: 1.5px solid var(--border);
+    border-radius: 20px;
+    padding: 3px 10px;
+    font-size: 0.78em;
+    font-weight: 600;
+    cursor: pointer;
+    background: var(--bg2);
+    color: var(--fg);
+    transition: opacity 0.2s, transform 0.1s;
+    white-space: nowrap;
+    flex-shrink: 0;
+    line-height: 1.4;
+}
+.type-btn:hover { transform: scale(1.06); }
+.type-btn.inactive { opacity: 0.35; }
+
 .line-btn {
     border: none;
     border-radius: 6px;

@@ -210,6 +210,27 @@
       color: #aab;
     }
 
+    /* ── TV trains table ─────────────────────────────────── */
+    .tv-trains-table { width: 100%; border-collapse: collapse; }
+    .tv-trains-table th {
+      text-align: left; font-size: 11px; font-weight: 600; color: #778;
+      padding: 5px 8px; border-bottom: 1px solid #2a2d3d; white-space: nowrap;
+    }
+    .tv-trains-table td { padding: 5px 8px; border-bottom: 1px solid #1e2130; font-size: 12px; vertical-align: middle; }
+    .tv-trains-table tr:last-child td { border-bottom: none; }
+    .tv-trains-table tr:hover td { background: #1e2236; }
+
+    .op-badge {
+      display: inline-block; padding: 2px 7px; border-radius: 4px;
+      font-weight: 700; font-size: 11px; white-space: nowrap;
+    }
+    .tv-op-pills { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+    .tv-op-pill {
+      background: #22263a; border: 1px solid #2e3250; border-radius: 6px;
+      padding: 5px 12px; font-size: 12px; color: #bbc;
+    }
+    .tv-op-pill strong { color: #fff; }
+
     /* ── Loading state ───────────────────────────────────── */
     #loading {
       padding: 40px;
@@ -287,12 +308,13 @@ function pct(a, b) {
 // ── Fetch all data ─────────────────────────────────────────────────
 
 async function fetchAll() {
-  const [status, vehicles, matching] = await Promise.all([
+  const [status, vehicles, matching, tvPositions] = await Promise.all([
     fetch(`${API}/status`).then(r => r.json()).catch(() => null),
     fetch(`${API}/vehicles`).then(r => r.json()).then(d => d.vehicles ?? d).catch(() => []),
     fetch(`${API}/debug/matching`).then(r => r.json()).catch(() => null),
+    fetch(`${API}/debug/tv-positions`).then(r => r.json()).catch(() => null),
   ]);
-  return { status, vehicles, matching };
+  return { status, vehicles, matching, tvPositions };
 }
 
 async function fetchRtFeed() {
@@ -301,7 +323,7 @@ async function fetchRtFeed() {
 
 // ── Render ─────────────────────────────────────────────────────────
 
-function render({ status, vehicles, matching }) {
+function render({ status, vehicles, matching, tvPositions }) {
   const page = document.getElementById('page');
   page.innerHTML = '';
 
@@ -313,6 +335,7 @@ function render({ status, vehicles, matching }) {
   }
 
   page.appendChild(buildSysStatus(status, vehicles.length));
+  page.appendChild(buildTvPositions(tvPositions));
   page.appendChild(buildLinesTable(byLine));
   page.appendChild(buildUnconfigured(byLine));
   page.appendChild(buildMatching(matching, vehicles));
@@ -383,6 +406,128 @@ function buildSysStatus(s, vehicleCount) {
 
 function pill(state, label, val) {
   return `<div class="spill ${state}"><div class="dot"></div><span class="label">${label}</span><span class="val">${val}</span></div>`;
+}
+
+// ── TV train positions ─────────────────────────────────────────────
+
+function buildTvPositions(d) {
+  const card = makeCard('Tåg inom radien (Trafikverket)');
+  const hdr = card.querySelector('.card-header');
+  const body = card.querySelector('.card-body');
+
+  if (!d) {
+    body.innerHTML = '<span style="color:#f05050">Kunde inte nå /api/debug/tv-positions</span>';
+    return card;
+  }
+
+  const cfg = d.config || {};
+  const trains = d.trains || [];
+  const updateAgeS = d.last_update ? Math.round(Date.now() / 1000 - d.last_update) : null;
+  const sseState = d.sse_state || 'disconnected';
+  const sseColor = sseState === 'connected' ? '#4caf50' : sseState === 'reconnecting' ? '#f5a623' : '#f05050';
+
+  hdr.querySelector('.meta').textContent =
+    `${d.filtered_count} inom radien / ${d.raw_count} från API · uppdaterad ${updateAgeS != null ? updateAgeS + 's sedan' : '–'}`;
+
+  // API key warning
+  if (!d.api_key_set) {
+    const noKey = document.createElement('div');
+    noKey.style.cssText = 'color:#f05050;font-weight:600;font-size:12px;margin-bottom:8px;background:#2a1010;padding:6px 10px;border-radius:4px';
+    noKey.textContent = '⚠ TRAFIKVERKET_API_KEY är inte satt — ingen data hämtas';
+    body.appendChild(noKey);
+  }
+
+  // SSE connection state badge
+  const sseBadge = document.createElement('div');
+  sseBadge.style.cssText = 'font-size:12px;margin-bottom:8px;display:flex;align-items:center;gap:6px';
+  sseBadge.innerHTML = `<span style="width:8px;height:8px;border-radius:50%;background:${sseColor};display:inline-block;flex-shrink:0"></span>
+    <span>SSE-ström: <strong style="color:${sseColor}">${sseState}</strong></span>`;
+  body.appendChild(sseBadge);
+
+  // Config info row
+  const cfgRow = document.createElement('div');
+  cfgRow.style.cssText = 'color:#778;font-size:11px;margin-bottom:10px';
+  cfgRow.textContent =
+    `Centrum: ${cfg.center_lat}, ${cfg.center_lon} · Radie: ${cfg.radius_km} km`;
+  body.appendChild(cfgRow);
+
+  if (d.last_error) {
+    const err = document.createElement('div');
+    err.style.cssText = 'color:#f05050;font-size:12px;margin-bottom:8px;font-family:monospace;background:#2a1010;padding:6px 10px;border-radius:4px';
+    err.textContent = 'Fel: ' + d.last_error;
+    body.appendChild(err);
+  }
+
+  // Operator summary pills
+  const opCounts = d.operator_counts || {};
+  if (Object.keys(opCounts).length > 0) {
+    const opWrap = document.createElement('div');
+    opWrap.className = 'tv-op-pills';
+    for (const [op, cnt] of Object.entries(opCounts)) {
+      const color = opColor(op);
+      opWrap.innerHTML += `<div class="tv-op-pill">
+        <span class="op-badge" style="background:#${color};color:#fff">${esc(op)}</span>
+        &nbsp;<strong>${cnt}</strong> <span style="color:#556">i rå-svaret</span>
+      </div>`;
+    }
+    body.appendChild(opWrap);
+  }
+
+  if (trains.length === 0) {
+    body.innerHTML += '<div style="color:#445;font-style:italic;font-size:12px">Inga tåg inom radien just nu</div>';
+    return card;
+  }
+
+  body.style.padding = '0';
+  cfgRow.style.cssText += ';padding:10px 14px 0';
+  if (d.last_error) body.querySelector('[style*="2a1010"]').style.margin = '0 14px 8px';
+  const opWrapEl = body.querySelector('.tv-op-pills');
+  if (opWrapEl) opWrapEl.style.cssText += ';padding:0 14px 10px';
+
+  const table = document.createElement('table');
+  table.className = 'tv-trains-table';
+  table.innerHTML = `<thead><tr>
+    <th>Tågnr</th>
+    <th>Operatör</th>
+    <th>Lat</th>
+    <th>Lon</th>
+    <th>Kurs</th>
+    <th>Hastighet</th>
+    <th>Ålder</th>
+  </tr></thead>`;
+  const tbody = document.createElement('tbody');
+
+  for (const t of trains) {
+    const color = opColor(t.route_long_name || '');
+    const speed = t.speed != null ? Math.round(t.speed * 3.6) + ' km/h' : '–';
+    const age = fmtAge(t.timestamp);
+    const stale = isStale(t.timestamp);
+    const bearing = t.bearing != null ? t.bearing + '°' : '–';
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td><strong style="color:#fff">${esc(t.label)}</strong></td>
+      <td><span class="op-badge" style="background:#${color};color:#fff">${esc(t.route_long_name || '–')}</span></td>
+      <td style="font-family:monospace;color:#aab">${t.lat?.toFixed(4)}</td>
+      <td style="font-family:monospace;color:#aab">${t.lon?.toFixed(4)}</td>
+      <td style="color:#aab">${bearing}</td>
+      <td style="color:#5de895">${speed}</td>
+      <td class="${stale ? 'stale' : ''}" style="color:${stale ? '#f05050' : '#667'}">${age} sedan</td>`;
+    tbody.appendChild(tr);
+  }
+
+  table.appendChild(tbody);
+  body.appendChild(table);
+  return card;
+}
+
+function opColor(name) {
+  const n = (name || '').toLowerCase();
+  if (n.includes('mälartåg')) return '005B99';
+  if (n.includes('sj'))       return 'D4004C';
+  if (n.includes('arriva') || n.includes('bergslagen') || n.includes('tib')) return 'E87722';
+  if (n.includes('snälltåget')) return '1A1A1A';
+  if (n.includes('mtr')) return '007BC0';
+  return '555555';
 }
 
 // ── Configured lines table ─────────────────────────────────────────

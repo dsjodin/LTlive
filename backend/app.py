@@ -77,6 +77,7 @@ _data = {
     "tv_messages": {},        # {location_sig: [{header, body, start, end}]}
     "tv_last_poll": 0,
     "tv_last_error": None,
+    "tv_sse_state": "disconnected",  # "connected" | "reconnecting" | "disconnected"
 }
 _lock = threading.Lock()
 _gtfs_retry_count = 0
@@ -106,12 +107,26 @@ def _merge_rt_static(rt_deps, static_deps):
       - its scheduled time is within _RT_STATIC_WINDOW seconds of any RT
         departure (handles delayed/early trips where the GTFS-RT trip_id or
         route_id format differs from the static GTFS data).
+
+    RT entries are annotated with "sched_time" (the static GTFS scheduled
+    time) so that callers can show the original scheduled time alongside the
+    realtime time even when they differ.
     """
     if not rt_deps:
         return list(static_deps)
 
-    rt_trip_ids = {d["trip_id"] for d in rt_deps}
-    rt_times = [d["time"] for d in rt_deps]
+    # Build trip_id → static scheduled time so we can annotate RT entries
+    static_by_trip: dict[str, int] = {d["trip_id"]: d["time"] for d in static_deps}
+
+    rt_trip_ids = set()
+    annotated_rt = []
+    for dep in rt_deps:
+        trip_id = dep["trip_id"]
+        rt_trip_ids.add(trip_id)
+        sched = static_by_trip.get(trip_id)
+        annotated_rt.append({**dep, "sched_time": sched} if sched is not None else dep)
+
+    rt_times = [d["time"] for d in annotated_rt]
 
     filtered_static = []
     for dep in static_deps:
@@ -122,7 +137,7 @@ def _merge_rt_static(rt_deps, static_deps):
             continue
         filtered_static.append(dep)
 
-    return rt_deps + filtered_static
+    return annotated_rt + filtered_static
 
 
 def _cache_get(key):
@@ -442,10 +457,8 @@ def poll_realtime():
 
     _invalidate_cache()
 
-    enriched = _enrich_vehicles(vehicles)
-    _push_sse("vehicles", {"vehicles": enriched,
-                            "timestamp": _data["last_vehicle_update"],
-                            "count": len(enriched)})
+    # Vehicles SSE is handled by _push_train_positions (runs every 5 s)
+    # which merges buses + trains in one push, avoiding double events.
     if alerts:
         _push_sse("alerts", {"alerts": alerts, "count": len(alerts)})
 
@@ -812,6 +825,9 @@ def departures_for_stop(stop_id):
         tv_canceled = False
         tv_deviation = []
         tv_via = []
+        tv_other_info = []
+        tv_preliminary = False
+        tv_traffic_type = ""
         loc_sig = config.TRAFIKVERKET_STATIONS.get(stop_id, "")
         if not loc_sig:
             for qid in query_ids:
@@ -825,7 +841,8 @@ def departures_for_stop(stop_id):
         tv_operator = ""
         tv_product = ""
         if loc_sig and tv_ann.get(loc_sig):
-            dep_time = d["time"]
+            # Use static scheduled time for matching when available (RT time may be delayed)
+            dep_time = d.get("sched_time") or d["time"]
             tv_ops = config.TRAFIKVERKET_OPERATORS
             best_tv = None
             best_diff = float("inf")
@@ -876,6 +893,9 @@ def departures_for_stop(stop_id):
                 tv_track = best_tv["track"]
                 tv_canceled = best_tv["canceled"]
                 tv_deviation = best_tv["deviation"]
+                tv_other_info = best_tv.get("other_info", [])
+                tv_preliminary = best_tv.get("preliminary", False)
+                tv_traffic_type = best_tv.get("traffic_type", "")
                 tv_rt_time = best_tv.get("realtime_time")
                 tv_sched_override = best_tv["scheduled_time"]
                 tv_track_changed = any("spår" in t.lower() for t in tv_deviation)
@@ -888,8 +908,10 @@ def departures_for_stop(stop_id):
                     tv_via.append(vname)
 
         platform = tv_track or d.get("_platform", "")
-        # Use TV scheduled time as base when matched (more accurate than GTFS)
-        sched_time = tv_sched_override if tv_sched_override else d["time"]
+        # Use TV scheduled time as base when matched (more accurate than GTFS).
+        # For unmatched GTFS-RT entries, prefer the static scheduled time so
+        # that departure_time (realtime) and scheduled_time can actually differ.
+        sched_time = tv_sched_override if tv_sched_override else (d.get("sched_time") or d["time"])
         # When TV is matched, only use TV realtime (don't fall back to GTFS-RT —
         # that would show a delay TV doesn't know about)
         rt_time = tv_rt_time if tv_sched_override else (d["time"] if d["is_realtime"] else None)
@@ -909,6 +931,9 @@ def departures_for_stop(stop_id):
             "track_changed": tv_track_changed,
             "canceled": tv_canceled,
             "deviation": tv_deviation,
+            "other_info": tv_other_info,
+            "preliminary": tv_preliminary,
+            "traffic_type": tv_traffic_type,
             "via": tv_via,
         })
         if len(deps) >= limit:
@@ -956,6 +981,9 @@ def departures_for_stop(stop_id):
                 "track_changed": track_chg,
                 "canceled": tv_dep.get("canceled", False),
                 "deviation": tv_dep.get("deviation", []),
+                "other_info": tv_dep.get("other_info", []),
+                "preliminary": tv_dep.get("preliminary", False),
+                "traffic_type": tv_dep.get("traffic_type", ""),
                 "via": via_names,
             })
         # Re-sort after adding TV-only entries (they may not be in time order)
@@ -1068,6 +1096,9 @@ def arrivals_for_stop(stop_id):
         tv_track = ""
         tv_canceled = False
         tv_deviation = []
+        tv_other_info = []
+        tv_preliminary = False
+        tv_traffic_type = ""
         tv_arr_operator = ""
         tv_arr_product = ""
         loc_sig = config.TRAFIKVERKET_STATIONS.get(stop_id, "")
@@ -1081,7 +1112,8 @@ def arrivals_for_stop(stop_id):
         tv_arr_sched_override = None
         tv_arr_track_changed = False
         if loc_sig and tv_ann.get(loc_sig):
-            arr_time = a["time"]
+            # Use static scheduled time for matching when available (RT time may be delayed)
+            arr_time = a.get("sched_time") or a["time"]
             tv_ops = config.TRAFIKVERKET_OPERATORS
             best_tv = None
             best_diff = float("inf")
@@ -1128,6 +1160,9 @@ def arrivals_for_stop(stop_id):
                 tv_track = best_tv["track"]
                 tv_canceled = best_tv["canceled"]
                 tv_deviation = best_tv["deviation"]
+                tv_other_info = best_tv.get("other_info", [])
+                tv_preliminary = best_tv.get("preliminary", False)
+                tv_traffic_type = best_tv.get("traffic_type", "")
                 tv_rt_arr_time = best_tv.get("realtime_time")
                 tv_arr_sched_override = best_tv["scheduled_time"]
                 tv_arr_track_changed = any("spår" in t.lower() for t in tv_deviation)
@@ -1138,7 +1173,7 @@ def arrivals_for_stop(stop_id):
         if origin and origin in dest_stop_names:
             continue
 
-        arr_sched_time = tv_arr_sched_override if tv_arr_sched_override else a["time"]
+        arr_sched_time = tv_arr_sched_override if tv_arr_sched_override else (a.get("sched_time") or a["time"])
         arrs.append({
             "route_short_name": rsn,
             "trip_short_name": trip_short_name,
@@ -1155,6 +1190,9 @@ def arrivals_for_stop(stop_id):
             "track_changed": tv_arr_track_changed,
             "canceled": tv_canceled,
             "deviation": tv_deviation,
+            "other_info": tv_other_info,
+            "preliminary": tv_preliminary,
+            "traffic_type": tv_traffic_type,
         })
         if len(arrs) >= limit:
             break
@@ -1202,6 +1240,9 @@ def arrivals_for_stop(stop_id):
                 "track_changed": track_chg,
                 "canceled": tv_arr.get("canceled", False),
                 "deviation": tv_arr.get("deviation", []),
+                "other_info": tv_arr.get("other_info", []),
+                "preliminary": tv_arr.get("preliminary", False),
+                "traffic_type": tv_arr.get("traffic_type", ""),
             })
         arrs.sort(key=lambda x: x["arrival_time"])
 
@@ -1521,7 +1562,13 @@ def debug_tv_stations():
 
 @app.route("/api/station-messages/<stop_id>")
 def station_messages(stop_id):
-    """Return current Trafikverket TrainStationMessages for a stop."""
+    """Return current Trafikverket TrainStationMessages for a stop.
+
+    Response:
+      announcements    – Utrop messages (station-wide, show as banner)
+      platform_messages – dict {track: [messages]} for Plattformsskylt
+      station_name     – human-readable station name
+    """
     with _lock:
         tv_messages = dict(_data.get("tv_messages", {}))
         tv_stations = dict(_data.get("tv_stations", {}))
@@ -1539,10 +1586,24 @@ def station_messages(stop_id):
                 if loc_sig:
                     break
 
-    msgs = tv_messages.get(loc_sig, [])
+    all_msgs = tv_messages.get(loc_sig, [])
+
+    # Utrop = station-wide announcement banner
+    announcements = [m for m in all_msgs if m.get("media_type") == "Utrop"]
+
+    # Plattformsskylt = per-track messages shown on matching train rows
+    platform_messages: dict[str, list] = {}
+    for m in all_msgs:
+        if m.get("media_type") == "Plattformsskylt":
+            for track in m.get("tracks", []):
+                platform_messages.setdefault(track, []).append({
+                    "body": m["body"],
+                    "status": m.get("status", "Normal"),
+                })
+
     return jsonify({
-        "messages": msgs,
-        "count": len(msgs),
+        "announcements": announcements,
+        "platform_messages": platform_messages,
         "station_name": tv_stations.get(loc_sig, {}).get("name", "") if loc_sig else "",
     })
 
@@ -1644,6 +1705,41 @@ def debug_trains():
         "train_count": len(trains),
         "last_update": oxyfi._last_update,
         "trains": trains,
+    })
+
+
+@app.route("/api/debug/tv-positions")
+@_debug_only
+def debug_tv_positions():
+    """Show raw Trafikverket TrainPosition cache and geo-filtered trains within radius."""
+    with _lock:
+        raw_positions = list(_data.get("tv_positions", []))
+        last_poll = _data.get("tv_last_poll", 0)
+        last_error = _data.get("tv_last_error")
+        sse_state = _data.get("tv_sse_state", "disconnected")
+
+    filtered = _tv_trains_from_positions()
+
+    # Count operator distribution in raw positions
+    op_counts: dict = {}
+    for p in raw_positions:
+        op = p.get("operator") or "okänd"
+        op_counts[op] = op_counts.get(op, 0) + 1
+
+    return jsonify({
+        "api_key_set": bool(config.TRAFIKVERKET_API_KEY),
+        "config": {
+            "center_lat": config.TV_POSITION_CENTER_LAT,
+            "center_lon": config.TV_POSITION_CENTER_LON,
+            "radius_km": config.TV_POSITION_RADIUS_KM,
+        },
+        "sse_state": sse_state,
+        "last_update": last_poll,
+        "last_error": last_error,
+        "raw_count": len(raw_positions),
+        "filtered_count": len(filtered),
+        "operator_counts": dict(sorted(op_counts.items(), key=lambda x: -x[1])),
+        "trains": sorted(filtered, key=lambda t: t.get("label", "")),
     })
 
 
@@ -2009,61 +2105,96 @@ def stops_next_departure():
 
 # --- Startup ---
 
+def _tv_operator_style(op: str, prod: str) -> tuple[str, str]:
+    """Return (hex_color, long_name) for a train operator string."""
+    op_l = op.lower()
+    prod_l = prod.lower()
+    if "mälartåg" in op_l or "mälartåg" in prod_l:
+        return "005B99", "Mälartåg"
+    if "sj" in op_l:
+        return "D4004C", "SJ"
+    if "arriva" in op_l or "tib" in prod_l or "bergslagen" in prod_l:
+        return "E87722", "Tåg i Bergslagen"
+    if "snälltåget" in op_l:
+        return "1A1A1A", "Snälltåget"
+    if "mtr" in op_l:
+        return "007BC0", "MTR"
+    return "555555", op.title() or "Tåg"
+
+
 def _tv_trains_from_positions() -> list:
     """Build vehicle-like dicts from Trafikverket TrainPosition data.
 
-    Only includes trains that appear in tv_announcements (i.e. expected at a
-    configured station) so we don't flood the map with irrelevant trains.
-    Positions older than 5 minutes are discarded.
+    Includes every train whose GPS position is within
+    config.TV_POSITION_RADIUS_KM of the configured center point
+    (default: Örebro C).  Operator/colour is resolved first from
+    tv_announcements (most accurate) and falls back to the
+    InformationOwner field in the TrainPosition record itself.
+    Positions older than 10 minutes are discarded.
     """
     with _lock:
         tv_positions = list(_data.get("tv_positions", []))
         tv_announcements = dict(_data.get("tv_announcements", {}))
 
-    # Build train_number → {operator, product} from announcement data
-    expected: dict[str, dict] = {}
+    # Build train_number → {operator, product} from announcement data (preferred source)
+    ann_info: dict[str, dict] = {}
     for bucket in tv_announcements.values():
         for entry in bucket.get("departures", []) + bucket.get("arrivals", []):
             tn = entry.get("train_number", "")
-            if tn and tn not in expected:
-                expected[tn] = {
-                    "operator": entry.get("operator", "").lower(),
-                    "product": entry.get("product", "").lower(),
+            if tn and tn not in ann_info:
+                ann_info[tn] = {
+                    "operator": entry.get("operator", ""),
+                    "product": entry.get("product", ""),
                 }
 
-    if not expected:
-        return []
+    center_lat = config.TV_POSITION_CENTER_LAT
+    center_lon = config.TV_POSITION_CENTER_LON
+    radius_m = config.TV_POSITION_RADIUS_KM * 1000
+    cos_clat = math.cos(math.radians(center_lat))
 
     cutoff = int(time.time()) - 600  # discard positions older than 10 min
-    result = []
+
+    # Deduplicate: keep only the newest position per train number
+    newest: dict[str, dict] = {}
     for pos in tv_positions:
         tn = pos.get("train_number", "")
-        if tn not in expected:
+        if not tn:
             continue
         ts = pos.get("timestamp") or 0
         if ts and ts < cutoff:
             continue
+        if tn not in newest or (ts or 0) > (newest[tn].get("timestamp") or 0):
+            newest[tn] = pos
 
-        info = expected[tn]
-        op = info["operator"]
-        prod = info["product"]
-        if "mälartåg" in op or "mälartåg" in prod:
-            color, long_name = "005B99", "Mälartåg"
-        elif "sj" in op:
-            color, long_name = "D4004C", "SJ"
-        elif "arriva" in op or "tib" in prod or "bergslagen" in prod:
-            color, long_name = "E87722", "Tåg i Bergslagen"
-        elif "snälltåget" in op:
-            color, long_name = "1A1A1A", "Snälltåget"
+    result = []
+    for tn, pos in newest.items():
+        ts = pos.get("timestamp") or 0
+
+        # Radius filter
+        plat, plon = pos["lat"], pos["lon"]
+        dlat = math.radians(plat - center_lat)
+        dlon = math.radians(plon - center_lon)
+        a = math.sin(dlat / 2) ** 2 + cos_clat * math.cos(math.radians(plat)) * math.sin(dlon / 2) ** 2
+        dist_m = 2 * 6_371_000 * math.asin(math.sqrt(max(0.0, a)))
+        if dist_m > radius_m:
+            continue
+
+        # Resolve operator: announcement data first, then InformationOwner from position
+        if tn in ann_info:
+            op = ann_info[tn]["operator"]
+            prod = ann_info[tn]["product"]
         else:
-            color, long_name = "555555", op.title() or "Tåg"
+            op = pos.get("operator", "")
+            prod = ""
+
+        color, long_name = _tv_operator_style(op, prod)
 
         result.append({
             "id": f"tv_{tn}",
             "vehicle_id": f"tv_{tn}",
             "label": tn,
-            "lat": pos["lat"],
-            "lon": pos["lon"],
+            "lat": plat,
+            "lon": plon,
             "bearing": pos.get("bearing"),
             "speed": pos.get("speed"),
             "current_status": "I trafik",
@@ -2243,12 +2374,10 @@ def _merge_trains(oxyfi_trains: list, tv_trains: list) -> list:
 
 
 def _push_train_positions():
-    """Push merged bus+train positions via SSE (runs every 5 s if trains are active)."""
+    """Push merged bus+train positions via SSE every 5 s."""
     oxyfi_trains = oxyfi.get_trains()
     tv_trains = _tv_trains_from_positions()
     trains = _merge_trains(oxyfi_trains, tv_trains)
-    if not trains:
-        return
     with _lock:
         vehicle_list = list(_data["vehicles"])
         ts = _data["last_vehicle_update"]
@@ -2257,33 +2386,133 @@ def _push_train_positions():
     _push_sse("vehicles", {"vehicles": combined, "timestamp": ts, "count": len(combined)})
 
 
+def _update_tv_positions(new_positions: list) -> None:
+    """Merge a batch of streaming TrainPosition updates into _data['tv_positions'].
+
+    Entries with deleted=True remove the train from the cache; all others
+    replace (or insert) the entry for that train_number.
+    """
+    with _lock:
+        current = {p["train_number"]: p
+                   for p in _data.get("tv_positions", [])
+                   if p.get("train_number")}
+        for p in new_positions:
+            tn = p.get("train_number")
+            if not tn:
+                continue
+            if p.get("deleted"):
+                current.pop(tn, None)
+            else:
+                current[tn] = p
+        _data["tv_positions"] = list(current.values())
+    _invalidate_cache()
+
+
+def _run_tv_position_stream() -> None:
+    """Background thread: subscribe to TrainPosition changes via Trafikverket SSE.
+
+    Flow (as recommended by TRV docs):
+      1. POST with sseurl=true  → get snapshot of current positions + SSEURL
+      2. Connect to SSEURL       → receive all future changes in real time
+      3. On 404 (endpoint expired) → go to step 1
+      4. On other errors           → reconnect to same SSEURL + lasteventid
+                                     with exponential back-off
+    """
+    import requests as _requests  # local import to avoid circular at module level
+
+    last_event_id: str | None = None
+    sseurl: str | None = None
+    backoff = 5
+
+    while True:
+        try:
+            if not sseurl:
+                positions, sseurl = tv_api.fetch_position_sseurl()
+                if not positions and not sseurl:
+                    # API key missing or fetch failed — wait and retry
+                    time.sleep(backoff)
+                    backoff = min(backoff * 2, 300)
+                    continue
+                with _lock:
+                    _data["tv_positions"] = positions
+                    _data["tv_last_poll"] = int(time.time())
+                    _data["tv_last_error"] = None
+                _invalidate_cache()
+                last_event_id = None  # fresh endpoint, start from beginning
+                if not sseurl:
+                    print("tv-sse: no SSEURL returned — position streaming unavailable")
+                    return
+
+            print(f"tv-sse: connecting (last_event_id={last_event_id})")
+            with _lock:
+                _data["tv_sse_state"] = "connected"
+            for event_id, positions in tv_api.iter_position_stream(sseurl, last_event_id):
+                last_event_id = event_id
+                backoff = 5  # reset on successful messages
+                _update_tv_positions(positions)
+                with _lock:
+                    _data["tv_last_poll"] = int(time.time())
+                    _data["tv_last_error"] = None
+                    _data["tv_sse_state"] = "connected"
+
+            # iter_position_stream exhausted without error → stream closed cleanly
+            print("tv-sse: stream closed, reconnecting")
+            with _lock:
+                _data["tv_sse_state"] = "reconnecting"
+            time.sleep(2)
+
+        except _requests.HTTPError as exc:
+            status = exc.response.status_code if exc.response is not None else 0
+            if status == 404:
+                print("tv-sse: endpoint expired (404), recreating")
+                sseurl = None
+                last_event_id = None
+                # no sleep — recreate immediately
+            else:
+                print(f"tv-sse: HTTP {status}, recreating endpoint")
+                with _lock:
+                    _data["tv_last_error"] = f"HTTP {status}"
+                sseurl = None
+                last_event_id = None
+                time.sleep(backoff)
+                backoff = min(backoff * 2, 300)
+            with _lock:
+                _data["tv_sse_state"] = "reconnecting"
+
+        except Exception as exc:
+            print(f"tv-sse: error: {exc}")
+            with _lock:
+                _data["tv_last_error"] = str(exc)
+                _data["tv_sse_state"] = "reconnecting"
+            # Keep sseurl + last_event_id so we can resume from where we left off
+            time.sleep(backoff)
+            backoff = min(backoff * 2, 300)
+
+
 def _init_trafikverket():
-    """Load TrainStation lookup table once at startup."""
+    """Load TrainStation lookup table, start SSE position stream, do first announcement poll."""
     stations = tv_api.fetch_train_stations()
     with _lock:
         _data["tv_stations"] = stations
-    if stations:
-        _poll_trafikverket()
+    threading.Thread(target=_run_tv_position_stream, daemon=True, name="tv-sse").start()
+    _poll_trafikverket()
 
 
 def _poll_trafikverket():
-    """Fetch TrainAnnouncement + TrainPosition data and cache."""
+    """Fetch TrainAnnouncement + StationMessages (positions come via SSE stream)."""
     loc_sigs = list(config.TRAFIKVERKET_STATIONS.values())
     if not loc_sigs:
         return
+
     announcements = tv_api.fetch_announcements(
         loc_sigs, minutes_ahead=config.TRAFIKVERKET_LOOKAHEAD_MINUTES
     )
-    positions = tv_api.fetch_train_positions()
     messages = tv_api.fetch_station_messages(loc_sigs)
+
     with _lock:
         if announcements:
             _data["tv_announcements"] = announcements
-        if positions:
-            _data["tv_positions"] = positions
-        _data["tv_messages"] = messages  # empty dict = no messages, still valid
-        _data["tv_last_poll"] = int(time.time())
-        _data["tv_last_error"] = None
+        _data["tv_messages"] = messages
     _invalidate_cache()
 
 
@@ -2300,10 +2529,10 @@ def start_background_tasks():
     scheduler.add_job(_refresh_static_departures, "cron", hour=0, minute=1, max_instances=1)
     # Retry GTFS static loading every 60s if it failed
     scheduler.add_job(_retry_gtfs_if_needed, "interval", seconds=60, max_instances=1)
-    # Push live train positions via SSE every 5 seconds (Oxyfi updates ~1/s per train)
-    scheduler.add_job(_push_train_positions, "interval", seconds=5, max_instances=1)
-    # Poll Trafikverket TrainAnnouncement for departure board data with train numbers
-    if config.TRAFIKVERKET_API_KEY and config.TRAFIKVERKET_STATIONS:
+    # Push live vehicle positions via SSE at the same cadence as RT polling
+    scheduler.add_job(_push_train_positions, "interval", seconds=config.RT_POLL_SECONDS, max_instances=1)
+    # Poll Trafikverket positions (always) and announcements (when stations configured)
+    if config.TRAFIKVERKET_API_KEY:
         scheduler.add_job(_poll_trafikverket, "interval",
                           seconds=config.TRAFIKVERKET_POLL_SECONDS, max_instances=1)
     scheduler.start()

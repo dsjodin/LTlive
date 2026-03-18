@@ -271,6 +271,10 @@
         .row.row-canceled { opacity: 0.6; }
         .canceled-badge { background: #c0392b; color: #fff; font-size: 0.65em; padding: 1px 5px; border-radius: 3px; margin-left: 5px; vertical-align: middle; }
         .deviation { color: #e67e22; font-size: 0.75em; margin-left: 6px; }
+        .other-info { color: #8b9fb7; font-size: 0.75em; margin-left: 6px; }
+        .platform-msg { color: #c0a060; font-size: 0.75em; margin-left: 6px; }
+        .time-prelim { font-style: italic; opacity: 0.80; }
+        .bus-tag { background: #4a4a4a; color: #fff; font-size: 0.62em; padding: 1px 4px; border-radius: 3px; margin-left: 4px; vertical-align: middle; letter-spacing: 0.3px; }
 
         .badge {
             display: inline-flex;
@@ -526,12 +530,13 @@ const PRESET_STATIONS = {
     },
 };
 
-let currentStopId   = null;
-let currentStopName = "";
-let currentMode     = "dep"; // "dep" | "arr"
-let refreshTimer    = null;
-let countdownTimer  = null;
-let liveTibTrains   = []; // from /api/vehicles
+let currentStopId      = null;
+let currentStopName    = "";
+let currentMode        = "dep"; // "dep" | "arr"
+let refreshTimer       = null;
+let countdownTimer     = null;
+let liveTibTrains      = []; // from /api/vehicles
+let platformMessages   = {}; // track → [{body, status}] from Plattformsskylt
 
 // ── Clock ──────────────────────────────────────────────
 function updateClock() {
@@ -795,24 +800,29 @@ async function loadMessages() {
     if (!currentStopId) return;
     try {
         const data = await fetch(`${API}/station-messages/${encodeURIComponent(currentStopId)}`).then(r => r.json());
+
+        // Plattformsskylt: store globally so train rows can look up by track
+        platformMessages = data.platform_messages || {};
+
+        // Utrop: show as station-wide banner
         const el = document.getElementById("station-messages");
-        const msgs = data.messages || [];
-        if (!msgs.length) {
+        const announcements = data.announcements || [];
+        if (!announcements.length) {
             el.style.display = "none";
             el.innerHTML = "";
             return;
         }
-        el.innerHTML = msgs.map(m => `
+        el.innerHTML = announcements.map(m => `
             <div class="msg-card">
-                <span class="msg-icon">&#9888;&#65039;</span>
+                <span class="msg-icon">&#128227;</span>
                 <div class="msg-body">
-                    ${m.header ? `<span class="msg-header">${m.header}</span>` : ""}
-                    ${m.body   ? `<span class="msg-text">${m.body}</span>`     : ""}
+                    ${m.body ? `<span class="msg-text">${m.body}</span>` : ""}
                 </div>
             </div>`).join("");
         el.style.display = "flex";
     } catch {
-        // Non-critical — hide on error
+        // Non-critical — reset and hide on error
+        platformMessages = {};
         document.getElementById("station-messages").style.display = "none";
     }
 }
@@ -888,6 +898,13 @@ async function loadDepartures(board) {
             : (d.headsign || "");
         const deviationText = (d.deviation && d.deviation.length)
             ? `<span class="deviation">${d.deviation.join(", ")}</span>` : "";
+        const otherInfoText = (d.other_info && d.other_info.length)
+            ? `<span class="other-info">${d.other_info.join(", ")}</span>` : "";
+        const isBusReplacement = d.traffic_type === "Buss";
+        const busTag = isBusReplacement ? `<span class="bus-tag">Buss</span>` : "";
+        const trackMsgs = d.platform ? (platformMessages[d.platform] || []) : [];
+        const platformMsgText = trackMsgs.length
+            ? `<span class="platform-msg">${trackMsgs.map(m => m.body).join(" · ")}</span>` : "";
         const viaText = (d.via && d.via.length) ? `via ${d.via.join(" · ")}` : "";
         const depSubText = viaText ? `${rtDot}${viaText}` : (d.is_realtime ? `${rtDot}Realtid` : "");
         const trackChangedClass = d.track_changed ? " track-changed" : "";
@@ -895,17 +912,18 @@ async function loadDepartures(board) {
         const schedClock = isDelayed
             ? new Date(d.scheduled_time * 1000).toLocaleTimeString("sv-SE", { hour: "2-digit", minute: "2-digit" })
             : null;
+        const prelimClass = d.preliminary ? " time-prelim" : "";
         const clockHtml = isDelayed
-            ? `<span class="time-orig">${schedClock}</span><span class="time-new">${clock}</span>`
-            : clock;
+            ? `<span class="time-orig">${schedClock}</span><span class="time-new${prelimClass}">${clock}</span>`
+            : (d.preliminary ? `<span class="time-prelim">${clock}</span>` : clock);
         return `<div class="row dep-grid ${nowClass}${pastClass}${canceledClass}">
             <div class="badge-cell">
                 <span class="badge" style="background:${bg};color:${fg}">${trainLabel}</span>
                 ${opTag}
             </div>
             <div class="destination">
-                <div class="destination-main">${headsignText}${liveTag}</div>
-                <div class="destination-sub">${depSubText}${deviationText}</div>
+                <div class="destination-main">${headsignText}${busTag}${liveTag}</div>
+                <div class="destination-sub">${depSubText}${deviationText}${otherInfoText}${platformMsgText}</div>
             </div>
             <span class="track"><span class="track-num${trackChangedClass}">${d.platform || "–"}</span></span>
             <span class="sched-time">${clockHtml}</span>
@@ -955,22 +973,30 @@ async function loadArrivals(board) {
         const fromDisplay = a.canceled ? `<s>${fromLabel}</s> <span class="canceled-badge">Inställt</span>` : fromLabel;
         const deviationText = (a.deviation && a.deviation.length)
             ? `<span class="deviation">${a.deviation.join(", ")}</span>` : "";
+        const otherInfoText = (a.other_info && a.other_info.length)
+            ? `<span class="other-info">${a.other_info.join(", ")}</span>` : "";
+        const isBusReplacement = a.traffic_type === "Buss";
+        const busTag = isBusReplacement ? `<span class="bus-tag">Buss</span>` : "";
+        const arrTrackMsgs = a.platform ? (platformMessages[a.platform] || []) : [];
+        const arrPlatformMsgText = arrTrackMsgs.length
+            ? `<span class="platform-msg">${arrTrackMsgs.map(m => m.body).join(" · ")}</span>` : "";
         const arrTrackChangedClass = a.track_changed ? " track-changed" : "";
         const arrIsDelayed = a.is_realtime && a.scheduled_time && a.arrival_time !== a.scheduled_time;
         const arrSchedClock = arrIsDelayed
             ? new Date(a.scheduled_time * 1000).toLocaleTimeString("sv-SE", { hour: "2-digit", minute: "2-digit" })
             : null;
+        const arrPrelimClass = a.preliminary ? " time-prelim" : "";
         const arrClockHtml = arrIsDelayed
-            ? `<span class="time-orig">${arrSchedClock}</span><span class="time-new">${clock}</span>`
-            : clock;
+            ? `<span class="time-orig">${arrSchedClock}</span><span class="time-new${arrPrelimClass}">${clock}</span>`
+            : (a.preliminary ? `<span class="time-prelim">${clock}</span>` : clock);
         return `<div class="row arr-grid ${nowClass}${pastClass}${canceledClass}">
             <div class="badge-cell">
                 <span class="badge" style="background:${bg};color:${fg}">${trainLabel}</span>
                 ${opTag}
             </div>
             <div class="destination">
-                <div class="destination-main">${fromDisplay}${liveTag}</div>
-                <div class="destination-sub">${sub}${deviationText}</div>
+                <div class="destination-main">${fromDisplay}${busTag}${liveTag}</div>
+                <div class="destination-sub">${sub}${deviationText}${otherInfoText}${arrPlatformMsgText}</div>
             </div>
             <span class="track"><span class="track-num${arrTrackChangedClass}">${a.platform || "–"}</span></span>
             <span class="sched-time">${arrClockHtml}</span>

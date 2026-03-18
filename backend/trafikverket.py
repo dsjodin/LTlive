@@ -2,7 +2,11 @@
 
 Fetches TrainAnnouncement (departure/arrival boards with train numbers)
 and TrainPosition (real-time GPS) from api.trafikinfo.trafikverket.se.
+
+TrainPosition is consumed via SSE streaming (sseurl=true) for near-real-time
+updates instead of periodic polling.
 """
+import json
 import logging
 import re
 import time
@@ -16,6 +20,7 @@ log = logging.getLogger(__name__)
 
 _TV_URL = "https://api.trafikinfo.trafikverket.se/v2/data.json"
 _SESSION = requests.Session()
+_SSE_SESSION = requests.Session()  # dedicated session for long-lived SSE connections
 
 
 def _post(xml_body: str) -> dict:
@@ -25,6 +30,8 @@ def _post(xml_body: str) -> dict:
         headers={"Content-Type": "application/xml"},
         timeout=15,
     )
+    if not resp.ok:
+        log.warning("Trafikverket API error %s: %s", resp.status_code, resp.text[:500])
     resp.raise_for_status()
     return resp.json()
 
@@ -58,6 +65,7 @@ def fetch_train_stations() -> dict:
     </FILTER>
     <INCLUDE>LocationSignature</INCLUDE>
     <INCLUDE>AdvertisedLocationName</INCLUDE>
+    <INCLUDE>AdvertisedShortLocationName</INCLUDE>
     <INCLUDE>Geometry.WGS84</INCLUDE>
   </QUERY>
 </REQUEST>"""
@@ -72,7 +80,8 @@ def fetch_train_stations() -> dict:
             m = re.search(r"POINT\s*\(([0-9.]+)\s+([0-9.]+)\)", wgs)
             if m:
                 lon, lat = float(m.group(1)), float(m.group(2))
-            result[sig] = {"name": name, "lat": lat, "lon": lon}
+            short_name = st.get("AdvertisedShortLocationName", "") or name
+            result[sig] = {"name": name, "short_name": short_name, "lat": lat, "lon": lon}
         log.info("Loaded %d train stations from Trafikverket", len(result))
         return result
     except Exception as exc:
@@ -132,6 +141,9 @@ def fetch_announcements(location_signatures: list[str], minutes_ahead: int = 120
     <INCLUDE>Operator</INCLUDE>
     <INCLUDE>InformationOwner</INCLUDE>
     <INCLUDE>Deviation</INCLUDE>
+    <INCLUDE>OtherInformation</INCLUDE>
+    <INCLUDE>TypeOfTraffic</INCLUDE>
+    <INCLUDE>EstimatedTimeIsPreliminary</INCLUDE>
   </QUERY>
 </REQUEST>"""
 
@@ -178,11 +190,22 @@ def fetch_announcements(location_signatures: list[str], minutes_ahead: int = 120
         deviation = ann.get("Deviation", []) or []
         deviation_texts = [d.get("Description", "") for d in deviation if d.get("Description")]
 
+        other_info_list = ann.get("OtherInformation", []) or []
+        other_info_texts = [o.get("Description", "") for o in other_info_list if o.get("Description")]
+
+        traffic_type_list = ann.get("TypeOfTraffic", []) or []
+        traffic_type = traffic_type_list[0].get("Description", "") if traffic_type_list else ""
+
+        # Mark as preliminary only when there's an estimated time (not actual) and the flag is set
+        est_is_prelim = ann.get("EstimatedTimeIsPreliminary", False)
+        preliminary = bool(est_is_prelim and rt_time and not actual_ts)
+
         entry = {
             "train_number": ann.get("AdvertisedTrainIdent", ""),
             "scheduled_time": sched_time,
             "realtime_time": rt_time,
             "is_realtime": is_realtime,
+            "preliminary": preliminary,
             "track": ann.get("TrackAtLocation", ""),
             "dest_sig": dest_sig,
             "origin_sig": origin_sig,
@@ -191,6 +214,8 @@ def fetch_announcements(location_signatures: list[str], minutes_ahead: int = 120
             "product": product,
             "operator": ann.get("Operator", "") or ann.get("InformationOwner", ""),
             "deviation": deviation_texts,
+            "other_info": other_info_texts,
+            "traffic_type": traffic_type,
         }
 
         bucket = result.setdefault(loc_sig, {"departures": [], "arrivals": []})
@@ -202,99 +227,161 @@ def fetch_announcements(location_signatures: list[str], minutes_ahead: int = 120
     return result
 
 
-def fetch_train_positions(location_signatures: set | None = None) -> list:
-    """Fetch active TrainPosition objects.
+def _parse_position(pos: dict) -> dict | None:
+    """Parse a single raw TrainPosition object into our dict format.
 
-    Returns list of dicts with:
-        train_number, lat, lon, bearing, speed, timestamp
-    If location_signatures is given, only return trains whose
-    AdvertisedTrainNumber matches trains expected at those stations
-    (caller must filter by train_number whitelist).
+    Returns None for invalid/missing geometry.
+    Returned dict has deleted=True for removed trains (lat/lon will be absent).
+    """
+    train = pos.get("Train", {})
+    adv_num = (train.get("AdvertisedTrainNumber", "")
+               or train.get("OperationalTrainNumber", ""))
+    if pos.get("Deleted"):
+        return {"train_number": adv_num, "deleted": True}
+    wgs = pos.get("Position", {}).get("WGS84", "")
+    m = re.search(r"POINT\s*\(([0-9.]+)\s+([0-9.]+)\)", wgs)
+    if not m:
+        return None
+    lon, lat = float(m.group(1)), float(m.group(2))
+    ts = _ts_to_unix(pos.get("TimeStamp", ""))
+    speed_kmh = pos.get("Speed")
+    return {
+        "train_number": adv_num,
+        "operator": "",  # resolved via announcements in app.py
+        "lat": lat,
+        "lon": lon,
+        "bearing": pos.get("Bearing"),
+        "speed": speed_kmh / 3.6 if speed_kmh is not None else None,
+        "timestamp": ts,
+        "deleted": False,
+    }
+
+
+def fetch_position_sseurl() -> tuple[list, str]:
+    """Fetch initial TrainPositions and obtain an SSE streaming endpoint.
+
+    Returns (parsed_positions, sseurl).  The SSEURL points to a stream that
+    will push every future TrainPosition change after the snapshot returned here.
+    If TRV doesn't return an SSEURL the string will be empty — callers must
+    fall back to periodic polling in that case.
     """
     if not config.TRAFIKVERKET_API_KEY:
-        return []
+        return [], ""
 
     xml = f"""<REQUEST>
   <LOGIN authenticationkey="{config.TRAFIKVERKET_API_KEY}" />
-  <QUERY objecttype="TrainPosition" schemaversion="1.1" limit="1000">
-    <FILTER>
-      <EQ name="Status.Active" value="true" />
-    </FILTER>
-    <INCLUDE>Train.AdvertisedTrainNumber</INCLUDE>
-    <INCLUDE>Train.OperationalTrainNumber</INCLUDE>
-    <INCLUDE>Position.WGS84</INCLUDE>
-    <INCLUDE>Bearing</INCLUDE>
-    <INCLUDE>Speed</INCLUDE>
-    <INCLUDE>TimeStamp</INCLUDE>
-    <INCLUDE>Deleted</INCLUDE>
+  <QUERY objecttype="TrainPosition" namespace="järnväg.trafikinfo"
+         schemaversion="1.1" sseurl="true" limit="2000">
   </QUERY>
 </REQUEST>"""
 
     try:
         data = _post(xml)
-        positions = data["RESPONSE"]["RESULT"][0].get("TrainPosition", [])
+        result_obj = data["RESPONSE"]["RESULT"][0]
+        positions_raw = result_obj.get("TrainPosition", [])
+        sseurl = result_obj.get("INFO", {}).get("SSEURL", "")
     except Exception as exc:
-        log.warning("TrainPosition fetch failed: %s", exc)
-        return []
+        log.warning("TrainPosition initial fetch failed: %s", exc)
+        return [], ""
 
-    result = []
-    for pos in positions:
-        if pos.get("Deleted"):
-            continue
-        train = pos.get("Train", {})
-        adv_num = train.get("AdvertisedTrainNumber", "") or train.get("OperationalTrainNumber", "")
-        wgs = pos.get("Position", {}).get("WGS84", "")
-        m = re.search(r"POINT\s*\(([0-9.]+)\s+([0-9.]+)\)", wgs)
-        if not m:
-            continue
-        lon, lat = float(m.group(1)), float(m.group(2))
-        ts = _ts_to_unix(pos.get("TimeStamp", ""))
-        result.append({
-            "train_number": adv_num,
-            "lat": lat,
-            "lon": lon,
-            "bearing": pos.get("Bearing"),
-            "speed": pos.get("Speed"),
-            "timestamp": ts,
-        })
+    positions = [p for raw in positions_raw if (p := _parse_position(raw)) and not p.get("deleted")]
+    log.info("TrainPosition initial fetch: %d positions, sseurl=%s",
+             len(positions), sseurl[:80] if sseurl else "(none)")
+    return positions, sseurl
 
-    return result
+
+def iter_position_stream(sseurl: str, last_event_id: str | None = None):
+    """Iterate over TrainPosition SSE change events.
+
+    Yields (event_id, positions_list) for each SSE message received.
+    Each entry in positions_list is a parsed position dict; entries with
+    deleted=True indicate a train that should be removed from the cache.
+
+    Raises requests.HTTPError with status 404 when the dynamic endpoint has
+    been cleaned up by TRV — the caller must request a new SSEURL.
+    Other network/HTTP errors propagate as-is so the caller can apply
+    exponential back-off and reconnect using the same SSEURL + lasteventid.
+    """
+    params: dict = {}
+    if last_event_id:
+        params["lasteventid"] = last_event_id
+
+    with _SSE_SESSION.get(
+        sseurl,
+        params=params,
+        stream=True,
+        timeout=(15, None),  # connect timeout 15 s, no read timeout
+        headers={"Accept": "text/event-stream"},
+    ) as resp:
+        resp.raise_for_status()
+
+        event_id: str | None = None
+        data_lines: list[str] = []
+
+        for raw_line in resp.iter_lines(decode_unicode=True):
+            if raw_line is None:
+                continue
+            if raw_line.startswith("id:"):
+                event_id = raw_line[3:].strip()
+            elif raw_line.startswith("data:"):
+                data_lines.append(raw_line[5:].strip())
+            elif raw_line == "" and data_lines:
+                data_str = "\n".join(data_lines)
+                data_lines = []
+                try:
+                    msg = json.loads(data_str)
+                    results = msg.get("RESPONSE", {}).get("RESULT", [{}])
+                    positions_raw = results[0].get("TrainPosition", []) if results else []
+                    positions = [p for raw in positions_raw
+                                 if (p := _parse_position(raw)) is not None]
+                    if positions:
+                        yield event_id, positions
+                except (json.JSONDecodeError, KeyError, IndexError) as exc:
+                    log.warning("TV SSE parse error: %s | data=%s", exc, data_str[:200])
+                event_id = None
+
+
+_MSG_STATUS_ORDER = {"StortLage": 0, "Hog": 1, "Normal": 2, "Lag": 3}
 
 
 def fetch_station_messages(location_signatures: list[str]) -> dict:
     """Fetch TrainStationMessage for given LocationSignatures.
 
-    Returns {location_sig: [{"header": str, "body": str, "start": int|None, "end": int|None}]}.
-    Only returns messages whose PrognosticatedEndOfEffect is in the future.
+    Returns {location_sig: [{"body": str, "media_type": str, "status": str,
+                              "start": int|None, "end": int|None}]}.
+    Only returns non-deleted messages whose EndDateTime is in the future,
+    sorted by importance (StortLage → Hog → Normal → Lag).
     """
     if not config.TRAFIKVERKET_API_KEY or not location_signatures:
         return {}
 
+    # TrainStationMessage uses LocationCode (= LocationSignature value)
     if len(location_signatures) == 1:
-        loc_filter = f'<EQ name="LocationSignature" value="{location_signatures[0]}" />'
+        loc_filter = f'<EQ name="LocationCode" value="{location_signatures[0]}" />'
     else:
         parts = "".join(
-            f'<EQ name="LocationSignature" value="{s}" />'
+            f'<EQ name="LocationCode" value="{s}" />'
             for s in location_signatures
         )
         loc_filter = f"<OR>{parts}</OR>"
 
     xml = f"""<REQUEST>
   <LOGIN authenticationkey="{config.TRAFIKVERKET_API_KEY}" />
-  <QUERY objecttype="TrainStationMessage" schemaversion="1.0" limit="100"
-         orderby="SortOrder">
+  <QUERY objecttype="TrainStationMessage" schemaversion="1.0" limit="100">
     <FILTER>
       <AND>
         {loc_filter}
-        <GT name="PrognosticatedEndOfEffect" value="$dateadd(-0:01:00)" />
+        <GT name="EndDateTime" value="$dateadd(-0:01:00)" />
+        <EQ name="Deleted" value="false" />
       </AND>
     </FILTER>
-    <INCLUDE>LocationSignature</INCLUDE>
-    <INCLUDE>Header</INCLUDE>
-    <INCLUDE>Body</INCLUDE>
-    <INCLUDE>PrognosticatedStartOfEffect</INCLUDE>
-    <INCLUDE>PrognosticatedEndOfEffect</INCLUDE>
-    <INCLUDE>SortOrder</INCLUDE>
+    <INCLUDE>LocationCode</INCLUDE>
+    <INCLUDE>FreeText</INCLUDE>
+    <INCLUDE>MediaType</INCLUDE>
+    <INCLUDE>Status</INCLUDE>
+    <INCLUDE>StartDateTime</INCLUDE>
+    <INCLUDE>EndDateTime</INCLUDE>
+    <INCLUDE>PlatformSignAttributes</INCLUDE>
   </QUERY>
 </REQUEST>"""
 
@@ -307,13 +394,30 @@ def fetch_station_messages(location_signatures: list[str]) -> dict:
 
     result: dict[str, list] = {}
     for msg in messages:
-        loc_sig = msg.get("LocationSignature", "")
+        loc_sig = msg.get("LocationCode", "")
         if not loc_sig:
             continue
+        # Extract tracks for Plattformsskylt messages
+        tracks: list[str] = []
+        ps_attrs = msg.get("PlatformSignAttributes") or {}
+        track_list = ps_attrs.get("TrackList") or {}
+        raw_tracks = track_list.get("Track") or []
+        # API may return a single string or a list
+        if isinstance(raw_tracks, str):
+            tracks = [raw_tracks]
+        else:
+            tracks = list(raw_tracks)
         result.setdefault(loc_sig, []).append({
-            "header": msg.get("Header", ""),
-            "body": msg.get("Body", ""),
-            "start": _ts_to_unix(msg.get("PrognosticatedStartOfEffect", "")),
-            "end": _ts_to_unix(msg.get("PrognosticatedEndOfEffect", "")),
+            "body": msg.get("FreeText", ""),
+            "media_type": msg.get("MediaType", ""),
+            "status": msg.get("Status", "Normal"),
+            "tracks": tracks,
+            "start": _ts_to_unix(msg.get("StartDateTime", "")),
+            "end": _ts_to_unix(msg.get("EndDateTime", "")),
         })
+
+    # Sort each station's messages by importance (highest first)
+    for msgs in result.values():
+        msgs.sort(key=lambda m: _MSG_STATUS_ORDER.get(m["status"], 2))
+
     return result
