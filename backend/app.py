@@ -1545,7 +1545,13 @@ def debug_tv_stations():
 
 @app.route("/api/station-messages/<stop_id>")
 def station_messages(stop_id):
-    """Return current Trafikverket TrainStationMessages for a stop."""
+    """Return current Trafikverket TrainStationMessages for a stop.
+
+    Response:
+      announcements    – Utrop messages (station-wide, show as banner)
+      platform_messages – dict {track: [messages]} for Plattformsskylt
+      station_name     – human-readable station name
+    """
     with _lock:
         tv_messages = dict(_data.get("tv_messages", {}))
         tv_stations = dict(_data.get("tv_stations", {}))
@@ -1563,10 +1569,24 @@ def station_messages(stop_id):
                 if loc_sig:
                     break
 
-    msgs = tv_messages.get(loc_sig, [])
+    all_msgs = tv_messages.get(loc_sig, [])
+
+    # Utrop = station-wide announcement banner
+    announcements = [m for m in all_msgs if m.get("media_type") == "Utrop"]
+
+    # Plattformsskylt = per-track messages shown on matching train rows
+    platform_messages: dict[str, list] = {}
+    for m in all_msgs:
+        if m.get("media_type") == "Plattformsskylt":
+            for track in m.get("tracks", []):
+                platform_messages.setdefault(track, []).append({
+                    "body": m["body"],
+                    "status": m.get("status", "Normal"),
+                })
+
     return jsonify({
-        "messages": msgs,
-        "count": len(msgs),
+        "announcements": announcements,
+        "platform_messages": platform_messages,
         "station_name": tv_stations.get(loc_sig, {}).get("name", "") if loc_sig else "",
     })
 

@@ -319,6 +319,7 @@ def fetch_station_messages(location_signatures: list[str]) -> dict:
     <INCLUDE>Status</INCLUDE>
     <INCLUDE>StartDateTime</INCLUDE>
     <INCLUDE>EndDateTime</INCLUDE>
+    <INCLUDE>PlatformSignAttributes</INCLUDE>
   </QUERY>
 </REQUEST>"""
 
@@ -334,10 +335,21 @@ def fetch_station_messages(location_signatures: list[str]) -> dict:
         loc_sig = msg.get("LocationCode", "")
         if not loc_sig:
             continue
+        # Extract tracks for Plattformsskylt messages
+        tracks: list[str] = []
+        ps_attrs = msg.get("PlatformSignAttributes") or {}
+        track_list = ps_attrs.get("TrackList") or {}
+        raw_tracks = track_list.get("Track") or []
+        # API may return a single string or a list
+        if isinstance(raw_tracks, str):
+            tracks = [raw_tracks]
+        else:
+            tracks = list(raw_tracks)
         result.setdefault(loc_sig, []).append({
             "body": msg.get("FreeText", ""),
             "media_type": msg.get("MediaType", ""),
             "status": msg.get("Status", "Normal"),
+            "tracks": tracks,
             "start": _ts_to_unix(msg.get("StartDateTime", "")),
             "end": _ts_to_unix(msg.get("EndDateTime", "")),
         })
