@@ -156,6 +156,8 @@
       padding: 4px 8px;
     }
     .veh-id { color: #778; font-size: 11px; font-family: monospace; }
+    .veh-tv-num { color: #f0a030; font-size: 11px; font-family: monospace; }
+    .veh-tv-num::before { content: "TV:"; color: #556; margin-right: 2px; }
     .veh-dest { color: #dde; font-weight: 600; }
     .veh-dest::before { content: "→ "; color: #556; }
     .veh-status { color: #aab; font-size: 11px; }
@@ -472,9 +474,15 @@ function buildLinesTable(byLine) {
           const speed = fmtSpeed(v.speed);
           const age = fmtAge(v.timestamp);
           const stale = isStale(v.timestamp);
+          const isOxyfi = !(v.vehicle_id || '').startsWith('tv_');
+          // For Oxyfi trains show rolling-stock ID (9xxx) + TV service number (8xxx label).
+          // For TV-only trains (no Oxyfi source) just show the label.
+          const rsId = isOxyfi ? (v.vehicle_id || '').split('.')[0] : null;
+          const tvNum = v.label && v.label !== rsId ? v.label : null;
           wrap.innerHTML += `
             <div class="veh-row">
-              <span class="veh-id">${esc(v.vehicle_id)}</span>
+              <span class="veh-id">${esc(isOxyfi ? (rsId || v.vehicle_id) : v.vehicle_id)}</span>
+              ${tvNum ? `<span class="veh-tv-num">${esc(tvNum)}</span>` : ''}
               <span class="veh-dest">${esc(v.trip_headsign || '?')}</span>
               <span class="veh-status">${esc(v.current_status || '')}</span>
               ${speed ? `<span class="veh-speed">${speed}</span>` : ''}
