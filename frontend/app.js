@@ -15,6 +15,7 @@ let vehicleMarkers = {};
 let routeLayers = {};
 let routeData = {};
 let activeFilters = new Set();
+let hiddenTypes = new Set(); // "bus" or "train"
 let showStops = true;
 let showRoutes = true;
 let showLabels = true;
@@ -368,6 +369,15 @@ function updateVehicles(vehicles) {
             return;
         }
 
+        const vType = v.vehicle_type === "train" ? "train" : "bus";
+        if (hiddenTypes.has(vType)) {
+            if (vehicleMarkers[id]) {
+                map.removeLayer(vehicleMarkers[id]);
+                delete vehicleMarkers[id];
+            }
+            return;
+        }
+
         const latlng = [v.lat, v.lon];
 
         // Calculate speed from position delta if feed doesn't provide it
@@ -689,6 +699,7 @@ function loadRoutes() {
             });
             document.getElementById("route-count").textContent = filtered.length;
             buildLineButtons(filtered);
+            initTypeFilterButtons();
             routesLoaded = true;
             console.log(`Loaded ${filtered.length} / ${data.count} routes (filtered by config)`);
 
@@ -903,6 +914,27 @@ function buildLineButtons(routes) {
         });
 
         container.appendChild(btn);
+    });
+}
+
+// --- Vehicle type filter buttons ---
+function initTypeFilterButtons() {
+    const types = [
+        { type: "bus",   label: "Bussar" },
+        { type: "train", label: "Tåg" },
+    ];
+    types.forEach(({ type, label }) => {
+        const btn = document.getElementById(`type-btn-${type}`);
+        if (!btn) return;
+        btn.addEventListener("click", () => {
+            if (hiddenTypes.has(type)) {
+                hiddenTypes.delete(type);
+                btn.classList.remove("inactive");
+            } else {
+                hiddenTypes.add(type);
+                btn.classList.add("inactive");
+            }
+        });
     });
 }
 
