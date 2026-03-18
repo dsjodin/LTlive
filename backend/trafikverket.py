@@ -243,12 +243,6 @@ def fetch_train_positions(location_signatures: set | None = None) -> list:
     <FILTER>
       <GT name="TimeStamp" value="$dateadd(-0:10:00)" />
     </FILTER>
-    <INCLUDE>Train</INCLUDE>
-    <INCLUDE>Position.WGS84</INCLUDE>
-    <INCLUDE>Bearing</INCLUDE>
-    <INCLUDE>Speed</INCLUDE>
-    <INCLUDE>TimeStamp</INCLUDE>
-    <INCLUDE>Deleted</INCLUDE>
   </QUERY>
 </REQUEST>"""
 
