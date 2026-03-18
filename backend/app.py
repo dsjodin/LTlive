@@ -106,12 +106,26 @@ def _merge_rt_static(rt_deps, static_deps):
       - its scheduled time is within _RT_STATIC_WINDOW seconds of any RT
         departure (handles delayed/early trips where the GTFS-RT trip_id or
         route_id format differs from the static GTFS data).
+
+    RT entries are annotated with "sched_time" (the static GTFS scheduled
+    time) so that callers can show the original scheduled time alongside the
+    realtime time even when they differ.
     """
     if not rt_deps:
         return list(static_deps)
 
-    rt_trip_ids = {d["trip_id"] for d in rt_deps}
-    rt_times = [d["time"] for d in rt_deps]
+    # Build trip_id → static scheduled time so we can annotate RT entries
+    static_by_trip: dict[str, int] = {d["trip_id"]: d["time"] for d in static_deps}
+
+    rt_trip_ids = set()
+    annotated_rt = []
+    for dep in rt_deps:
+        trip_id = dep["trip_id"]
+        rt_trip_ids.add(trip_id)
+        sched = static_by_trip.get(trip_id)
+        annotated_rt.append({**dep, "sched_time": sched} if sched is not None else dep)
+
+    rt_times = [d["time"] for d in annotated_rt]
 
     filtered_static = []
     for dep in static_deps:
@@ -122,7 +136,7 @@ def _merge_rt_static(rt_deps, static_deps):
             continue
         filtered_static.append(dep)
 
-    return rt_deps + filtered_static
+    return annotated_rt + filtered_static
 
 
 def _cache_get(key):
@@ -828,7 +842,8 @@ def departures_for_stop(stop_id):
         tv_operator = ""
         tv_product = ""
         if loc_sig and tv_ann.get(loc_sig):
-            dep_time = d["time"]
+            # Use static scheduled time for matching when available (RT time may be delayed)
+            dep_time = d.get("sched_time") or d["time"]
             tv_ops = config.TRAFIKVERKET_OPERATORS
             best_tv = None
             best_diff = float("inf")
@@ -894,8 +909,10 @@ def departures_for_stop(stop_id):
                     tv_via.append(vname)
 
         platform = tv_track or d.get("_platform", "")
-        # Use TV scheduled time as base when matched (more accurate than GTFS)
-        sched_time = tv_sched_override if tv_sched_override else d["time"]
+        # Use TV scheduled time as base when matched (more accurate than GTFS).
+        # For unmatched GTFS-RT entries, prefer the static scheduled time so
+        # that departure_time (realtime) and scheduled_time can actually differ.
+        sched_time = tv_sched_override if tv_sched_override else (d.get("sched_time") or d["time"])
         # When TV is matched, only use TV realtime (don't fall back to GTFS-RT —
         # that would show a delay TV doesn't know about)
         rt_time = tv_rt_time if tv_sched_override else (d["time"] if d["is_realtime"] else None)
@@ -1096,7 +1113,8 @@ def arrivals_for_stop(stop_id):
         tv_arr_sched_override = None
         tv_arr_track_changed = False
         if loc_sig and tv_ann.get(loc_sig):
-            arr_time = a["time"]
+            # Use static scheduled time for matching when available (RT time may be delayed)
+            arr_time = a.get("sched_time") or a["time"]
             tv_ops = config.TRAFIKVERKET_OPERATORS
             best_tv = None
             best_diff = float("inf")
@@ -1156,7 +1174,7 @@ def arrivals_for_stop(stop_id):
         if origin and origin in dest_stop_names:
             continue
 
-        arr_sched_time = tv_arr_sched_override if tv_arr_sched_override else a["time"]
+        arr_sched_time = tv_arr_sched_override if tv_arr_sched_override else (a.get("sched_time") or a["time"])
         arrs.append({
             "route_short_name": rsn,
             "trip_short_name": trip_short_name,
