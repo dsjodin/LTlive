@@ -790,11 +790,11 @@ function operatorTag(operator, product) {
     const op = (operator || "").toLowerCase();
     const pr = (product  || "").toLowerCase();
     if (op.includes("mälartåg") || pr.includes("mälartåg"))
-        return `<span class="op-tag" style="background:#005B99">Mälartåg</span>`;
+        return `<span class="op-tag" style="background:#00204c">Mälartåg</span>`;
     if (op.includes("sj"))
-        return `<span class="op-tag" style="background:#D4004C">SJ</span>`;
+        return `<span class="op-tag" style="background:#00ab3b">SJ</span>`;
     if (op.includes("arriva") || pr.includes("bergslagen"))
-        return `<span class="op-tag" style="background:#E87722">TiB</span>`;
+        return `<span class="op-tag" style="background:#c0311a">TiB</span>`;
     if (op.includes("snälltåget"))
         return `<span class="op-tag" style="background:#1a1a1a">Snälltåget</span>`;
     return "";
