@@ -244,8 +244,8 @@
             letter-spacing: 0.5px;
             text-transform: uppercase;
         }
-        #col-header.dep-grid { grid-template-columns: 72px 1fr 52px 72px 72px 92px 1.4fr; gap: 0 12px; }
-        #col-header.arr-grid { grid-template-columns: 72px 1fr 52px 72px 72px 92px 1.4fr; gap: 0 12px; }
+        #col-header.dep-grid { grid-template-columns: 72px 72px 1fr 52px 72px 72px 92px 1.4fr; gap: 0 12px; }
+        #col-header.arr-grid { grid-template-columns: 72px 72px 1fr 52px 72px 72px 92px 1.4fr; gap: 0 12px; }
 
         /* ── Board ── */
         #board-wrap {
@@ -271,8 +271,8 @@
             gap: 0 12px;
             padding: 11px 20px;
         }
-        .row.dep-grid { grid-template-columns: 72px 1fr 52px 72px 72px 92px 1.4fr; }
-        .row.arr-grid { grid-template-columns: 72px 1fr 52px 72px 72px 92px 1.4fr; }
+        .row.dep-grid { grid-template-columns: 72px 72px 1fr 52px 72px 72px 92px 1.4fr; }
+        .row.arr-grid { grid-template-columns: 72px 72px 1fr 52px 72px 72px 92px 1.4fr; }
 
         .via-row {
             padding: 0 20px 8px 20px;
@@ -295,13 +295,20 @@
             color: var(--yellow);
             white-space: nowrap;
         }
-        .time-orig {
+        .time-col.time-delayed {
+            color: var(--muted);
             text-decoration: line-through;
-            opacity: 0.5;
-            font-size: 0.8em;
-            margin-right: 4px;
+            font-weight: 400;
         }
-        .time-new { color: var(--orange); }
+        .newtime-col {
+            font-size: clamp(1rem, 2vw, 1.3rem);
+            font-variant-numeric: tabular-nums;
+            font-family: monospace;
+            font-weight: 700;
+            color: var(--orange);
+            white-space: nowrap;
+        }
+        .time-prelim { font-style: italic; opacity: 0.80; }
 
         .dest-col {
             min-width: 0;
@@ -524,6 +531,7 @@
 
 <div id="col-header" class="dep-grid">
     <span>Tid</span>
+    <span>Ny tid</span>
     <span>Till</span>
     <span style="text-align:center">Spår</span>
     <span>Tågnr</span>
@@ -756,6 +764,7 @@ function setMode(mode) {
     if (mode === "dep") {
         colHdr.innerHTML = `
             <span>Tid</span>
+            <span>Ny tid</span>
             <span>Till</span>
             <span style="text-align:center">Spår</span>
             <span>Tågnr</span>
@@ -765,6 +774,7 @@ function setMode(mode) {
     } else {
         colHdr.innerHTML = `
             <span>Tid</span>
+            <span>Ny tid</span>
             <span>Från</span>
             <span style="text-align:center">Spår</span>
             <span>Tågnr</span>
@@ -965,13 +975,15 @@ async function loadDepartures(board) {
         const headsignText = d.canceled ? `<s>${d.headsign || ""}</s>` : (d.headsign || "");
         const trackChangedClass = d.track_changed ? " track-changed" : "";
         const isDelayed = d.is_realtime && d.scheduled_time && d.departure_time !== d.scheduled_time;
-        const schedClock = isDelayed
-            ? new Date(d.scheduled_time * 1000).toLocaleTimeString("sv-SE", { hour: "2-digit", minute: "2-digit" })
-            : null;
+        const schedClock = new Date((d.scheduled_time || d.departure_time) * 1000)
+            .toLocaleTimeString("sv-SE", { hour: "2-digit", minute: "2-digit" });
         const prelimClass = d.preliminary ? " time-prelim" : "";
-        const clockHtml = isDelayed
-            ? `<span class="time-orig">${schedClock}</span><span class="time-new${prelimClass}">${clock}</span>`
-            : (d.preliminary ? `<span class="time-prelim">${clock}</span>` : clock);
+        const tidHtml = isDelayed
+            ? `<span class="time-col time-delayed">${schedClock}</span>`
+            : `<span class="time-col${d.preliminary ? " time-prelim" : ""}">${schedClock}</span>`;
+        const nytidHtml = isDelayed
+            ? `<span class="newtime-col${prelimClass}">${clock}</span>`
+            : `<span></span>`;
         const viaRow = (d.via && d.via.length)
             ? `<div class="via-row">${rtDot}via ${d.via.join(" · ")}</div>`
             : (d.is_realtime ? `<div class="via-row">${rtDot}Realtid</div>` : "");
@@ -980,10 +992,10 @@ async function loadDepartures(board) {
         const etaInner   = useSignal ? SIGNAL_SVG : etaText;
         const etaClass   = useSignal ? "eta-signal" : etaCls;
         const signalAttr = useSignal ? ' data-signal="true"' : '';
-        const wrapExtra  = useSignal ? " row-signal" : (nowClass + pastClass + canceledClass);
         return `<div class="row-wrap${useSignal ? " row-signal" + canceledClass : " " + nowClass + pastClass + canceledClass}">
             <div class="row dep-grid">
-                <span class="time-col">${clockHtml}</span>
+                ${tidHtml}
+                ${nytidHtml}
                 <span class="dest-col">${headsignText}${liveTag}</span>
                 <span class="track"><span class="track-num${trackChangedClass}">${d.platform || "–"}</span></span>
                 <span class="trainno-col">${trainLabel}</span>
@@ -1033,13 +1045,15 @@ async function loadArrivals(board) {
         const opTag = operatorTag(a.operator, a.product);
         const arrTrackChangedClass = a.track_changed ? " track-changed" : "";
         const arrIsDelayed = a.is_realtime && a.scheduled_time && a.arrival_time !== a.scheduled_time;
-        const arrSchedClock = arrIsDelayed
-            ? new Date(a.scheduled_time * 1000).toLocaleTimeString("sv-SE", { hour: "2-digit", minute: "2-digit" })
-            : null;
         const arrPrelimClass = a.preliminary ? " time-prelim" : "";
-        const arrClockHtml = arrIsDelayed
-            ? `<span class="time-orig">${arrSchedClock}</span><span class="time-new${arrPrelimClass}">${clock}</span>`
-            : (a.preliminary ? `<span class="time-prelim">${clock}</span>` : clock);
+        const arrSchedClock2 = new Date((a.scheduled_time || a.arrival_time) * 1000)
+            .toLocaleTimeString("sv-SE", { hour: "2-digit", minute: "2-digit" });
+        const arrTidHtml = arrIsDelayed
+            ? `<span class="time-col time-delayed">${arrSchedClock2}</span>`
+            : `<span class="time-col${a.preliminary ? " time-prelim" : ""}">${arrSchedClock2}</span>`;
+        const arrNytidHtml = arrIsDelayed
+            ? `<span class="newtime-col${arrPrelimClass}">${clock}</span>`
+            : `<span></span>`;
         const viaRow = (a.via && a.via.length)
             ? `<div class="via-row">${rtDot}via ${a.via.join(" · ")}</div>`
             : (a.is_realtime ? `<div class="via-row">${rtDot}Realtid</div>` : "");
@@ -1050,7 +1064,8 @@ async function loadArrivals(board) {
         const signalAttr = useSignal ? ' data-signal="true"' : '';
         return `<div class="row-wrap${useSignal ? " row-signal" + canceledClass : " " + nowClass + pastClass + canceledClass}">
             <div class="row arr-grid">
-                <span class="time-col">${arrClockHtml}</span>
+                ${arrTidHtml}
+                ${arrNytidHtml}
                 <span class="dest-col">${fromDisplay}${liveTag}</span>
                 <span class="track"><span class="track-num${arrTrackChangedClass}">${a.platform || "–"}</span></span>
                 <span class="trainno-col">${trainLabel}</span>
