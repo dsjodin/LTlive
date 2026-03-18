@@ -2085,9 +2085,57 @@ def _tv_trains_from_positions() -> list:
 
 
 def _merge_trains(oxyfi_trains: list, tv_trains: list) -> list:
-    """Merge Oxyfi and TV trains; Oxyfi takes priority for duplicate train numbers."""
-    oxyfi_labels = {t.get("label", "") for t in oxyfi_trains}
-    return oxyfi_trains + [t for t in tv_trains if t.get("label", "") not in oxyfi_labels]
+    """Merge Oxyfi and TV trains.
+
+    Pass 1: exact label match (both sides have the same advertised train number).
+    Pass 2: position proximity — Oxyfi sends rolling-stock IDs (9xxx) while TV uses
+    service numbers (8xxx), so the same physical train will never match on label alone.
+    If an unmatched Oxyfi train is within 2 km of an unmatched TV train we treat them
+    as the same physical train: keep Oxyfi's GPS position, add TV's service number as
+    `tv_service_number` so the diag can display both IDs, and suppress the TV duplicate.
+    """
+    matched_tv_ids: set = set()
+    result: list = []
+
+    for oxyfi in oxyfi_trains:
+        o_label = oxyfi.get("label", "")
+        # Pass 1: exact label
+        tv_exact = next((t for t in tv_trains if t.get("label", "") == o_label), None)
+        if tv_exact:
+            matched_tv_ids.add(tv_exact["vehicle_id"])
+            result.append({**oxyfi, "tv_service_number": tv_exact["label"]})
+            continue
+
+        # Pass 2: position proximity (within 2 km)
+        o_lat, o_lon = oxyfi.get("lat"), oxyfi.get("lon")
+        best_tv = None
+        best_dist = float("inf")
+        if o_lat and o_lon:
+            for t in tv_trains:
+                if t["vehicle_id"] in matched_tv_ids:
+                    continue
+                t_lat, t_lon = t.get("lat"), t.get("lon")
+                if not (t_lat and t_lon):
+                    continue
+                dlat = math.radians(t_lat - o_lat)
+                dlon = math.radians(t_lon - o_lon)
+                a = (math.sin(dlat / 2) ** 2
+                     + math.cos(math.radians(o_lat)) * math.cos(math.radians(t_lat))
+                     * math.sin(dlon / 2) ** 2)
+                dist = 6_371_000 * 2 * math.asin(math.sqrt(max(0.0, a)))
+                if dist < best_dist and dist < 2000:
+                    best_dist = dist
+                    best_tv = t
+
+        if best_tv:
+            matched_tv_ids.add(best_tv["vehicle_id"])
+            result.append({**oxyfi, "tv_service_number": best_tv["label"]})
+        else:
+            result.append(oxyfi)
+
+    # Add TV trains not matched to any Oxyfi vehicle
+    result += [t for t in tv_trains if t["vehicle_id"] not in matched_tv_ids]
+    return result
 
 
 def _push_train_positions():

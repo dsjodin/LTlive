@@ -475,10 +475,14 @@ function buildLinesTable(byLine) {
           const age = fmtAge(v.timestamp);
           const stale = isStale(v.timestamp);
           const isOxyfi = !(v.vehicle_id || '').startsWith('tv_');
-          // For Oxyfi trains show rolling-stock ID (9xxx) + TV service number (8xxx label).
-          // For TV-only trains (no Oxyfi source) just show the label.
+          // For Oxyfi trains: show rolling-stock ID (9xxx prefix) + TV service number
+          //   if available from label (field 16 public number) or position-based match.
+          // For TV-only trains: just show the train number from label.
           const rsId = isOxyfi ? (v.vehicle_id || '').split('.')[0] : null;
-          const tvNum = v.label && v.label !== rsId ? v.label : null;
+          // tv_service_number = set by backend position-proximity merge (most reliable)
+          // label != rsId     = field 16 public train number from Oxyfi
+          const tvNum = v.tv_service_number
+                     || (v.label && v.label !== rsId ? v.label : null);
           wrap.innerHTML += `
             <div class="veh-row">
               <span class="veh-id">${esc(isOxyfi ? (rsId || v.vehicle_id) : v.vehicle_id)}</span>
@@ -508,11 +512,12 @@ function buildUnconfigured(byLine) {
   const allowed = typeof ALLOWED_LINE_NUMBERS !== 'undefined' ? ALLOWED_LINE_NUMBERS : new Set();
   const unknown = [];
   for (const [name, vehs] of Object.entries(byLine)) {
-    if (name !== '__UNKNOWN__' && !allowed.has(name)) {
-      unknown.push({ name, vehs });
-    }
+    // Trains are handled separately in the TiB section — skip them here
+    if (name === '__UNKNOWN__') continue;
+    if (vehs.some(v => v.vehicle_type === 'train')) continue;
+    if (!allowed.has(name)) unknown.push({ name, vehs });
   }
-  const noRouteVehs = byLine['__UNKNOWN__'] || [];
+  const noRouteVehs = (byLine['__UNKNOWN__'] || []).filter(v => v.vehicle_type !== 'train');
 
   const card = makeCard('Okonfigurerade fordon');
   const hdr = card.querySelector('.card-header');
