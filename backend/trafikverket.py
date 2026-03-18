@@ -117,6 +117,7 @@ def fetch_announcements(location_signatures: list[str], minutes_ahead: int = 120
     <INCLUDE>AdvertisedTrainIdent</INCLUDE>
     <INCLUDE>ActivityType</INCLUDE>
     <INCLUDE>AdvertisedTimeAtLocation</INCLUDE>
+    <INCLUDE>TimeAtLocation</INCLUDE>
     <INCLUDE>EstimatedTimeAtLocation</INCLUDE>
     <INCLUDE>PlannedEstimatedTimeAtLocation</INCLUDE>
     <INCLUDE>PlannedEstimatedTimeAtLocationIsValid</INCLUDE>
@@ -152,12 +153,13 @@ def fetch_announcements(location_signatures: list[str], minutes_ahead: int = 120
         if sched_time is None:
             continue
 
-        est_ts = ann.get("EstimatedTimeAtLocation", "")
+        actual_ts = ann.get("TimeAtLocation", "")       # set after train has passed
+        est_ts = ann.get("EstimatedTimeAtLocation", "")  # running estimate
         planned_est = ann.get("PlannedEstimatedTimeAtLocation", "")
         planned_valid = ann.get("PlannedEstimatedTimeAtLocationIsValid", False)
 
-        # Use EstimatedTime if present, else PlannedEstimated if valid
-        rt_str = est_ts or (planned_est if planned_valid else "")
+        # Priority: actual passage time > running estimate > planned estimate
+        rt_str = actual_ts or est_ts or (planned_est if planned_valid else "")
         rt_time = _ts_to_unix(rt_str) if rt_str else None
         is_realtime = rt_time is not None
 
