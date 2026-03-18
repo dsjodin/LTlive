@@ -239,7 +239,7 @@ def fetch_train_positions(location_signatures: set | None = None) -> list:
 
     xml = f"""<REQUEST>
   <LOGIN authenticationkey="{config.TRAFIKVERKET_API_KEY}" />
-  <QUERY objecttype="TrainPosition" schemaversion="1.1" limit="2000">
+  <QUERY objecttype="TrainPosition" schemaversion="1.1" namespace="rail.realtime" limit="2000">
     <FILTER>
       <GT name="TimeStamp" value="$dateadd(-0:10:00)" />
     </FILTER>
