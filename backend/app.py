@@ -1727,6 +1727,7 @@ def debug_tv_positions():
         op_counts[op] = op_counts.get(op, 0) + 1
 
     return jsonify({
+        "api_key_set": bool(config.TRAFIKVERKET_API_KEY),
         "config": {
             "center_lat": config.TV_POSITION_CENTER_LAT,
             "center_lon": config.TV_POSITION_CENTER_LON,
@@ -2391,7 +2392,13 @@ def _poll_trafikverket():
     loc_sigs = list(config.TRAFIKVERKET_STATIONS.values())
 
     # TrainPosition is independent of station config — always fetch when API key is set
-    positions = tv_api.fetch_train_positions()
+    pos_error = None
+    try:
+        positions = tv_api.fetch_train_positions()
+    except Exception as exc:
+        log.warning("TrainPosition poll failed: %s", exc)
+        positions = []
+        pos_error = str(exc)
 
     announcements = tv_api.fetch_announcements(
         loc_sigs, minutes_ahead=config.TRAFIKVERKET_LOOKAHEAD_MINUTES
@@ -2405,7 +2412,7 @@ def _poll_trafikverket():
             _data["tv_announcements"] = announcements
         _data["tv_messages"] = messages  # empty dict = no messages, still valid
         _data["tv_last_poll"] = int(time.time())
-        _data["tv_last_error"] = None
+        _data["tv_last_error"] = pos_error
     _invalidate_cache()
 
 

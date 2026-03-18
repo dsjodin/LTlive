@@ -427,6 +427,14 @@ function buildTvPositions(d) {
   hdr.querySelector('.meta').textContent =
     `${d.filtered_count} inom radien / ${d.raw_count} från API · poll ${pollAgeS != null ? pollAgeS + 's sedan' : '–'}`;
 
+  // API key warning
+  if (!d.api_key_set) {
+    const noKey = document.createElement('div');
+    noKey.style.cssText = 'color:#f05050;font-weight:600;font-size:12px;margin-bottom:8px;background:#2a1010;padding:6px 10px;border-radius:4px';
+    noKey.textContent = '⚠ TRAFIKVERKET_API_KEY är inte satt — ingen data hämtas';
+    body.appendChild(noKey);
+  }
+
   // Config info row
   const cfgRow = document.createElement('div');
   cfgRow.style.cssText = 'color:#778;font-size:11px;margin-bottom:10px';
