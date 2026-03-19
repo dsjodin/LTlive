@@ -92,9 +92,54 @@ _sse_ip_counts: dict[str, int] = {}
 _sse_ip_lock = threading.Lock()
 _MAX_SSE_PER_IP = 4
 
-# Response cache: key -> (payload_dict, last_vehicle_update_when_cached)
-_api_cache = {}
-_api_cache_lock = threading.Lock()
+# Response cache with per-key TTL — avoids blanket invalidation on every TV tick.
+# Keys: "vehicles" (4s), "next_dep" (30s), ("dep", stop_id, limit, trains_only) (10s).
+class _TTLCache:
+    _TTL = {"vehicles": 4, "next_dep": 30, "dep": 10}
+
+    def __init__(self):
+        self._store: dict = {}
+        self._lock = threading.Lock()
+
+    def get(self, key):
+        with self._lock:
+            entry = self._store.get(key)
+        if entry is None:
+            return None
+        payload, expires_at = entry
+        if time.time() > expires_at:
+            with self._lock:
+                self._store.pop(key, None)
+            return None
+        return payload
+
+    def set(self, key, payload, ttl: int | None = None):
+        if ttl is None:
+            key_type = key if isinstance(key, str) else key[0]
+            ttl = self._TTL.get(key_type, 10)
+        with self._lock:
+            self._store[key] = (payload, time.time() + ttl)
+
+    def invalidate(self, *keys):
+        with self._lock:
+            for k in keys:
+                self._store.pop(k, None)
+
+    def invalidate_prefix(self, prefix: str):
+        """Invalidate all keys whose type (string or first tuple element) matches prefix."""
+        with self._lock:
+            to_del = [k for k in self._store
+                      if (k[0] if isinstance(k, tuple) else k) == prefix]
+            for k in to_del:
+                del self._store[k]
+
+    def clear(self):
+        with self._lock:
+            self._store.clear()
+
+
+_api_cache = _TTLCache()
+_api_cache_lock = threading.Lock()  # kept for compatibility; TTLCache is internally thread-safe
 
 _RT_STATIC_WINDOW = 20 * 60  # seconds — static entry within this window of an RT entry = same trip
 
@@ -141,27 +186,16 @@ def _merge_rt_static(rt_deps, static_deps):
 
 
 def _cache_get(key):
-    with _api_cache_lock:
-        entry = _api_cache.get(key)
-    if entry is None:
-        return None
-    payload, cached_at = entry
-    with _lock:
-        if _data["last_vehicle_update"] != cached_at:
-            return None
-    return payload
+    return _api_cache.get(key)
 
 
 def _cache_set(key, payload):
-    with _lock:
-        ts = _data["last_vehicle_update"]
-    with _api_cache_lock:
-        _api_cache[key] = (payload, ts)
+    _api_cache.set(key, payload)
 
 
 def _invalidate_cache():
-    with _api_cache_lock:
-        _api_cache.clear()
+    """Full cache wipe — use only on GTFS static refresh. Prefer selective invalidation."""
+    _api_cache.clear()
 
 
 def _enrich_vehicles(vehicle_list):
@@ -362,7 +396,8 @@ def refresh_gtfs_static():
             _data["static_stop_arrivals"] = static_stop_arrivals
             _data["trip_origin_map"] = trip_origin_map
             _data["gtfs_error"] = None
-        # Invalidate stop-sequence cache so it is rebuilt with fresh trip data
+        # Invalidate all API caches — routes, shapes, stops, departures all changed.
+        _invalidate_cache()
         with _stop_seq_lock:
             _stop_seq_cache.clear()
 
@@ -455,7 +490,10 @@ def poll_realtime():
             _data["alerts"] = alerts
         _data["last_vehicle_update"] = int(time.time())
 
-    _invalidate_cache()
+    # Selectively invalidate: bus poll changes vehicles + departures, not shapes/routes.
+    _api_cache.invalidate("vehicles")
+    _api_cache.invalidate("next_dep")
+    _api_cache.invalidate_prefix("dep")
 
     # Vehicles SSE is handled by _push_train_positions (runs every 5 s)
     # which merges buses + trains in one push, avoiding double events.
@@ -472,7 +510,28 @@ def health():
 
 @app.route("/api/status")
 def status():
-    """Debug endpoint showing data loading status."""
+    """Public status — only the fields the frontend needs. No internal details."""
+    with _lock:
+        gtfs_error = _data["gtfs_error"]
+        routes_count = len(_data["routes"])
+        gtfs_loaded = _data["gtfs_loaded"]
+    return jsonify({
+        "gtfs_loaded": gtfs_loaded,
+        # Expose a boolean flag only — never the raw error string (may contain paths/keys)
+        "gtfs_error": bool(gtfs_error),
+        "routes_count": routes_count,
+        "nearby_radius_meters": config.NEARBY_RADIUS_METERS,
+        "frontend_poll_interval_ms": config.FRONTEND_POLL_INTERVAL_MS,
+        "map_center_lat": config.MAP_CENTER_LAT,
+        "map_center_lon": config.MAP_CENTER_LON,
+        "map_default_zoom": config.MAP_DEFAULT_ZOOM,
+    })
+
+
+@app.route("/api/debug/status")
+@_debug_only
+def status_debug():
+    """Internal status — full diagnostic info. Protected by Nginx allow/deny + @_debug_only."""
     with _lock:
         return jsonify({
             "gtfs_loaded": _data["gtfs_loaded"],
@@ -2436,14 +2495,30 @@ def _merge_trains(oxyfi_trains: list, tv_trains: list) -> list:
 
 
 def _push_train_positions():
-    """Push merged bus+train positions via SSE every 5 s."""
-    oxyfi_trains = oxyfi.get_trains()
-    tv_trains = _tv_trains_from_positions()
-    trains = _merge_trains(oxyfi_trains, tv_trains)
-    with _lock:
-        vehicle_list = list(_data["vehicles"])
-        ts = _data["last_vehicle_update"]
-    buses = _enrich_vehicles(vehicle_list)  # takes _lock internally — must be outside our lock
+    """Push merged bus+train positions via SSE every 5 s.
+
+    Each data source is wrapped in its own try/except so that a failure in
+    one source (e.g. train merge crash, Oxyfi disconnect) never silences the
+    other sources. Buses always stream even when trains are broken, and vice versa.
+    """
+    trains = []
+    try:
+        oxyfi_trains = oxyfi.get_trains()
+        tv_trains = _tv_trains_from_positions()
+        trains = _merge_trains(oxyfi_trains, tv_trains)
+    except Exception as exc:
+        print(f"[sse] train source error (buses will still push): {exc}")
+
+    buses = []
+    ts = int(time.time())
+    try:
+        with _lock:
+            vehicle_list = list(_data["vehicles"])
+            ts = _data["last_vehicle_update"]
+        buses = _enrich_vehicles(vehicle_list)
+    except Exception as exc:
+        print(f"[sse] bus source error: {exc}")
+
     combined = buses + trains
     _push_sse("vehicles", {"vehicles": combined, "timestamp": ts, "count": len(combined)})
 
@@ -2467,7 +2542,7 @@ def _update_tv_positions(new_positions: list) -> None:
             else:
                 current[tn] = p
         _data["tv_positions"] = list(current.values())
-    _invalidate_cache()
+    # TV position ticks go straight to SSE — no API cache to invalidate here.
 
 
 def _run_tv_position_stream() -> None:
@@ -2499,7 +2574,6 @@ def _run_tv_position_stream() -> None:
                     _data["tv_positions"] = positions
                     _data["tv_last_poll"] = int(time.time())
                     _data["tv_last_error"] = None
-                _invalidate_cache()
                 last_event_id = None  # fresh endpoint, start from beginning
                 if not sseurl:
                     print("tv-sse: no SSEURL returned — position streaming unavailable")
@@ -2577,7 +2651,8 @@ def _poll_trafikverket():
                 _data["tv_announcements"] = announcements
             _data["tv_messages"] = messages
             _data["tv_last_error"] = None
-        _invalidate_cache()
+        # Announcement updates affect departure boards — invalidate dep caches only.
+        _api_cache.invalidate_prefix("dep")
     except Exception as exc:
         print(f"tv-poll error: {exc}")
         with _lock:

@@ -19,7 +19,7 @@ let hiddenTypes = new Set(); // "bus" or "train"
 let showStops = true;
 let showRoutes = true;
 let showLabels = true;
-let darkMode = false;
+let darkMode = localStorage.getItem("darkMode") === "true";
 let tileLayer = null;
 let stopsLayer = null;
 let stopsLoaded = false;
@@ -111,6 +111,8 @@ function initMap() {
 
     setTileLayer(darkMode);
     document.body.classList.toggle("light-mode", !darkMode);
+    const dmToggle = document.getElementById("toggle-darkmode");
+    if (dmToggle) dmToggle.checked = darkMode;
 
     map.on("popupopen", () => startEtaCountdown());
     map.on("popupclose", () => { clearInterval(etaTimer); etaTimer = null; });
@@ -1120,7 +1122,7 @@ async function checkStatus() {
         if (data.frontend_poll_interval_ms) POLL_INTERVAL = data.frontend_poll_interval_ms;
 
         if (data.gtfs_error) {
-            showStatusBanner(`GTFS-data kunde inte laddas: ${data.gtfs_error}`);
+            showStatusBanner("GTFS-data kunde inte laddas. Kontrollera serverloggen.");
             return;
         }
 
@@ -1424,6 +1426,7 @@ function initControls() {
 
 document.getElementById("toggle-darkmode").addEventListener("change", (e) => {
         darkMode = e.target.checked;
+        localStorage.setItem("darkMode", darkMode);
         setTileLayer(darkMode);
         document.body.classList.toggle("light-mode", !darkMode);
     });
