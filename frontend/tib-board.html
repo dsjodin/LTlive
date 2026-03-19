@@ -269,7 +269,7 @@
             display: grid;
             align-items: center;
             gap: 0 12px;
-            padding: 11px 20px;
+            padding: 13px 20px;
         }
         .row.dep-grid { grid-template-columns: 72px 72px 1fr 52px 72px 72px 92px 1.4fr; }
         .row.arr-grid { grid-template-columns: 72px 72px 1fr 52px 72px 72px 92px 1.4fr; }
@@ -287,8 +287,11 @@
         .time-prelim { font-style: italic; opacity: 0.80; }
         .bus-tag { background: #4a4a4a; color: #fff; font-size: 0.62em; padding: 1px 4px; border-radius: 3px; margin-left: 4px; vertical-align: middle; letter-spacing: 0.3px; }
 
+        /* ── Shared column font size ── */
+        :root { --col-fs: clamp(1.1rem, 2.2vw, 1.35rem); }
+
         .time-col {
-            font-size: clamp(1rem, 2vw, 1.3rem);
+            font-size: var(--col-fs);
             font-variant-numeric: tabular-nums;
             font-family: monospace;
             font-weight: 700;
@@ -301,7 +304,7 @@
             font-weight: 400;
         }
         .newtime-col {
-            font-size: clamp(1rem, 2vw, 1.3rem);
+            font-size: var(--col-fs);
             font-variant-numeric: tabular-nums;
             font-family: monospace;
             font-weight: 700;
@@ -312,7 +315,7 @@
 
         .dest-col {
             min-width: 0;
-            font-size: clamp(1rem, 2.4vw, 1.4rem);
+            font-size: var(--col-fs);
             font-weight: 500;
             white-space: nowrap;
             overflow: hidden;
@@ -321,7 +324,7 @@
         }
 
         .track {
-            font-size: 1rem;
+            font-size: var(--col-fs);
             color: var(--muted);
             text-align: center;
         }
@@ -332,7 +335,7 @@
             border-radius: 4px;
             padding: 3px 8px;
             font-weight: 700;
-            font-size: 0.95rem;
+            font-size: var(--col-fs);
             color: var(--text);
         }
         .track-num.track-changed {
@@ -342,17 +345,17 @@
         }
 
         .trainno-col {
-            font-size: 1.05rem;
+            font-size: var(--col-fs);
             font-variant-numeric: tabular-nums;
             font-family: monospace;
             color: var(--text);
         }
 
         .operator-col {
-            font-size: 0.88rem;
+            font-size: var(--col-fs);
         }
         .op-tag {
-            font-size: 0.88rem;
+            font-size: var(--col-fs);
             font-weight: 700;
             letter-spacing: 0.03em;
             padding: 3px 7px;
@@ -362,7 +365,7 @@
         }
 
         .eta-col {
-            font-size: clamp(1.05rem, 2.5vw, 1.5rem);
+            font-size: var(--col-fs);
             font-weight: 800;
             font-variant-numeric: tabular-nums;
             font-family: monospace;
@@ -397,7 +400,7 @@
         .row-wrap.row-signal { background: #1a1200; border-left: 3px solid var(--yellow); }
 
         .remark-col {
-            font-size: 0.9rem;
+            font-size: clamp(1.15rem, 2.4vw, 1.42rem);
             min-width: 0;
             overflow: hidden;
             text-overflow: ellipsis;
