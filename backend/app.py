@@ -496,6 +496,11 @@ def status():
             "has_static_key": bool(config.TRAFIKLAB_GTFS_STATIC_KEY),
             "has_rt_key": bool(config.TRAFIKLAB_GTFS_RT_KEY),
             "static_stops_with_departures": len(_data.get("static_stop_departures", {})),
+            "has_tv_key": bool(config.TRAFIKVERKET_API_KEY),
+            "tv_stations_configured": len(config.TRAFIKVERKET_STATIONS),
+            "tv_announcements_loaded": len(_data.get("tv_announcements", {})),
+            "tv_last_poll": _data.get("tv_last_poll", 0),
+            "tv_last_error": _data.get("tv_last_error"),
         })
 
 
@@ -2559,16 +2564,22 @@ def _poll_trafikverket():
     if not loc_sigs:
         return
 
-    announcements = tv_api.fetch_announcements(
-        loc_sigs, minutes_ahead=config.TRAFIKVERKET_LOOKAHEAD_MINUTES
-    )
-    messages = tv_api.fetch_station_messages(loc_sigs)
+    try:
+        announcements = tv_api.fetch_announcements(
+            loc_sigs, minutes_ahead=config.TRAFIKVERKET_LOOKAHEAD_MINUTES
+        )
+        messages = tv_api.fetch_station_messages(loc_sigs)
 
-    with _lock:
-        if announcements:
-            _data["tv_announcements"] = announcements
-        _data["tv_messages"] = messages
-    _invalidate_cache()
+        with _lock:
+            if announcements:
+                _data["tv_announcements"] = announcements
+            _data["tv_messages"] = messages
+            _data["tv_last_error"] = None
+        _invalidate_cache()
+    except Exception as exc:
+        print(f"tv-poll error: {exc}")
+        with _lock:
+            _data["tv_last_error"] = str(exc)
 
 
 def start_background_tasks():
