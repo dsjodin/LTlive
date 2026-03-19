@@ -112,7 +112,7 @@
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="config.js"></script>
-    <script src="app.js"></script>
+    <script type="module" src="app.js"></script>
     <script>
     (function(){var s=Math.random().toString(36).slice(2),t=Date.now(),p=location.pathname;
     fetch('/api/stats/visit',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:s,page:p}),keepalive:true}).catch(function(){});

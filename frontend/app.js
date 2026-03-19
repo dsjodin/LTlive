@@ -3,7 +3,16 @@
  * Leaflet map with GTFS-RT vehicle positions
  */
 
-const API_BASE = "/api";
+import {
+    fetchStatus, fetchVehicles, fetchAlerts,
+    fetchRoutes, fetchTrainShapes,
+    fetchStops, fetchNextDepartures, fetchDepartures,
+    fetchShapeForRoute, fetchShapesBulk,
+    fetchLineDepartures as apiFetchLineDepartures,
+    fetchNearbyDepartures as apiFetchNearbyDepartures,
+    connectSSE,
+} from "./modules/api.js";
+
 let POLL_INTERVAL = 5000;        // default, overridden by backend config via /api/status
 let MAP_CENTER = [59.2753, 15.2134]; // default, overridden by backend config via /api/status
 let MAP_ZOOM = 13;               // default, overridden by backend config via /api/status
@@ -537,8 +546,7 @@ function showStopDepartures(stop, marker) {
         </div>`;
     marker.setPopupContent(loadingHtml);
 
-    fetch(`${API_BASE}/departures/${encodeURIComponent(stop.stop_id)}`)
-        .then((r) => r.json())
+    fetchDepartures(stop.stop_id)
         .then((data) => {
             let html;
             if (!data.departures || data.departures.length === 0) {
@@ -675,12 +683,8 @@ function loadStops() {
     if (stopsLoaded) return;
 
     const routeIds = Object.keys(routeData);
-    const url = routeIds.length > 0
-        ? `${API_BASE}/stops?route_ids=${encodeURIComponent(routeIds.join(","))}`
-        : `${API_BASE}/stops`;
 
-    fetch(url)
-        .then((r) => r.json())
+    fetchStops(routeIds)
         .then((data) => {
             if (data.count === 0) {
                 console.log("No stops returned (GTFS static may not be loaded yet)");
@@ -725,8 +729,7 @@ function loadStops() {
 function loadRoutes() {
     if (routesLoaded) return;
 
-    fetch(`${API_BASE}/routes/all`)
-        .then((r) => r.json())
+    fetchRoutes()
         .then((data) => {
             if (data.count === 0) {
                 console.log("No routes returned (GTFS static may not be loaded yet)");
@@ -765,8 +768,7 @@ let trainShapeCoords = []; // raw [[lat,lon]…] arrays — used for bearing sna
 
 function loadTrainRoutes() {
     if (trainRoutesLoaded) return;
-    fetch(`${API_BASE}/shapes/trains`)
-        .then(r => r.json())
+    fetchTrainShapes()
         .then(data => {
             if (!data.count) return;
             const layerGroup = L.layerGroup();
@@ -826,8 +828,7 @@ function loadRouteShapes(routeId) {
         return Promise.resolve();
     }
 
-    return fetch(`${API_BASE}/shapes/${routeId}`)
-        .then((r) => r.json())
+    return fetchShapeForRoute(routeId)
         .then((data) => {
             const route = routeData[routeId] || {};
             const color = getRouteColor(route);
@@ -879,9 +880,7 @@ async function toggleRouteShapes(visible) {
 
     // Bulk fetch — one request instead of N parallel requests
     try {
-        const data = await fetch(
-            `${API_BASE}/shapes/bulk?route_ids=${encodeURIComponent(toFetch.join(","))}`
-        ).then((r) => r.json());
+        const data = await fetchShapesBulk(toFetch);
 
         Object.entries(data.routes).forEach(([routeId, shapeCoordsList]) => {
             const route = routeData[routeId] || {};
@@ -1027,8 +1026,7 @@ function closeLinePanel() {
 }
 
 function fetchLineDepartures(routeId) {
-    fetch(`${API_BASE}/line-departures/${encodeURIComponent(routeId)}`)
-        .then(r => r.json())
+    apiFetchLineDepartures(routeId)
         .then(data => {
             if (activePanelRouteId !== routeId) return;
             const content = document.getElementById("line-panel-content");
@@ -1115,8 +1113,7 @@ function hideStatusBanner() {
 // --- Check backend status and retry loading data ---
 async function checkStatus() {
     try {
-        const resp = await fetch(`${API_BASE}/status`);
-        const data = await resp.json();
+        const data = await fetchStatus();
 
         if (data.nearby_radius_meters) nearbyRadius = data.nearby_radius_meters;
         if (data.frontend_poll_interval_ms) POLL_INTERVAL = data.frontend_poll_interval_ms;
@@ -1148,8 +1145,7 @@ async function checkStatus() {
 // --- Polling ---
 async function pollVehicles() {
     try {
-        const resp = await fetch(`${API_BASE}/vehicles`);
-        const data = await resp.json();
+        const data = await fetchVehicles();
         updateVehicles(data.vehicles);
     } catch (err) {
         console.error("Error polling vehicles:", err);
@@ -1158,8 +1154,7 @@ async function pollVehicles() {
 
 async function pollAlerts() {
     try {
-        const resp = await fetch(`${API_BASE}/alerts`);
-        const data = await resp.json();
+        const data = await fetchAlerts();
         updateAlerts(data.alerts);
     } catch (err) {
         console.error("Error polling alerts:", err);
@@ -1169,7 +1164,7 @@ async function pollAlerts() {
 async function pollStopDepartures() {
     if (!stopsLoaded || !showStops) return;
     try {
-        const data = await fetch(`${API_BASE}/stops/next-departure`).then(r => r.json());
+        const data = await fetchNextDepartures();
         stopNextDep = data;
         updateStopBadges();
     } catch (err) {
@@ -1341,8 +1336,7 @@ function fetchNearbyDepartures(lat, lon) {
     if (!body.hasChildNodes()) {
         body.innerHTML = `<div class="nearby-loading">Söker hållplatser…</div>`;
     }
-    fetch(`${API_BASE}/nearby-departures?lat=${lat}&lon=${lon}&radius=${nearbyRadius}`)
-        .then(r => r.json())
+    apiFetchNearbyDepartures(lat, lon, nearbyRadius)
         .then(data => {
             if (!nearbyPanelOpen) return;
             if (!data.stops || data.stops.length === 0) {
@@ -1456,58 +1450,60 @@ document.getElementById("toggle-darkmode").addEventListener("change", (e) => {
 
 }
 
+// Delta-SSE state: accumulated vehicle map, used to merge incremental updates.
+let _vehicleState = new Map();    // vehicle_id -> vehicle object
+let _deltaReady   = false;         // true after first full vehicles sync
+
 function initSSE() {
     if (sseSource) {
         sseSource.close();
         sseSource = null;
     }
-    sseSource = new EventSource(`${API_BASE}/stream`);
+    _deltaReady = false;
 
-    sseSource.addEventListener("vehicles", (e) => {
-        try {
-            const data = JSON.parse(e.data);
+    function cancelFallback() {
+        if (sseFallbackTimer) { clearInterval(sseFallbackTimer); sseFallbackTimer = null; }
+    }
+
+    sseSource = connectSSE(
+        // onVehicles — full list; used for initial sync and reconnect resets
+        (data) => {
+            cancelFallback();
+            _vehicleState.clear();
+            (data.vehicles || []).forEach(v => { if (v.vehicle_id) _vehicleState.set(v.vehicle_id, v); });
             updateVehicles(data.vehicles);
-            // SSE working — cancel any active fallback poll
-            if (sseFallbackTimer) {
-                clearInterval(sseFallbackTimer);
-                sseFallbackTimer = null;
+            _deltaReady = true;
+        },
+        // onAlerts
+        (data) => updateAlerts(data.alerts),
+        // onError
+        () => {
+            if (!sseFallbackTimer) {
+                console.warn("SSE unavailable, falling back to polling");
+                sseFallbackTimer = setInterval(pollVehicles, POLL_INTERVAL);
             }
-        } catch (err) {
-            console.error("SSE vehicles parse error:", err);
-        }
-    });
-
-    sseSource.addEventListener("alerts", (e) => {
-        try {
-            const data = JSON.parse(e.data);
-            updateAlerts(data.alerts);
-        } catch (err) {
-            console.error("SSE alerts parse error:", err);
-        }
-    });
-
-    sseSource.onerror = () => {
-        // Start fallback polling while SSE is down
-        if (!sseFallbackTimer) {
-            console.warn("SSE unavailable, falling back to polling");
-            sseFallbackTimer = setInterval(pollVehicles, POLL_INTERVAL);
-        }
-    };
-
-    sseSource.onopen = () => {
-        // SSE (re)connected — stop fallback polling
-        if (sseFallbackTimer) {
-            clearInterval(sseFallbackTimer);
-            sseFallbackTimer = null;
-        }
-    };
+        },
+        // onOpen — (re)connected; reset delta so next vehicles event re-syncs
+        () => {
+            cancelFallback();
+            _deltaReady = false;
+        },
+        // onVehiclesDelta — incremental update (fires only when something changed)
+        (data) => {
+            if (!_deltaReady) return;  // wait for initial full sync
+            cancelFallback();
+            (data.updated || []).forEach(v => { if (v.vehicle_id) _vehicleState.set(v.vehicle_id, v); });
+            (data.removed || []).forEach(id => _vehicleState.delete(id));
+            updateVehicles(Array.from(_vehicleState.values()));
+        },
+    );
 }
 
 // --- Init ---
 async function init() {
     // Fetch backend config before initMap so map center/zoom come from .env, not hardcodes.
     try {
-        const cfg = await fetch(`${API_BASE}/status`).then(r => r.json());
+        const cfg = await fetchStatus();
         if (cfg.map_center_lat && cfg.map_center_lon) {
             MAP_CENTER = [cfg.map_center_lat, cfg.map_center_lon];
         }
