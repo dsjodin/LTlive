@@ -52,6 +52,11 @@ for _entry in _color_overrides_env.split(","):
         ROUTE_COLOR_OVERRIDES[_k.strip()] = _v.strip().lstrip("#")
 FRONTEND_POLL_INTERVAL_MS = int(os.environ.get("FRONTEND_POLL_INTERVAL_MS", "5000"))
 
+# Map initial view — consumed by the frontend via /api/status.
+MAP_CENTER_LAT = float(os.environ.get("MAP_CENTER_LAT", "59.2753"))
+MAP_CENTER_LON = float(os.environ.get("MAP_CENTER_LON", "15.2134"))
+MAP_DEFAULT_ZOOM = int(os.environ.get("MAP_DEFAULT_ZOOM", "13"))
+
 # Trafikverket Open Data API
 # Register at api.trafikinfo.trafikverket.se — free, separate from Trafiklab.
 TRAFIKVERKET_API_KEY = os.environ.get("TRAFIKVERKET_API_KEY", "")
