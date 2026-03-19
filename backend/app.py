@@ -799,6 +799,14 @@ def departures_for_stop(stop_id):
 
     tib_agency = config.TIB_AGENCY_ID
     tib_routes = config.TIB_ROUTE_SHORT_NAMES
+    # Resolve Trafikverket location signature once, outside the loop
+    loc_sig = config.TRAFIKVERKET_STATIONS.get(stop_id, "")
+    if not loc_sig:
+        for qid in query_ids:
+            ls = config.TRAFIKVERKET_STATIONS.get(qid, "")
+            if ls:
+                loc_sig = ls
+                break
     deps = []
     used_tv_dep_keys = set()  # prevent two GTFS trips matching the same TV announcement
     for d in upcoming:
@@ -836,13 +844,6 @@ def departures_for_stop(stop_id):
         tv_other_info = []
         tv_preliminary = False
         tv_traffic_type = ""
-        loc_sig = config.TRAFIKVERKET_STATIONS.get(stop_id, "")
-        if not loc_sig:
-            for qid in query_ids:
-                ls = config.TRAFIKVERKET_STATIONS.get(qid, "")
-                if ls:
-                    loc_sig = ls
-                    break
         tv_rt_time = None
         tv_sched_override = None
         tv_track_changed = False
@@ -1116,6 +1117,14 @@ def arrivals_for_stop(stop_id):
 
     tib_agency = config.TIB_AGENCY_ID
     tib_routes = config.TIB_ROUTE_SHORT_NAMES
+    # Resolve Trafikverket location signature once, outside the loop
+    loc_sig = config.TRAFIKVERKET_STATIONS.get(stop_id, "")
+    if not loc_sig:
+        for qid in query_ids:
+            ls = config.TRAFIKVERKET_STATIONS.get(qid, "")
+            if ls:
+                loc_sig = ls
+                break
     arrs = []
     used_tv_arr_keys = set()  # prevent two GTFS trips matching the same TV announcement
     for a in upcoming:
@@ -1152,13 +1161,6 @@ def arrivals_for_stop(stop_id):
         tv_traffic_type = ""
         tv_arr_operator = ""
         tv_arr_product = ""
-        loc_sig = config.TRAFIKVERKET_STATIONS.get(stop_id, "")
-        if not loc_sig:
-            for qid in query_ids:
-                ls = config.TRAFIKVERKET_STATIONS.get(qid, "")
-                if ls:
-                    loc_sig = ls
-                    break
         tv_rt_arr_time = None
         tv_arr_sched_override = None
         tv_arr_track_changed = False
