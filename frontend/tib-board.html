@@ -269,7 +269,7 @@
             display: grid;
             align-items: center;
             gap: 0 12px;
-            padding: 11px 20px;
+            padding: 13px 20px;
         }
         .row.dep-grid { grid-template-columns: 72px 72px 1fr 52px 72px 72px 92px 1.4fr; }
         .row.arr-grid { grid-template-columns: 72px 72px 1fr 52px 72px 72px 92px 1.4fr; }
@@ -287,8 +287,11 @@
         .time-prelim { font-style: italic; opacity: 0.80; }
         .bus-tag { background: #4a4a4a; color: #fff; font-size: 0.62em; padding: 1px 4px; border-radius: 3px; margin-left: 4px; vertical-align: middle; letter-spacing: 0.3px; }
 
+        /* ── Shared column font size ── */
+        :root { --col-fs: clamp(1.1rem, 2.2vw, 1.35rem); }
+
         .time-col {
-            font-size: clamp(1rem, 2vw, 1.3rem);
+            font-size: var(--col-fs);
             font-variant-numeric: tabular-nums;
             font-family: monospace;
             font-weight: 700;
@@ -301,7 +304,7 @@
             font-weight: 400;
         }
         .newtime-col {
-            font-size: clamp(1rem, 2vw, 1.3rem);
+            font-size: var(--col-fs);
             font-variant-numeric: tabular-nums;
             font-family: monospace;
             font-weight: 700;
@@ -312,7 +315,7 @@
 
         .dest-col {
             min-width: 0;
-            font-size: clamp(1rem, 2.4vw, 1.4rem);
+            font-size: var(--col-fs);
             font-weight: 500;
             white-space: nowrap;
             overflow: hidden;
@@ -321,7 +324,7 @@
         }
 
         .track {
-            font-size: 1rem;
+            font-size: var(--col-fs);
             color: var(--muted);
             text-align: center;
         }
@@ -332,7 +335,7 @@
             border-radius: 4px;
             padding: 3px 8px;
             font-weight: 700;
-            font-size: 0.95rem;
+            font-size: var(--col-fs);
             color: var(--text);
         }
         .track-num.track-changed {
@@ -342,17 +345,17 @@
         }
 
         .trainno-col {
-            font-size: 1.05rem;
+            font-size: var(--col-fs);
             font-variant-numeric: tabular-nums;
             font-family: monospace;
             color: var(--text);
         }
 
         .operator-col {
-            font-size: 0.88rem;
+            font-size: var(--col-fs);
         }
         .op-tag {
-            font-size: 0.88rem;
+            font-size: var(--col-fs);
             font-weight: 700;
             letter-spacing: 0.03em;
             padding: 3px 7px;
@@ -362,7 +365,7 @@
         }
 
         .eta-col {
-            font-size: clamp(1.05rem, 2.5vw, 1.5rem);
+            font-size: var(--col-fs);
             font-weight: 800;
             font-variant-numeric: tabular-nums;
             font-family: monospace;
@@ -397,7 +400,7 @@
         .row-wrap.row-signal { background: #1a1200; border-left: 3px solid var(--yellow); }
 
         .remark-col {
-            font-size: 0.9rem;
+            font-size: clamp(1.15rem, 2.4vw, 1.42rem);
             min-width: 0;
             overflow: hidden;
             text-overflow: ellipsis;
@@ -838,10 +841,30 @@ function startCountdown() {
     countdownTimer = setInterval(() => {
         const now = Date.now() / 1000;
         document.querySelectorAll(".eta-col[data-ts]").forEach(el => {
-            // Already showing signal – keep it, just prevent row-past fading
+            // Already showing signal – turn it off once train has arrived
             if (el.dataset.signal === "true") {
-                const row = el.closest(".row-wrap");
-                if (row) {
+                const ts   = parseFloat(el.dataset.ts);
+                const secs = Math.round(ts - now);
+                const row  = el.closest(".row-wrap");
+                if (secs <= 0) {
+                    // Train has arrived — deactivate signal animation.
+                    // If GPS says train is still far from station, show "Nu" instead.
+                    const gpsStillFar = el.dataset.gps === "false";
+                    delete el.dataset.signal;
+                    const mode = el.dataset.mode || "dep";
+                    let { text, cls } = formatEta(secs, mode);
+                    if (gpsStillFar && text === "Ankommit") {
+                        text = "Nu";
+                        cls  = "eta-now";
+                    }
+                    el.innerHTML = text;
+                    el.className = `eta-col ${cls}`;
+                    if (row) {
+                        row.classList.remove("row-signal");
+                        row.classList.toggle("row-now",  gpsStillFar);
+                        row.classList.toggle("row-past", secs < -60 && !gpsStillFar);
+                    }
+                } else if (row) {
                     row.classList.remove("row-past", "row-now");
                 }
                 return;
@@ -851,7 +874,7 @@ function startCountdown() {
             const mode = el.dataset.mode || "dep";
             const isCanceled = !!el.closest(".row-wrap")?.classList.contains("row-canceled");
 
-            if (!isCanceled && secs <= 120) {
+            if (!isCanceled && secs > 0 && secs <= 120) {
                 // Activate signal mode
                 el.dataset.signal = "true";
                 el.innerHTML  = SIGNAL_SVG;
@@ -864,13 +887,19 @@ function startCountdown() {
                 return;
             }
 
-            const { text, cls } = formatEta(secs, mode);
+            let { text, cls } = formatEta(secs, mode);
+            // If GPS says the train is still far from the station, don't show
+            // "Ankommit" yet — override to "Nu" until GPS confirms arrival.
+            if (text === "Ankommit" && el.dataset.gps === "false") {
+                text = "Nu";
+                cls  = "eta-now";
+            }
             el.innerHTML = text;
             el.className = `eta-col ${cls}`;
             const row = el.closest(".row-wrap");
             if (row) {
-                row.classList.toggle("row-now",  secs <= 30 && secs > -60);
-                row.classList.toggle("row-past", secs < -60);
+                row.classList.toggle("row-now",  secs <= 30 && secs > -60 || (text === "Nu" && el.dataset.gps === "false"));
+                row.classList.toggle("row-past", secs < -60 && el.dataset.gps !== "false");
             }
         });
     }, 1000);
@@ -1058,9 +1087,14 @@ async function loadArrivals(board) {
             ? `<div class="via-row">${rtDot}via ${a.via.join(" · ")}</div>`
             : (a.is_realtime ? `<div class="via-row">${rtDot}Realtid</div>` : "");
         const remarkText = buildRemarkText(a);
-        const useSignal  = !a.canceled && secs <= 120;
-        const etaInner   = useSignal ? SIGNAL_SVG : etaText;
-        const etaClass   = useSignal ? "eta-signal" : etaCls;
+        const useSignal  = !a.canceled && secs > 0 && secs <= 120;
+        // gps_at_station: true = GPS confirms at platform, false = GPS says still far, null = no data
+        const gpsVal     = a.gps_at_station === true ? "true" : a.gps_at_station === false ? "false" : "unknown";
+        // When GPS says train is still far away, override "Ankommit" → "Nu"
+        const arrEtaText = (!useSignal && secs <= 0 && a.gps_at_station === false) ? "Nu" : etaText;
+        const arrEtaCls  = (!useSignal && secs <= 0 && a.gps_at_station === false) ? "eta-now" : etaCls;
+        const etaInner   = useSignal ? SIGNAL_SVG : arrEtaText;
+        const etaClass   = useSignal ? "eta-signal" : arrEtaCls;
         const signalAttr = useSignal ? ' data-signal="true"' : '';
         return `<div class="row-wrap${useSignal ? " row-signal" + canceledClass : " " + nowClass + pastClass + canceledClass}">
             <div class="row arr-grid">
@@ -1070,7 +1104,7 @@ async function loadArrivals(board) {
                 <span class="track"><span class="track-num${arrTrackChangedClass}">${a.platform || "–"}</span></span>
                 <span class="trainno-col">${trainLabel}</span>
                 <span class="operator-col">${opTag}</span>
-                <span class="eta-col ${etaClass}" data-ts="${a.arrival_time}" data-mode="arr"${signalAttr}>${etaInner}</span>
+                <span class="eta-col ${etaClass}" data-ts="${a.arrival_time}" data-mode="arr" data-gps="${gpsVal}"${signalAttr}>${etaInner}</span>
                 <span class="remark-col">${remarkText}</span>
             </div>
             ${viaRow}

@@ -1049,6 +1049,7 @@ def arrivals_for_stop(stop_id):
         rt_trip_short_names = _data.get("rt_trip_short_names", {})
         tv_ann = _data.get("tv_announcements", {})
         tv_stations = _data.get("tv_stations", {})
+        tv_positions_raw = list(_data.get("tv_positions", []))
         # Names of the destination station — used to filter out arrivals that
         # originate from this very station (GTFS trips that start here).
         dest_stop_names = {
@@ -1056,6 +1057,41 @@ def arrivals_for_stop(stop_id):
         }
         dest_stop_names.add(target_stop.get("stop_name", ""))
         dest_stop_names.discard("")
+
+    # Build GPS position lookup by train number (newest position per train, max 10 min old).
+    # Prefer Öxyfin data for TiB trains (≤30 s old), fall back to Trafikverket TrainPosition.
+    # 600 s matches the cutoff used in _tv_trains_from_positions() for consistency.
+    _pos_cutoff = now - 600
+    pos_by_train: dict[str, dict] = {}
+    for _p in tv_positions_raw:
+        _tn = _p.get("train_number", "")
+        if not _tn:
+            continue
+        _ts = _p.get("timestamp") or 0
+        if _ts < _pos_cutoff:
+            continue
+        if _tn not in pos_by_train or _ts > (pos_by_train[_tn].get("timestamp") or 0):
+            pos_by_train[_tn] = _p
+    # Öxyfin positions are ≤30 s old and most accurate for TiB — overwrite/add
+    for _p in oxyfi.get_trains():
+        _tn = _p.get("label", "")
+        if _tn:
+            pos_by_train[_tn] = _p
+
+    _sta_lat = config.TV_POSITION_CENTER_LAT
+    _sta_lon = config.TV_POSITION_CENTER_LON
+    _cos_lat = math.cos(math.radians(_sta_lat))
+    _GPS_ARRIVED_M = 600  # metres — train must be within this radius to show "Ankommit"
+
+    def _gps_at_station(train_num: str) -> bool | None:
+        """Return True/False if GPS confirms train is at/away from station, None if no data."""
+        pos = pos_by_train.get(train_num)
+        if not pos:
+            return None
+        dlat = math.radians(pos["lat"] - _sta_lat)
+        dlon = math.radians(pos["lon"] - _sta_lon)
+        dist_m = 6371000 * math.sqrt(dlat ** 2 + (_cos_lat * dlon) ** 2)
+        return dist_m <= _GPS_ARRIVED_M
 
     upcoming_raw = sorted(
         [a for a in static_arrs if a["time"] >= now - 600],
@@ -1263,6 +1299,15 @@ def arrivals_for_stop(stop_id):
             seen_arr_keys.add(key)
             deduped_arrs.append(entry)
     arrs = deduped_arrs[:limit]
+
+    # Annotate each arrival with GPS-confirmed at-station status.
+    # Trafikverket's TimeAtLocation fires at the operational boundary (driftsplatsgräns),
+    # which can be 1-2 km from the platform for trains approaching from the north.
+    # gps_at_station = True  → GPS confirms train is within _GPS_ARRIVED_M of station
+    # gps_at_station = False → GPS says train is still far away — don't show "Ankommit"
+    # gps_at_station = None  → no GPS data available — fall back to time-based display
+    for entry in arrs:
+        entry["gps_at_station"] = _gps_at_station(entry.get("trip_short_name", ""))
 
     return jsonify({"stop_id": stop_id, "arrivals": arrs, "count": len(arrs)})
 
