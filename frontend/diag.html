@@ -415,8 +415,8 @@ function buildTvPositions(d) {
   const hdr = card.querySelector('.card-header');
   const body = card.querySelector('.card-body');
 
-  if (!d) {
-    body.innerHTML = '<span style="color:#f05050">Kunde inte nå /api/debug/tv-positions</span>';
+  if (!d || d.error) {
+    body.innerHTML = '<span style="color:#778;font-size:12px">Debug-endpoints är inaktiverade (ENABLE_DEBUG_ENDPOINTS=false)</span>';
     return card;
   }
 
@@ -723,8 +723,8 @@ function buildMatching(m, vehicles) {
   const card = makeCard('RT-matchning & debug');
   const body = card.querySelector('.card-body');
 
-  if (!m) {
-    body.innerHTML = '<span style="color:#f05050">Kunde inte nå /api/debug/matching</span>';
+  if (!m || m.error) {
+    body.innerHTML = '<span style="color:#778;font-size:12px">Debug-endpoints är inaktiverade (ENABLE_DEBUG_ENDPOINTS=false)</span>';
     return card;
   }
 
@@ -799,8 +799,8 @@ function buildRtFeedCard(f) {
   hdr.querySelector('.meta').textContent = 'cachad data – ingen extra Trafiklab-förfrågan';
   const body = card.querySelector('.card-body');
 
-  if (!f) {
-    body.innerHTML = '<span style="color:#f05050">Kunde inte nå /api/debug/rt-feed</span>';
+  if (!f || f.error) {
+    body.innerHTML = '<span style="color:#778;font-size:12px">Debug-endpoints är inaktiverade (ENABLE_DEBUG_ENDPOINTS=false)</span>';
     return card;
   }
 

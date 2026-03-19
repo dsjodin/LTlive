@@ -4,9 +4,9 @@
  */
 
 const API_BASE = "/api";
-let POLL_INTERVAL = 5000; // default, overridden by backend config
-const OREBRO_CENTER = [59.2753, 15.2134];
-const DEFAULT_ZOOM = 13;
+let POLL_INTERVAL = 5000;        // default, overridden by backend config via /api/status
+let MAP_CENTER = [59.2753, 15.2134]; // default, overridden by backend config via /api/status
+let MAP_ZOOM = 13;               // default, overridden by backend config via /api/status
 
 
 // --- State ---
@@ -104,8 +104,8 @@ function getRouteTextColor(route) {
 // --- Map Init ---
 function initMap() {
     map = L.map("map", {
-        center: OREBRO_CENTER,
-        zoom: DEFAULT_ZOOM,
+        center: MAP_CENTER,
+        zoom: MAP_ZOOM,
         zoomControl: true,
     });
 
@@ -156,7 +156,7 @@ function addDriftsplatsOverlay() {
     }).addTo(map).bindTooltip("Infartssignal Ör 121 — TimeAtLocation triggas här för tåg norrifrån");
 
     // Show the 600 m GPS arrival-confirmation radius used by the backend
-    L.circle(OREBRO_CENTER, {
+    L.circle(MAP_CENTER, {
         radius: 600,
         color: "#22c55e",
         weight: 2,
@@ -1502,6 +1502,17 @@ function initSSE() {
 
 // --- Init ---
 async function init() {
+    // Fetch backend config before initMap so map center/zoom come from .env, not hardcodes.
+    try {
+        const cfg = await fetch(`${API_BASE}/status`).then(r => r.json());
+        if (cfg.map_center_lat && cfg.map_center_lon) {
+            MAP_CENTER = [cfg.map_center_lat, cfg.map_center_lon];
+        }
+        if (cfg.map_default_zoom) MAP_ZOOM = cfg.map_default_zoom;
+        if (cfg.nearby_radius_meters) nearbyRadius = cfg.nearby_radius_meters;
+        if (cfg.frontend_poll_interval_ms) POLL_INTERVAL = cfg.frontend_poll_interval_ms;
+    } catch (_) { /* use built-in defaults */ }
+
     initMap();
     if (new URLSearchParams(location.search).has("debug")) {
         addDriftsplatsOverlay();
@@ -1509,7 +1520,7 @@ async function init() {
     initControls();
     initGps();
 
-    // Check status first — loads stops/routes when GTFS is ready
+    // Check status — loads stops/routes when GTFS is ready
     await checkStatus();
 
     await pollVehicles();
