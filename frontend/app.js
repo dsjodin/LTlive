@@ -21,7 +21,6 @@ let showRoutes = true;
 let showLabels = true;
 let darkMode = false;
 let tileLayer = null;
-let ormLayer  = null;
 let stopsLayer = null;
 let stopsLoaded = false;
 let routesLoaded = false;
@@ -67,7 +66,6 @@ const TILES = {
     dark: "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
     light: "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png",
 };
-const ORM_TILE_URL = "https://{s}.tiles.openrailwaymap.org/standard/{z}/{x}/{y}.png";
 
 // --- Default line colors (fallback if GTFS has no color) ---
 const LINE_COLORS = [
@@ -177,23 +175,6 @@ function setTileLayer(isDark) {
         maxZoom: 19,
     });
     tileLayer.addTo(map);
-    // Re-add ORM overlay on top after base layer swap
-    if (ormLayer) ormLayer.bringToFront();
-}
-
-function setOrmLayer(enabled) {
-    if (enabled && !ormLayer) {
-        ormLayer = L.tileLayer(ORM_TILE_URL, {
-            attribution: '&copy; <a href="https://www.openrailwaymap.org/">OpenRailwayMap</a>',
-            subdomains: ["a", "b", "c"],
-            maxZoom: 19,
-            opacity: 0.8,
-        });
-        ormLayer.addTo(map);
-    } else if (!enabled && ormLayer) {
-        map.removeLayer(ormLayer);
-        ormLayer = null;
-    }
 }
 
 // --- Bus markers ---
@@ -1441,11 +1422,7 @@ function initControls() {
         });
     });
 
-    document.getElementById("toggle-orm").addEventListener("change", (e) => {
-        setOrmLayer(e.target.checked);
-    });
-
-    document.getElementById("toggle-darkmode").addEventListener("change", (e) => {
+document.getElementById("toggle-darkmode").addEventListener("change", (e) => {
         darkMode = e.target.checked;
         setTileLayer(darkMode);
         document.body.classList.toggle("light-mode", !darkMode);
