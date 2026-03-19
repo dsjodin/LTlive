@@ -124,6 +124,49 @@ function initMap() {
     });
 }
 
+// --- Driftsplats overlay (debug) ---
+// Visualises the approximate operational boundary (driftsplatsgräns) for Örebro C (Örc).
+// Trafikverket's TimeAtLocation fires at this boundary, NOT at the platform.
+// The northern entry signal "Ör 121" (~59.2995°N) is why northbound trains show
+// "Ankommit" ~1.7 km before they reach the platform.
+// Activate with ?debug in the URL.
+function addDriftsplatsOverlay() {
+    // Approximate polygon derived from OSM signal/buffer-stop positions
+    L.polygon([
+        [59.2660, 15.1950],  // SW corner
+        [59.2660, 15.2440],  // SE corner
+        [59.3000, 15.2220],  // N — entry signal Ör 121
+        [59.3000, 15.1960],  // NW corner
+    ], {
+        color: "#f59e0b",
+        weight: 2,
+        dashArray: "6 4",
+        fillColor: "#f59e0b",
+        fillOpacity: 0.06,
+        interactive: false,
+    }).addTo(map).bindTooltip("Örc driftsplats — ungefärlig gräns (baserad på OSM-signalpositioner)", { sticky: true });
+
+    // Mark the northern entry signal — the actual TimeAtLocation trigger point for northbound trains
+    L.circleMarker([59.2995, 15.2215], {
+        radius: 7,
+        color: "#ef4444",
+        fillColor: "#ef4444",
+        fillOpacity: 0.9,
+        weight: 2,
+    }).addTo(map).bindTooltip("Infartssignal Ör 121 — TimeAtLocation triggas här för tåg norrifrån");
+
+    // Show the 600 m GPS arrival-confirmation radius used by the backend
+    L.circle(OREBRO_CENTER, {
+        radius: 600,
+        color: "#22c55e",
+        weight: 2,
+        dashArray: "4 4",
+        fillColor: "#22c55e",
+        fillOpacity: 0.05,
+        interactive: false,
+    }).addTo(map).bindTooltip("600 m GPS-tröskel (gps_at_station i backend)");
+}
+
 function setTileLayer(isDark) {
     if (tileLayer) {
         map.removeLayer(tileLayer);
@@ -1462,6 +1505,9 @@ function initSSE() {
 // --- Init ---
 async function init() {
     initMap();
+    if (new URLSearchParams(location.search).has("debug")) {
+        addDriftsplatsOverlay();
+    }
     initControls();
     initGps();
 
