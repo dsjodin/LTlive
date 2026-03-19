@@ -844,15 +844,22 @@ function startCountdown() {
                 const secs = Math.round(ts - now);
                 const row  = el.closest(".row-wrap");
                 if (secs <= 0) {
-                    // Train has arrived — deactivate signal animation
+                    // Train has arrived — deactivate signal animation.
+                    // If GPS says train is still far from station, show "Nu" instead.
+                    const gpsStillFar = el.dataset.gps === "false";
                     delete el.dataset.signal;
                     const mode = el.dataset.mode || "dep";
-                    const { text, cls } = formatEta(secs, mode);
+                    let { text, cls } = formatEta(secs, mode);
+                    if (gpsStillFar && text === "Ankommit") {
+                        text = "Nu";
+                        cls  = "eta-now";
+                    }
                     el.innerHTML = text;
                     el.className = `eta-col ${cls}`;
                     if (row) {
-                        row.classList.remove("row-signal", "row-now");
-                        row.classList.toggle("row-past", secs < -60);
+                        row.classList.remove("row-signal");
+                        row.classList.toggle("row-now",  gpsStillFar);
+                        row.classList.toggle("row-past", secs < -60 && !gpsStillFar);
                     }
                 } else if (row) {
                     row.classList.remove("row-past", "row-now");
@@ -877,13 +884,19 @@ function startCountdown() {
                 return;
             }
 
-            const { text, cls } = formatEta(secs, mode);
+            let { text, cls } = formatEta(secs, mode);
+            // If GPS says the train is still far from the station, don't show
+            // "Ankommit" yet — override to "Nu" until GPS confirms arrival.
+            if (text === "Ankommit" && el.dataset.gps === "false") {
+                text = "Nu";
+                cls  = "eta-now";
+            }
             el.innerHTML = text;
             el.className = `eta-col ${cls}`;
             const row = el.closest(".row-wrap");
             if (row) {
-                row.classList.toggle("row-now",  secs <= 30 && secs > -60);
-                row.classList.toggle("row-past", secs < -60);
+                row.classList.toggle("row-now",  secs <= 30 && secs > -60 || (text === "Nu" && el.dataset.gps === "false"));
+                row.classList.toggle("row-past", secs < -60 && el.dataset.gps !== "false");
             }
         });
     }, 1000);
@@ -1072,8 +1085,13 @@ async function loadArrivals(board) {
             : (a.is_realtime ? `<div class="via-row">${rtDot}Realtid</div>` : "");
         const remarkText = buildRemarkText(a);
         const useSignal  = !a.canceled && secs > 0 && secs <= 120;
-        const etaInner   = useSignal ? SIGNAL_SVG : etaText;
-        const etaClass   = useSignal ? "eta-signal" : etaCls;
+        // gps_at_station: true = GPS confirms at platform, false = GPS says still far, null = no data
+        const gpsVal     = a.gps_at_station === true ? "true" : a.gps_at_station === false ? "false" : "unknown";
+        // When GPS says train is still far away, override "Ankommit" → "Nu"
+        const arrEtaText = (!useSignal && secs <= 0 && a.gps_at_station === false) ? "Nu" : etaText;
+        const arrEtaCls  = (!useSignal && secs <= 0 && a.gps_at_station === false) ? "eta-now" : etaCls;
+        const etaInner   = useSignal ? SIGNAL_SVG : arrEtaText;
+        const etaClass   = useSignal ? "eta-signal" : arrEtaCls;
         const signalAttr = useSignal ? ' data-signal="true"' : '';
         return `<div class="row-wrap${useSignal ? " row-signal" + canceledClass : " " + nowClass + pastClass + canceledClass}">
             <div class="row arr-grid">
@@ -1083,7 +1101,7 @@ async function loadArrivals(board) {
                 <span class="track"><span class="track-num${arrTrackChangedClass}">${a.platform || "–"}</span></span>
                 <span class="trainno-col">${trainLabel}</span>
                 <span class="operator-col">${opTag}</span>
-                <span class="eta-col ${etaClass}" data-ts="${a.arrival_time}" data-mode="arr"${signalAttr}>${etaInner}</span>
+                <span class="eta-col ${etaClass}" data-ts="${a.arrival_time}" data-mode="arr" data-gps="${gpsVal}"${signalAttr}>${etaInner}</span>
                 <span class="remark-col">${remarkText}</span>
             </div>
             ${viaRow}
