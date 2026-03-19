@@ -1058,9 +1058,10 @@ def arrivals_for_stop(stop_id):
         dest_stop_names.add(target_stop.get("stop_name", ""))
         dest_stop_names.discard("")
 
-    # Build GPS position lookup by train number (newest position per train, max 5 min old).
+    # Build GPS position lookup by train number (newest position per train, max 10 min old).
     # Prefer Öxyfin data for TiB trains (≤30 s old), fall back to Trafikverket TrainPosition.
-    _pos_cutoff = now - 300
+    # 600 s matches the cutoff used in _tv_trains_from_positions() for consistency.
+    _pos_cutoff = now - 600
     pos_by_train: dict[str, dict] = {}
     for _p in tv_positions_raw:
         _tn = _p.get("train_number", "")
