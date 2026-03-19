@@ -843,7 +843,7 @@ function startCountdown() {
                 const ts   = parseFloat(el.dataset.ts);
                 const secs = Math.round(ts - now);
                 const row  = el.closest(".row-wrap");
-                if (secs < -120) {
+                if (secs <= 0) {
                     // Train has arrived — deactivate signal animation
                     delete el.dataset.signal;
                     const mode = el.dataset.mode || "dep";
@@ -852,7 +852,7 @@ function startCountdown() {
                     el.className = `eta-col ${cls}`;
                     if (row) {
                         row.classList.remove("row-signal", "row-now");
-                        row.classList.add("row-past");
+                        row.classList.toggle("row-past", secs < -60);
                     }
                 } else if (row) {
                     row.classList.remove("row-past", "row-now");
@@ -864,7 +864,7 @@ function startCountdown() {
             const mode = el.dataset.mode || "dep";
             const isCanceled = !!el.closest(".row-wrap")?.classList.contains("row-canceled");
 
-            if (!isCanceled && secs <= 120) {
+            if (!isCanceled && secs > 0 && secs <= 120) {
                 // Activate signal mode
                 el.dataset.signal = "true";
                 el.innerHTML  = SIGNAL_SVG;
@@ -1071,7 +1071,7 @@ async function loadArrivals(board) {
             ? `<div class="via-row">${rtDot}via ${a.via.join(" · ")}</div>`
             : (a.is_realtime ? `<div class="via-row">${rtDot}Realtid</div>` : "");
         const remarkText = buildRemarkText(a);
-        const useSignal  = !a.canceled && secs <= 120 && secs > -120;
+        const useSignal  = !a.canceled && secs > 0 && secs <= 120;
         const etaInner   = useSignal ? SIGNAL_SVG : etaText;
         const etaClass   = useSignal ? "eta-signal" : etaCls;
         const signalAttr = useSignal ? ' data-signal="true"' : '';
