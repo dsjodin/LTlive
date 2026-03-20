@@ -38,6 +38,7 @@
                 <button id="type-btn-bus" class="type-btn" title="Visa/dölj bussar">Bussar</button>
                 <button id="type-btn-train" class="type-btn" title="Visa/dölj tåg">Tåg</button>
                 <button id="fav-panel-btn" class="type-btn" title="Favorithållplatser">★ Favoriter</button>
+                <button id="delays-btn" class="type-btn" title="Visa mest försenade bussar">Förseningar</button>
                 <button id="dashboard-btn" class="type-btn" title="Dashboard">Dashboard</button>
             </div>
 
@@ -132,6 +133,30 @@
             <div id="dash-favorites-section">
                 <div class="dash-section-title">★ Favorithållplatser</div>
                 <div id="dash-favorites-body"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===== Delays overlay ===== -->
+    <div id="delays-overlay">
+        <div id="delays-panel">
+            <div id="delays-panel-header">
+                <div id="delays-panel-title">🔴 Förseningar just nu</div>
+                <button id="delays-panel-close" aria-label="Stäng">&#x2715;</button>
+            </div>
+            <div id="delays-panel-body">
+                <table id="delays-table">
+                    <thead>
+                        <tr>
+                            <th>Linje</th>
+                            <th>Mot</th>
+                            <th>Försening</th>
+                            <th>Nästa hållplats</th>
+                        </tr>
+                    </thead>
+                    <tbody id="delays-tbody"></tbody>
+                </table>
+                <div id="delays-empty" style="display:none">Inga förseningar registrerade just nu.</div>
             </div>
         </div>
     </div>
