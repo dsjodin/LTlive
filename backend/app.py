@@ -31,6 +31,7 @@ from api.status import bp as _status_bp
 from api.stops import bp as _stops_bp
 from api.vehicles import bp as _vehicles_bp
 from api.weather import weather_bp as _weather_bp
+from api.traffic import bp as _traffic_bp
 
 app.register_blueprint(_debug_bp)
 app.register_blueprint(_departures_bp)
@@ -39,6 +40,7 @@ app.register_blueprint(_status_bp)
 app.register_blueprint(_stops_bp)
 app.register_blueprint(_vehicles_bp)
 app.register_blueprint(_weather_bp)
+app.register_blueprint(_traffic_bp)
 
 # ---------------------------------------------------------------------------
 # Startup

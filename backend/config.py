@@ -98,6 +98,17 @@ TV_POSITION_CENTER_LAT = float(os.environ.get("TV_POSITION_CENTER_LAT", "59.2753
 TV_POSITION_CENTER_LON = float(os.environ.get("TV_POSITION_CENTER_LON", "15.2134"))
 TV_POSITION_RADIUS_KM = float(os.environ.get("TV_POSITION_RADIUS_KM", "150"))
 
+# Traffic inference — infer road traffic impact from bus movement
+TRAFFIC_ENABLED = os.environ.get("TRAFFIC_ENABLED", "true").lower() == "true"
+TRAFFIC_SEGMENT_LENGTH_M = int(os.environ.get("TRAFFIC_SEGMENT_LENGTH_M", "100"))
+TRAFFIC_STOP_ZONE_RADIUS_M = int(os.environ.get("TRAFFIC_STOP_ZONE_RADIUS_M", "35"))
+TRAFFIC_OBSERVATION_WINDOW_SEC = int(os.environ.get("TRAFFIC_OBSERVATION_WINDOW_SEC", "600"))
+TRAFFIC_MIN_VEHICLES = int(os.environ.get("TRAFFIC_MIN_VEHICLES", "3"))
+TRAFFIC_MIN_ROUTES = int(os.environ.get("TRAFFIC_MIN_ROUTES", "2"))
+TRAFFIC_BASELINE_FILE = os.environ.get("TRAFFIC_BASELINE_FILE", "/app/data/traffic/baseline.json")
+
+ENABLE_DEBUG_ENDPOINTS = os.environ.get("ENABLE_DEBUG_ENDPOINTS", "false").lower() == "true"
+
 # Oxyfi Realtidspositionering — train positions via WebSocket
 # Register at trafiklab.se and add the "Oxyfi-Realtidspositionering" API to your project.
 OXYFI_API_KEY = os.environ.get("OXYFI_API_KEY", "")

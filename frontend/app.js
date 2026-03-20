@@ -1619,6 +1619,66 @@ function initDelaysPanel() {
     });
 }
 
+// --- Traffic inference layer ---
+let trafficLayer = null;
+let showTraffic = false;
+let _trafficTimer = null;
+
+const TRAFFIC_COLORS = { none: "#888", low: "#FFD600", medium: "#FF9800", high: "#F44336" };
+
+async function pollTraffic() {
+    if (!showTraffic) return;
+    try {
+        const resp = await fetch("/api/traffic?min_confidence=0.3&min_severity=low");
+        if (!resp.ok) return;
+        const data = await resp.json();
+        renderTrafficLayer(data);
+    } catch (_) {}
+}
+
+function renderTrafficLayer(geojson) {
+    if (!trafficLayer) trafficLayer = L.layerGroup().addTo(map);
+    trafficLayer.clearLayers();
+
+    for (const f of (geojson.features || [])) {
+        const p = f.properties;
+        const coords = f.geometry.coordinates.map(c => [c[1], c[0]]);
+        if (coords.length < 2) continue;
+
+        const color = TRAFFIC_COLORS[p.severity] || "#888";
+        const opacity = Math.max(0.35, Math.min(1, p.confidence || 0.5));
+
+        L.polyline(coords, {
+            color,
+            weight: 7,
+            opacity,
+            lineCap: "round",
+            lineJoin: "round",
+        }).bindTooltip(
+            `<b>Hastighet:</b> ${p.current_speed_kmh != null ? p.current_speed_kmh.toFixed(0) : "?"} km/h` +
+            (p.expected_speed_kmh ? ` (normalt ${p.expected_speed_kmh.toFixed(0)})` : "") +
+            `<br><b>Fordon:</b> ${p.affected_vehicles}` +
+            `<br><b>Linjer:</b> ${p.unique_routes}` +
+            `<br><b>Konfidens:</b> ${(p.confidence * 100).toFixed(0)}%`,
+            { sticky: true }
+        ).addTo(trafficLayer);
+    }
+}
+
+function initTrafficLayer() {
+    document.getElementById("traffic-btn").addEventListener("click", () => {
+        showTraffic = !showTraffic;
+        document.getElementById("traffic-btn").classList.toggle("active", showTraffic);
+        if (showTraffic) {
+            pollTraffic();
+            _trafficTimer = setInterval(pollTraffic, 30000);
+        } else {
+            clearInterval(_trafficTimer);
+            if (trafficLayer) trafficLayer.clearLayers();
+        }
+    });
+}
+
 function openDashboardPanel() {
     updateDashboardAlerts(_dashAlerts);
     renderDashboardFavorites();
@@ -2096,6 +2156,7 @@ async function init() {
     initGps();
     initFavoritesPanel();
     initDelaysPanel();
+    initTrafficLayer();
 
     // Check status — loads stops/routes when GTFS is ready
     await checkStatus();

@@ -50,6 +50,11 @@ def start_background_tasks() -> None:
         scheduler.add_job(poll_trafikverket, "interval",
                           seconds=config.TRAFIKVERKET_POLL_SECONDS, max_instances=1)
 
+    if config.TRAFFIC_ENABLED:
+        from traffic_inference import save_baseline
+        scheduler.add_job(save_baseline, "interval",
+                          minutes=30, max_instances=1, id="save_traffic_baseline")
+
     scheduler.start()
 
     # Kick off first RT poll and Oxyfi WebSocket immediately

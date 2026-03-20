@@ -103,6 +103,11 @@ def init_gtfs_static() -> None:
             f"{len(static_stop_departures)} stops with static departures today"
         )
 
+        if config.TRAFFIC_ENABLED:
+            from traffic_inference import build_segments, load_baseline
+            build_segments()
+            load_baseline()
+
     except Exception as e:
         error_msg = f"{type(e).__name__}: {e}"
         print(f"Error loading GTFS static data: {error_msg}")
@@ -140,6 +145,10 @@ def refresh_gtfs_static() -> None:
 
         api_cache.clear()
         print("GTFS static data refreshed.")
+
+        if config.TRAFFIC_ENABLED:
+            from traffic_inference import build_segments
+            build_segments()
 
     except Exception as e:
         error_msg = f"{type(e).__name__}: {e}"
@@ -297,6 +306,13 @@ def poll_realtime(push_alerts_callback=None) -> None:
     api_cache.invalidate("vehicles")
     api_cache.invalidate("next_dep")
     api_cache.invalidate_prefix("dep")
+
+    if config.TRAFFIC_ENABLED:
+        try:
+            from traffic_inference import process_vehicle_positions
+            process_vehicle_positions(vehicles, vehicle_trips)
+        except Exception as e:
+            print(f"Traffic inference error: {e}")
 
     if alerts and push_alerts_callback:
         push_alerts_callback(alerts)
