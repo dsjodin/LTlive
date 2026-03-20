@@ -11,7 +11,28 @@ import {
     fetchLineDepartures as apiFetchLineDepartures,
     fetchNearbyDepartures as apiFetchNearbyDepartures,
     connectSSE,
+    fetchWeather,
 } from "./modules/api.js";
+
+const SMHI_ICONS = {
+    1:'☀️', 2:'🌤️', 3:'⛅', 4:'🌥️', 5:'🌫️', 6:'🌫️',
+    7:'🌦️', 8:'🌧️', 9:'🌧️', 10:'⛈️', 11:'⛈️', 12:'⛈️', 13:'⛈️',
+    14:'🌨️', 15:'❄️', 16:'❄️', 17:'❄️', 18:'🌨️', 19:'🌨️',
+    20:'❄️', 21:'❄️', 22:'❄️', 23:'❄️', 24:'🌨️', 25:'🌨️',
+    26:'❄️', 27:'❄️',
+};
+
+async function updateWeather() {
+    try {
+        const w = await fetchWeather();
+        document.getElementById('weather-temp').textContent =
+            w.temp != null ? `${Math.round(w.temp)}°` : '--°';
+        document.getElementById('weather-icon').textContent =
+            SMHI_ICONS[w.symbol] ?? '🌡️';
+    } catch (e) {
+        console.warn('Weather update failed:', e);
+    }
+}
 
 let POLL_INTERVAL = 5000;        // default, overridden by backend config via /api/status
 let MAP_CENTER = [59.2753, 15.2134]; // default, overridden by backend config via /api/status
@@ -78,6 +99,13 @@ try {
     saved.forEach(s => favoriteStops.set(s.stop_id, s));
 } catch (_) {}
 let favoritesTimer = null;
+
+// Saved trips (line + stop combos)
+let savedTrips = new Map(); // "${route_short_name}::${stop_id}" -> {route_id, route_short_name, route_color, route_text_color, stop_id, stop_name}
+try {
+    const saved = JSON.parse(localStorage.getItem("savedTrips") || "[]");
+    saved.forEach(t => savedTrips.set(`${t.route_short_name}::${t.stop_id}`, t));
+} catch (_) {}
 
 const TILES = {
     dark: "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
@@ -207,6 +235,24 @@ function setTileLayer(isDark) {
 
 // --- Bus markers ---
 
+// Returns a border colour for the vehicle marker based on schedule deviation.
+// white  = on time / unknown (delay_seconds null or ≤60 s)
+// yellow = slightly late (1–5 min)
+// red    = significantly late (>5 min)
+function getDelayBorderColor(vehicle) {
+    const d = vehicle.delay_seconds;
+    if (d == null || d <= 60) return "white";
+    if (d <= 300) return "#FFD600";
+    return "#F44336";
+}
+
+function getDelayClass(vehicle) {
+    const d = vehicle.delay_seconds;
+    if (d == null || d <= 60) return "";
+    if (d <= 300) return " delay-warning";
+    return " delay-critical";
+}
+
 // Icon size varies with zoom level so buses don't dominate zoomed-out views.
 function getIconR() {
     const zoom = map ? map.getZoom() : 14;
@@ -233,12 +279,12 @@ function createBusIcon(vehicle) {
         // Tiny dot at low zoom / labels off — use DOM element to avoid inline style=
         const d = R * 2;
         const dot = document.createElement("div");
-        dot.className = "bus-icon-inner";
+        dot.className = "bus-icon-inner" + getDelayClass(vehicle);
         dot.style.width        = `${d}px`;
         dot.style.height       = `${d}px`;
         dot.style.borderRadius = "50%";
         dot.style.background   = color;
-        dot.style.border       = "2px solid white";
+        dot.style.border       = `2px solid ${getDelayBorderColor(vehicle)}`;
         dot.style.boxShadow    = "0 1px 4px rgba(0,0,0,.5)";
         return L.divIcon({
             className: "bus-icon-wrapper",
@@ -254,16 +300,17 @@ function createBusIcon(vehicle) {
     const CX = W / 2, CY = W / 2;
     const fs = Math.round(R * (label.length >= 3 ? 0.72 : label.length >= 2 ? 0.9 : 1.1));
 
+    const borderColor = getDelayBorderColor(vehicle);
     const tipPath = hasBearing
         ? `<path d="M ${CX},${CY-R-TIP} L ${CX+Math.round(TIP*0.65)},${CY-R+Math.round(TIP*0.45)} L ${CX-Math.round(TIP*0.65)},${CY-R+Math.round(TIP*0.45)} Z"
-                  fill="${color}" stroke="white" stroke-width="2" stroke-linejoin="round"/>`
+                  fill="${color}" stroke="${borderColor}" stroke-width="2" stroke-linejoin="round"/>`
         : "";
 
     const svg = `
     <svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${W}" class="vehicle-svg">
       <g transform="rotate(${hasBearing ? bearing : 0},${CX},${CY})">
         ${tipPath}
-        <circle cx="${CX}" cy="${CY}" r="${R}" fill="${color}" stroke="white" stroke-width="2.5"/>
+        <circle cx="${CX}" cy="${CY}" r="${R}" fill="${color}" stroke="${borderColor}" stroke-width="2.5"/>
       </g>
       <text x="${CX}" y="${CY}" text-anchor="middle" dominant-baseline="central"
             font-size="${fs}" font-weight="800" fill="${textColor}"
@@ -273,7 +320,7 @@ function createBusIcon(vehicle) {
 
     return L.divIcon({
         className: "bus-icon-wrapper",
-        html: `<div class="bus-icon-inner icon-shadow">${svg}</div>`,
+        html: `<div class="bus-icon-inner icon-shadow${getDelayClass(vehicle)}">${svg}</div>`,
         iconSize: [W, W],
         iconAnchor: [CX, CY],
     });
@@ -570,7 +617,101 @@ function updateVehicles(vehicles) {
 }
 
 // --- Stop departure board ---
+function buildStopDepartureRows(stop, data) {
+    if (!data || !data.departures || data.departures.length === 0) return null;
+    const now = Date.now() / 1000;
+    return data.departures.map((d) => {
+        const secs = Math.round(d.departure_time - now);
+        const mins = Math.floor(secs / 60);
+        const remSecs = secs % 60;
+        const timeStr = secs <= 0 ? "Nu"
+            : mins > 0 ? `${mins} min ${String(remSecs).padStart(2,"0")} s`
+            : `${secs} s`;
+        const clock = new Date(d.departure_time * 1000)
+            .toLocaleTimeString("sv-SE", { hour: "2-digit", minute: "2-digit" });
+        const custom = getLineStyle(d.route_short_name);
+        const bg = custom ? `#${custom.bg}` : `#${d.route_color}`;
+        const fg = custom ? `#${custom.text}` : `#${d.route_text_color}`;
+        const rt = d.is_realtime
+            ? '<span class="dep-rt" title="Realtid">RT</span>'
+            : "";
+        const delay = d.delay_minutes || 0;
+        const delayHtml = d.is_realtime
+            ? (delay > 0
+                ? `<span class="dep-delay late" title="Försenad">+${delay}</span>`
+                : delay < 0
+                    ? `<span class="dep-delay early" title="Tidig">${delay}</span>`
+                    : `<span class="dep-delay ontime" title="I tid">✓</span>`)
+            : "";
+        const tripKey = `${d.route_short_name}::${stop.stop_id}`;
+        const isSaved = savedTrips.has(tripKey);
+        const pinBtn = `<button class="save-trip-btn${isSaved ? " active" : ""}"
+            data-route-id="${d.route_id}"
+            data-route-short="${d.route_short_name}"
+            data-route-color="${d.route_color || ''}"
+            data-route-text-color="${d.route_text_color || ''}"
+            data-stop-id="${stop.stop_id}"
+            data-stop-name="${stop.stop_name}"
+            title="${isSaved ? "Ta bort sparad resa" : "Spara resa"}">📌</button>`;
+        return `
+            <tr>
+                <td><span class="dep-badge" data-bg="${bg}" data-fg="${fg}">${d.route_short_name}</span></td>
+                <td class="dep-headsign">${d.headsign}</td>
+                <td class="dep-time"><span class="dep-countdown" data-ts="${d.departure_time}">${timeStr}</span>${rt}${delayHtml}</td>
+                <td class="dep-clock">${clock}</td>
+                <td class="dep-pin">${pinBtn}</td>
+            </tr>`;
+    }).join("");
+}
+
+function bindStopDepartureEvents(el, stop) {
+    applyBadgeColors(el);
+    el.querySelectorAll(".fav-btn").forEach(btn => {
+        btn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            toggleFavorite(stop);
+            btn.classList.toggle("active", favoriteStops.has(stop.stop_id));
+            btn.title = favoriteStops.has(stop.stop_id) ? "Ta bort favorit" : "Spara som favorit";
+        });
+    });
+    el.querySelectorAll(".share-btn").forEach(btn => bindShareBtn(btn, stop));
+    el.querySelectorAll(".save-trip-btn").forEach(btn => {
+        btn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            toggleSavedTrip(
+                btn.dataset.routeId, btn.dataset.routeShort,
+                btn.dataset.routeColor, btn.dataset.routeTextColor,
+                btn.dataset.stopId, btn.dataset.stopName
+            );
+            const key = `${btn.dataset.routeShort}::${btn.dataset.stopId}`;
+            btn.classList.toggle("active", savedTrips.has(key));
+            btn.title = savedTrips.has(key) ? "Ta bort sparad resa" : "Spara resa";
+        });
+    });
+}
+
+function bindShareBtn(btn, stop) {
+    btn.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        const url = `${location.origin}/busboard.html?stop_id=${encodeURIComponent(stop.stop_id)}&stop_name=${encodeURIComponent(stop.stop_name)}`;
+        try {
+            await navigator.clipboard.writeText(url);
+            btn.textContent = "✓";
+            setTimeout(() => { btn.textContent = "🔗"; }, 1500);
+        } catch {}
+    });
+}
+
 function showStopDepartures(stop, marker) {
+    // On mobile: use bottom sheet panel instead of Leaflet popup
+    if (window.innerWidth <= 600) {
+        openStopPanel(stop);
+        fetchDepartures(stop.stop_id)
+            .then(data => populateStopPanel(stop, data))
+            .catch(() => populateStopPanel(stop, null));
+        return;
+    }
+
     const loadingHtml = `
         <div class="popup-stop">
             <div class="popup-stop-name">${stop.stop_name}</div>
@@ -581,54 +722,24 @@ function showStopDepartures(stop, marker) {
     fetchDepartures(stop.stop_id)
         .then((data) => {
             let html;
-            if (!data.departures || data.departures.length === 0) {
+            const rows = buildStopDepartureRows(stop, data);
+            if (!rows) {
                 html = `
                     <div class="popup-stop">
                         <div class="popup-stop-name">${stop.stop_name}</div>
                         <div class="dep-empty">Inga kommande avgångar</div>
                     </div>`;
             } else {
-                const now = Date.now() / 1000;
-                const rows = data.departures.map((d) => {
-                    const secs = Math.round(d.departure_time - now);
-                    const mins = Math.floor(secs / 60);
-                    const remSecs = secs % 60;
-                    const timeStr = secs <= 0 ? "Nu"
-                        : mins > 0 ? `${mins} min ${String(remSecs).padStart(2,"0")} s`
-                        : `${secs} s`;
-                    const clock = new Date(d.departure_time * 1000)
-                        .toLocaleTimeString("sv-SE", { hour: "2-digit", minute: "2-digit" });
-                    const custom = getLineStyle(d.route_short_name);
-                    const bg = custom ? `#${custom.bg}` : `#${d.route_color}`;
-                    const fg = custom ? `#${custom.text}` : `#${d.route_text_color}`;
-                    const rt = d.is_realtime
-                        ? '<span class="dep-rt" title="Realtid">RT</span>'
-                        : "";
-                    const delay = d.delay_minutes || 0;
-                    const delayHtml = d.is_realtime
-                        ? (delay > 0
-                            ? `<span class="dep-delay late" title="Försenad">+${delay}</span>`
-                            : delay < 0
-                                ? `<span class="dep-delay early" title="Tidig">${delay}</span>`
-                                : `<span class="dep-delay ontime" title="I tid">✓</span>`)
-                        : "";
-                    return `
-                        <tr>
-                            <td><span class="dep-badge" data-bg="${bg}" data-fg="${fg}">${d.route_short_name}</span></td>
-                            <td class="dep-headsign">${d.headsign}</td>
-                            <td class="dep-time"><span class="dep-countdown" data-ts="${d.departure_time}">${timeStr}</span>${rt}${delayHtml}</td>
-                            <td class="dep-clock">${clock}</td>
-                        </tr>`;
-                }).join("");
                 const platformChip = stop.platform_code
                     ? `<span class="popup-platform">Läge ${stop.platform_code}</span>`
                     : "";
                 const isFav = favoriteStops.has(stop.stop_id);
                 const favBtn = `<button class="fav-btn${isFav ? " active" : ""}" data-stop-id="${stop.stop_id}" title="${isFav ? "Ta bort favorit" : "Spara som favorit"}">★</button>`;
+                const shareBtn = `<button class="share-btn" title="Kopiera länk">🔗</button>`;
                 html = `
                     <div class="popup-stop">
                         <div class="popup-stop-name">${stop.stop_name}${platformChip}
-                            ${favBtn}
+                            ${favBtn}${shareBtn}
                             <a class="board-link" href="/busboard.html?stop_id=${encodeURIComponent(stop.stop_id)}&stop_name=${encodeURIComponent(stop.stop_name)}" target="_blank" title="Öppna avgångstavla">&#128507;</a>
                         </div>
                         <table class="dep-table"><tbody>${rows}</tbody></table>
@@ -636,21 +747,10 @@ function showStopDepartures(stop, marker) {
             }
             if (marker.isPopupOpen()) {
                 marker.setPopupContent(html);
-                // Apply dynamic badge colors after DOM is updated
                 const popup = marker.getPopup();
                 if (popup) {
                     const el = popup.getElement();
-                    if (el) {
-                        applyBadgeColors(el);
-                        el.querySelectorAll(".fav-btn").forEach(btn => {
-                            btn.addEventListener("click", (e) => {
-                                e.stopPropagation();
-                                toggleFavorite(stop);
-                                btn.classList.toggle("active", favoriteStops.has(stop.stop_id));
-                                btn.title = favoriteStops.has(stop.stop_id) ? "Ta bort favorit" : "Spara som favorit";
-                            });
-                        });
-                    }
+                    if (el) bindStopDepartureEvents(el, stop);
                 }
             }
         })
@@ -663,6 +763,54 @@ function showStopDepartures(stop, marker) {
                     </div>`);
             }
         });
+}
+
+function openStopPanel(stop) {
+    const panel = document.getElementById("stop-panel");
+    const title = document.getElementById("stop-panel-title");
+    const actions = document.getElementById("stop-panel-actions");
+    const body = document.getElementById("stop-panel-body");
+    const platformChip = stop.platform_code
+        ? ` <span class="popup-platform">Läge ${stop.platform_code}</span>`
+        : "";
+    title.innerHTML = `${stop.stop_name}${platformChip}`;
+    const isFav = favoriteStops.has(stop.stop_id);
+    actions.innerHTML = `
+        <button class="fav-btn${isFav ? " active" : ""}" data-stop-id="${stop.stop_id}" title="${isFav ? "Ta bort favorit" : "Spara som favorit"}">★</button>
+        <button class="share-btn" title="Kopiera länk">🔗</button>
+        <a class="board-link" href="/busboard.html?stop_id=${encodeURIComponent(stop.stop_id)}&stop_name=${encodeURIComponent(stop.stop_name)}" target="_blank" title="Öppna avgångstavla">&#128507;</a>`;
+    body.innerHTML = `<div class="dep-loading" style="padding:14px">Hämtar avgångar…</div>`;
+    // bind fav + share in header
+    actions.querySelectorAll(".fav-btn").forEach(btn => {
+        btn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            toggleFavorite(stop);
+            btn.classList.toggle("active", favoriteStops.has(stop.stop_id));
+            btn.title = favoriteStops.has(stop.stop_id) ? "Ta bort favorit" : "Spara som favorit";
+        });
+    });
+    actions.querySelectorAll(".share-btn").forEach(btn => bindShareBtn(btn, stop));
+    panel.classList.add("open");
+    document.body.classList.add("stop-open");
+    setTimeout(() => map.invalidateSize(), 310);
+}
+
+function closeStopPanel() {
+    document.getElementById("stop-panel").classList.remove("open");
+    document.body.classList.remove("stop-open");
+    setTimeout(() => map.invalidateSize(), 310);
+}
+
+function populateStopPanel(stop, data) {
+    const body = document.getElementById("stop-panel-body");
+    if (!document.getElementById("stop-panel").classList.contains("open")) return;
+    const rows = buildStopDepartureRows(stop, data);
+    if (!rows) {
+        body.innerHTML = `<div class="dep-empty" style="padding:14px">Inga kommande avgångar</div>`;
+        return;
+    }
+    body.innerHTML = `<table class="dep-table" style="width:100%;padding:0 14px;box-sizing:border-box"><tbody>${rows}</tbody></table>`;
+    bindStopDepartureEvents(body, stop);
 }
 
 function startEtaCountdown() {
@@ -685,6 +833,22 @@ function saveFavorites() {
     localStorage.setItem("favoriteStops", JSON.stringify([...favoriteStops.values()]));
 }
 
+// --- Saved trips ---
+function saveSavedTrips() {
+    localStorage.setItem("savedTrips", JSON.stringify([...savedTrips.values()]));
+}
+
+function toggleSavedTrip(route_id, route_short_name, route_color, route_text_color, stop_id, stop_name) {
+    const key = `${route_short_name}::${stop_id}`;
+    if (savedTrips.has(key)) {
+        savedTrips.delete(key);
+    } else {
+        savedTrips.set(key, { route_id, route_short_name, route_color, route_text_color, stop_id, stop_name });
+    }
+    saveSavedTrips();
+    renderFavoritesPanel();
+}
+
 function toggleFavorite(stop) {
     if (favoriteStops.has(stop.stop_id)) {
         favoriteStops.delete(stop.stop_id);
@@ -699,18 +863,63 @@ function renderFavoritesPanel() {
     const panel = document.getElementById("favorites-panel");
     const body = document.getElementById("favorites-panel-body");
     if (!panel || !body) return;
+
+    let html = "";
+
+    // --- Stops section ---
+    html += `<div class="fav-section">`;
+    html += `<div class="fav-section-title">★ Hållplatser</div>`;
     if (favoriteStops.size === 0) {
-        body.innerHTML = `<div class="fav-empty">Inga favorithållplatser ännu.<br>Klicka på ★ i en hållplats-popup för att spara.</div>`;
-        return;
+        html += `<div class="fav-empty">Inga favorithållplatser ännu.<br>Klicka på ★ i en hållplats-popup för att spara.</div>`;
+    } else {
+        html += [...favoriteStops.values()].map(s => `
+            <div class="fav-stop" data-stop-id="${s.stop_id}">
+                <span class="fav-stop-name">${s.stop_name}</span>
+                <div class="fav-stop-deps" id="fav-deps-${s.stop_id}">
+                    <span class="fav-loading">Hämtar…</span>
+                </div>
+            </div>`).join("");
     }
-    body.innerHTML = [...favoriteStops.values()].map(s => `
-        <div class="fav-stop" data-stop-id="${s.stop_id}">
-            <span class="fav-stop-name">${s.stop_name}</span>
-            <div class="fav-stop-deps" id="fav-deps-${s.stop_id}">
-                <span class="fav-loading">Hämtar…</span>
-            </div>
-        </div>`).join("");
+    html += `</div>`;
+
+    // --- Saved trips section ---
+    html += `<div class="fav-section">`;
+    html += `<div class="fav-section-title">📌 Mina resor</div>`;
+    if (savedTrips.size === 0) {
+        html += `<div class="fav-empty">Inga sparade resor ännu.<br>Klicka på 📌 vid en avgång för att spara.</div>`;
+    } else {
+        html += [...savedTrips.entries()].map(([key, t]) => {
+            const custom = getLineStyle(t.route_short_name);
+            const bg = custom ? `#${custom.bg}` : (t.route_color ? `#${t.route_color}` : "#555");
+            const fg = custom ? `#${custom.text}` : (t.route_text_color ? `#${t.route_text_color}` : "#fff");
+            const safeKey = key.replace(/::/g, "-");
+            return `
+            <div class="saved-trip-card" data-key="${key}">
+                <span class="fav-dep-badge" style="background:${bg};color:${fg};flex-shrink:0">${t.route_short_name}</span>
+                <div class="saved-trip-info">
+                    <div class="saved-trip-label">från ${t.stop_name}</div>
+                    <div class="fav-stop-deps" id="trip-deps-${safeKey}"><span class="fav-loading">Hämtar…</span></div>
+                </div>
+                <button class="saved-trip-remove" data-key="${key}" title="Ta bort">✕</button>
+            </div>`;
+        }).join("");
+    }
+    html += `</div>`;
+
+    body.innerHTML = html;
+
+    // Bind remove-trip buttons
+    body.querySelectorAll(".saved-trip-remove").forEach(btn => {
+        btn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            savedTrips.delete(btn.dataset.key);
+            saveSavedTrips();
+            renderFavoritesPanel();
+        });
+    });
+
     fetchFavoriteDepartures();
+    fetchSavedTripDepartures();
 }
 
 function fetchFavoriteDepartures() {
@@ -742,11 +951,38 @@ function fetchFavoriteDepartures() {
     });
 }
 
+function fetchSavedTripDepartures() {
+    savedTrips.forEach((trip, key) => {
+        const safeKey = key.replace(/::/g, "-");
+        fetchDepartures(trip.stop_id, 8).then(data => {
+            const el = document.getElementById(`trip-deps-${safeKey}`);
+            if (!el) return;
+            const filtered = (data.departures || []).filter(d => d.route_short_name === trip.route_short_name);
+            if (filtered.length === 0) {
+                el.innerHTML = `<span class="fav-empty-deps">Inga avgångar</span>`;
+                return;
+            }
+            const now = Date.now() / 1000;
+            el.innerHTML = filtered.slice(0, 3).map(d => {
+                const mins = Math.max(0, Math.round((d.departure_time - now) / 60));
+                const timeStr = mins === 0 ? "Nu" : `${mins} min`;
+                return `<span class="fav-dep">
+                    <span class="fav-dep-headsign">${d.headsign}</span>
+                    <span class="fav-dep-time">${timeStr}</span>
+                </span>`;
+            }).join("");
+        }).catch(() => {
+            const el = document.getElementById(`trip-deps-${safeKey}`);
+            if (el) el.innerHTML = `<span class="fav-empty-deps">Fel</span>`;
+        });
+    });
+}
+
 function openFavoritesPanel() {
     renderFavoritesPanel();
     document.getElementById("favorites-panel").classList.add("open");
     clearInterval(favoritesTimer);
-    favoritesTimer = setInterval(fetchFavoriteDepartures, 15000);
+    favoritesTimer = setInterval(() => { fetchFavoriteDepartures(); fetchSavedTripDepartures(); }, 15000);
 }
 
 function closeFavoritesPanel() {
@@ -796,26 +1032,58 @@ function showVehiclePopup(vehicle, marker) {
         ? ` <span class="popup-platform">Läge ${nextStopPlatform}</span>`
         : "";
 
+    let delayHtml = "";
+    if (!isTrain && vehicle.delay_seconds != null) {
+        const delayMin = Math.round(vehicle.delay_seconds / 60);
+        if (vehicle.delay_seconds > 60) {
+            const nextStopPart = nextStop ? ` till ${nextStop}` : "";
+            delayHtml = `<span class="popup-delay popup-delay--late">${delayMin} min försenad${nextStopPart}</span><br/>`;
+        } else if (vehicle.delay_seconds < -60) {
+            delayHtml = `<span class="popup-delay popup-delay--early">${Math.abs(delayMin)} min tidig</span><br/>`;
+        } else {
+            delayHtml = `<span class="popup-delay popup-delay--ontime">I tid</span><br/>`;
+        }
+    }
+
+    const custom = getLineStyle(lineName);
+    const badgeBg = custom ? `#${custom.bg}` : (vehicle.route_color ? `#${vehicle.route_color}` : color);
+    const badgeFg = custom ? `#${custom.text}` : (vehicle.route_text_color ? `#${vehicle.route_text_color}` : "#fff");
+    const vehicleIdStr = vehicle.vehicle_id
+        ? `Fordon #${String(vehicle.vehicle_id).split(":").pop()}<br/>`
+        : "";
+    const hasRoute = vehicle.route_id && routeData[vehicle.route_id];
+
     const html = `
         <div class="popup-vehicle">
-            <div class="popup-title" data-color="${color}">
-                ${title}
+            <div style="margin-bottom:4px">
+                <span class="popup-veh-badge" style="background:${badgeBg};color:${badgeFg}">${lineName}</span>
             </div>
+            <div class="popup-title" data-color="${color}">${title}</div>
             <div class="popup-details">
-                ${nextStop ? `${nextStopLabel}: ${nextStop}${platformChip}<br/>` : ""}
+                ${delayHtml}
+                ${nextStop ? `${nextStopLabel}: <strong>${nextStop}</strong>${platformChip}<br/>` : ""}
                 ${speed ? `Hastighet: ${speed}<br/>` : ""}
+                ${vehicleIdStr}
                 Uppdaterad: ${updatedAt}
             </div>
+            ${hasRoute ? `<button class="popup-open-line-btn" data-route-id="${vehicle.route_id}">Visa linje →</button>` : ""}
         </div>
     `;
-    const popup = L.popup({ maxWidth: 250 })
+    const popup = L.popup({ maxWidth: 260 })
         .setLatLng(marker.getLatLng())
         .setContent(html)
         .openOn(map);
-    // Apply dynamic color after popup is in DOM
     requestAnimationFrame(() => {
         const el = popup.getElement();
-        if (el) el.querySelectorAll("[data-color]").forEach(e => { e.style.color = e.dataset.color; });
+        if (!el) return;
+        el.querySelectorAll("[data-color]").forEach(e => { e.style.color = e.dataset.color; });
+        el.querySelectorAll(".popup-open-line-btn").forEach(btn => {
+            btn.addEventListener("click", () => {
+                map.closePopup();
+                const route = routeData[btn.dataset.routeId];
+                if (route) openLinePanel(route);
+            });
+        });
     });
 }
 
@@ -1281,6 +1549,192 @@ function renderDashboardFavorites() {
     });
 }
 
+// --- Delays overlay ---
+function buildDelaysTable() {
+    const buses = Object.values(vehicleMarkers)
+        .map(m => m._vehicleData)
+        .filter(v => v && v.vehicle_type !== "train" && v.delay_seconds != null && v.delay_seconds > 60);
+
+    buses.sort((a, b) => b.delay_seconds - a.delay_seconds);
+    const top = buses.slice(0, 20);
+
+    const tbody = document.getElementById("delays-tbody");
+    const empty = document.getElementById("delays-empty");
+    const table = document.getElementById("delays-table");
+
+    if (top.length === 0) {
+        table.style.display = "none";
+        empty.style.display = "";
+        return;
+    }
+    table.style.display = "";
+    empty.style.display = "none";
+
+    tbody.innerHTML = top.map(v => {
+        const delayMin = Math.round(v.delay_seconds / 60);
+        const delayClass = v.delay_seconds > 300 ? "delays-delay--critical" : "delays-delay--warning";
+        const color = getRouteColor({
+            route_color: v.route_color,
+            route_short_name: v.route_short_name,
+            route_id: v.route_id,
+        });
+        const textColor = getRouteTextColor(v);
+        const line = v.route_short_name || "?";
+        const dest = v.trip_headsign || "—";
+        const stop = v.next_stop_name || "—";
+        return `<tr data-vehicle-id="${v.vehicle_id || v.id}">
+            <td><span class="delays-line-chip" style="background:#${v.route_color||'0074D9'};color:#${v.route_text_color||'FFFFFF'}">${line}</span></td>
+            <td>${dest}</td>
+            <td class="delays-delay-cell ${delayClass}">+${delayMin} min</td>
+            <td>${stop}</td>
+        </tr>`;
+    }).join("");
+
+    // Click row → close overlay and pan to vehicle
+    tbody.querySelectorAll("tr[data-vehicle-id]").forEach(row => {
+        row.addEventListener("click", () => {
+            const vid = row.dataset.vehicleId;
+            closeDelaysPanel();
+            const marker = vehicleMarkers[vid];
+            if (marker) {
+                map.setView(marker.getLatLng(), Math.max(map.getZoom(), 15));
+                marker.fire("click");
+            }
+        });
+    });
+}
+
+function openDelaysPanel() {
+    buildDelaysTable();
+    document.getElementById("delays-overlay").classList.add("open");
+}
+function closeDelaysPanel() {
+    document.getElementById("delays-overlay").classList.remove("open");
+}
+function initDelaysPanel() {
+    document.getElementById("delays-btn").addEventListener("click", openDelaysPanel);
+    document.getElementById("delays-panel-close").addEventListener("click", closeDelaysPanel);
+    document.getElementById("delays-overlay").addEventListener("click", e => {
+        if (e.target === document.getElementById("delays-overlay")) closeDelaysPanel();
+    });
+}
+
+// --- Traffic inference layer ---
+let trafficLayer = null;
+let showTraffic = false;
+let _trafficTimer = null;
+let zoneLayer = null;
+let showZones = false;
+
+const TRAFFIC_COLORS = { none: "#888", low: "#FFD600", medium: "#FF9800", high: "#F44336" };
+
+async function pollTraffic() {
+    if (!showTraffic) return;
+    try {
+        const resp = await fetch("/api/traffic?min_confidence=0.3&min_severity=low");
+        if (!resp.ok) return;
+        const data = await resp.json();
+        renderTrafficLayer(data);
+    } catch (_) {}
+}
+
+function renderTrafficLayer(geojson) {
+    if (!trafficLayer) trafficLayer = L.layerGroup().addTo(map);
+    trafficLayer.clearLayers();
+
+    for (const f of (geojson.features || [])) {
+        const p = f.properties;
+        const coords = f.geometry.coordinates.map(c => [c[1], c[0]]);
+        if (coords.length < 2) continue;
+
+        const color = TRAFFIC_COLORS[p.severity] || "#888";
+        const opacity = Math.max(0.35, Math.min(1, p.confidence || 0.5));
+
+        L.polyline(coords, {
+            color,
+            weight: 7,
+            opacity,
+            lineCap: "round",
+            lineJoin: "round",
+        }).bindTooltip(
+            `<b>Hastighet:</b> ${p.current_speed_kmh != null ? p.current_speed_kmh.toFixed(0) : "?"} km/h` +
+            (p.expected_speed_kmh ? ` (normalt ${p.expected_speed_kmh.toFixed(0)})` : "") +
+            `<br><b>Fordon:</b> ${p.affected_vehicles}` +
+            `<br><b>Linjer:</b> ${p.unique_routes}` +
+            `<br><b>Konfidens:</b> ${(p.confidence * 100).toFixed(0)}%`,
+            { sticky: true }
+        ).addTo(trafficLayer);
+    }
+}
+
+async function fetchZones() {
+    try {
+        const resp = await fetch("/api/traffic/zones");
+        if (!resp.ok) return;
+        renderZoneLayer(await resp.json());
+    } catch (_) {}
+}
+
+function renderZoneLayer(data) {
+    if (!zoneLayer) zoneLayer = L.layerGroup().addTo(map);
+    zoneLayer.clearLayers();
+
+    for (const t of (data.terminal || [])) {
+        L.circle([t.lat, t.lon], {
+            radius: 40,
+            color: "#a855f7",
+            fillColor: "#a855f7",
+            fillOpacity: 0.15,
+            weight: 1.5,
+            opacity: 0.7,
+        }).bindTooltip("Ändhållplats", { sticky: true }).addTo(zoneLayer);
+    }
+
+    for (const s of (data.signal || [])) {
+        L.circle([s.lat, s.lon], {
+            radius: s.radius_m || 30,
+            color: "#f97316",
+            fillColor: "#f97316",
+            fillOpacity: 0.15,
+            weight: 1.5,
+            opacity: 0.7,
+        }).bindTooltip("Trafiksignal", { sticky: true }).addTo(zoneLayer);
+    }
+}
+
+function initTrafficLayer() {
+    document.getElementById("traffic-btn").addEventListener("click", () => {
+        showTraffic = !showTraffic;
+        document.getElementById("traffic-btn").classList.toggle("active", showTraffic);
+        document.getElementById("traffic-legend").classList.toggle("visible", showTraffic);
+        if (showTraffic) {
+            pollTraffic();
+            _trafficTimer = setInterval(pollTraffic, 30000);
+        } else {
+            clearInterval(_trafficTimer);
+            if (trafficLayer) trafficLayer.clearLayers();
+            // Also hide zones when traffic is turned off
+            if (showZones) {
+                showZones = false;
+                document.getElementById("zone-overlay-btn").classList.remove("active");
+                document.getElementById("zone-legend-rows").classList.remove("visible");
+                if (zoneLayer) zoneLayer.clearLayers();
+            }
+        }
+    });
+
+    document.getElementById("zone-overlay-btn").addEventListener("click", () => {
+        showZones = !showZones;
+        document.getElementById("zone-overlay-btn").classList.toggle("active", showZones);
+        document.getElementById("zone-legend-rows").classList.toggle("visible", showZones);
+        if (showZones) {
+            fetchZones();
+        } else {
+            if (zoneLayer) zoneLayer.clearLayers();
+        }
+    });
+}
+
 function openDashboardPanel() {
     updateDashboardAlerts(_dashAlerts);
     renderDashboardFavorites();
@@ -1673,6 +2127,9 @@ document.getElementById("toggle-darkmode").addEventListener("change", (e) => {
     // Line panel close
     document.getElementById("line-panel-close").addEventListener("click", closeLinePanel);
 
+    // Stop panel close (mobile)
+    document.getElementById("stop-panel-close").addEventListener("click", closeStopPanel);
+
     // Hamburger (mobile: toggles controls dropdown)
     document.getElementById("hamburger-btn").addEventListener("click", () => {
         const ctrl = document.getElementById("topbar-controls");
@@ -1730,6 +2187,10 @@ function initSSE() {
             (data.removed || []).forEach(id => _vehicleState.delete(id));
             updateVehicles(Array.from(_vehicleState.values()));
         },
+        // onTraffic — traffic inference GeoJSON pushed from backend after each RT poll
+        (data) => {
+            if (showTraffic) renderTrafficLayer(data);
+        },
     );
 }
 
@@ -1751,9 +2212,19 @@ async function init() {
     if (urlParams.has("debug")) {
         addDriftsplatsOverlay();
     }
+
+    // ?lat=&lon=&zoom= — fly to specific location (e.g. from traffic segment links)
+    const urlLat  = parseFloat(urlParams.get("lat"));
+    const urlLon  = parseFloat(urlParams.get("lon"));
+    const urlZoom = parseInt(urlParams.get("zoom"), 10);
+    if (!isNaN(urlLat) && !isNaN(urlLon)) {
+        map.setView([urlLat, urlLon], !isNaN(urlZoom) ? urlZoom : 17);
+    }
     initControls();
     initGps();
     initFavoritesPanel();
+    initDelaysPanel();
+    initTrafficLayer();
 
     // Check status — loads stops/routes when GTFS is ready
     await checkStatus();
@@ -1765,6 +2236,9 @@ async function init() {
     initSSE();
     setInterval(pollAlerts, 30000);
     setInterval(pollStopDepartures, 60000);
+
+    updateWeather();
+    setInterval(updateWeather, 10 * 60 * 1000);
 
     // ?line=<route_short_name> — pre-open line filter (e.g. from busboard.html "Se på karta" link)
     const preOpenLine = urlParams.get("line");

@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LTlive – Trafikinferens monitor</title>
+  <link rel="stylesheet" href="diag.css" />
+  <link rel="stylesheet" href="traffic_monitor.css" />
+</head>
+<body>
+<div id="topbar">
+  <h1>LTlive <span>Trafikinferens</span></h1>
+  <a href="/" id="main-link">← Kartan</a>
+  <a href="/diag.html" class="api-link">Diagnostik</a>
+  <div class="sep"></div>
+  <span id="clock"></span>
+  <span id="auto-badge">auto 5s</span>
+  <button id="refresh-btn">⟳ Uppdatera</button>
+</div>
+
+<div id="page">
+  <div id="loading"><span class="spin">⟳</span> Laddar data…</div>
+</div>
+
+<script type="module" src="traffic_monitor.js"></script>
+</body>
+</html>

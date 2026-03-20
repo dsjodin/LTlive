@@ -1,0 +1,90 @@
+/* Traffic inference monitor — extends diag.css */
+
+.sev-badge {
+  display: inline-block; padding: 1px 8px; border-radius: 10px;
+  font-size: 11px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.sev-none   { background:#333; color:#888; }
+.sev-low    { background:#3a3200; color:#FFD600; }
+.sev-medium { background:#3a2000; color:#FF9800; }
+.sev-high   { background:#3a0800; color:#F44336; }
+
+.zone-tag {
+  display: inline-block; padding: 1px 6px; border-radius: 3px;
+  font-size: 10px; margin-right: 2px;
+}
+.zone-stop     { background:#1a3a5a; color:#7eb8f7; }
+.zone-signal   { background:#3a3a1a; color:#f0e060; }
+.zone-terminal { background:#3a1a3a; color:#e070e0; }
+
+/* Speed bar — uses <progress> to avoid inline styles */
+.speed-bar {
+  width: 60px; height: 6px; vertical-align: middle;
+  border-radius: 3px; border: none; appearance: none;
+  background: #1a1d27;
+}
+.speed-bar::-webkit-progress-bar  { background:#1a1d27; border-radius:3px; }
+.speed-bar::-moz-progress-bar     { border-radius:3px; }
+.speed-bar::-webkit-progress-value { border-radius:3px; }
+
+.speed-bar.sev-none   { color:#5de895; } /* Firefox */
+.speed-bar.sev-low    { color:#FFD600; }
+.speed-bar.sev-medium { color:#FF9800; }
+.speed-bar.sev-high   { color:#F44336; }
+.speed-bar.sev-none::-webkit-progress-value   { background:#5de895; }
+.speed-bar.sev-low::-webkit-progress-value    { background:#FFD600; }
+.speed-bar.sev-medium::-webkit-progress-value { background:#FF9800; }
+.speed-bar.sev-high::-webkit-progress-value   { background:#F44336; }
+
+.speed-cell { display:flex; align-items:center; gap:6px; white-space:nowrap; }
+.speed-pct  { color:#778; font-size:10px; }
+
+/* Table layout helpers */
+.card-body-flush    { padding:0; overflow-x:auto; }
+.seg-empty-row      { padding:12px; text-align:center; }
+.baseline-hint      { margin-bottom:10px; }
+
+/* Confidence colours */
+.conf-good { color:#5de895; font-weight:600; }
+.conf-warn { color:#f0a030; font-weight:600; }
+.conf-bad  { color:#f05050; font-weight:600; }
+
+/* Observation pill */
+.obs-pill {
+  display:inline-block; background:#22263a; border:1px solid #2e3250;
+  border-radius:10px; padding:1px 8px; font-size:11px; color:#bbc;
+}
+
+/* Baseline hour grid */
+#hour-grid {
+  display: grid;
+  grid-template-columns: 62px repeat(24, 1fr);
+  gap: 2px;
+  font-size: 10px;
+}
+.hg-header { color:#778; text-align:center; padding-bottom:2px; }
+.hg-row-label { color:#aab; padding: 2px 4px; text-align:right; white-space:nowrap; line-height:16px; }
+.hg-cell {
+  border-radius:2px; height:16px;
+  background:#1a1d27; border:1px solid #2a2d3d;
+}
+.hg-cell.has-data          { background:#1b4d2e; border-color:#2a7a46; opacity:0.4; }
+.hg-cell.has-data.hg-op-2 { opacity:0.65; }
+.hg-cell.has-data.hg-op-3 { opacity:0.9;  }
+.hg-cell.has-data.hg-op-4 { opacity:1.0;  }
+
+/* Vehicles grid */
+#vehicles-grid { display:flex; flex-wrap:wrap; gap:5px; }
+.veh-chip {
+  display:inline-flex; align-items:center; gap:5px;
+  background:#1e2236; border-radius:4px; padding:3px 8px;
+  font-size:11px; font-family:monospace;
+}
+.veh-chip .age       { color:#667; }
+.veh-chip .age.stale { color:#f05050; }
+
+/* Stat-box color variants */
+.sval-low    { color:#FFD600; }
+.sval-medium { color:#FF9800; }
+.sval-high   { color:#F44336; }

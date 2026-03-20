@@ -108,6 +108,15 @@ def init_gtfs_static() -> None:
         print(f"Error loading GTFS static data: {error_msg}")
         traceback.print_exc()
         gtfs_store.set_error(error_msg)
+        return
+
+    if config.TRAFFIC_ENABLED:
+        try:
+            from traffic_inference import build_segments, load_baseline
+            build_segments()  # runs in background thread
+            load_baseline()
+        except Exception as e:
+            print(f"Traffic inference init error: {e}")
 
 
 def refresh_gtfs_static() -> None:
@@ -140,6 +149,10 @@ def refresh_gtfs_static() -> None:
 
         api_cache.clear()
         print("GTFS static data refreshed.")
+
+        if config.TRAFFIC_ENABLED:
+            from traffic_inference import build_segments
+            build_segments()
 
     except Exception as e:
         error_msg = f"{type(e).__name__}: {e}"
@@ -273,6 +286,9 @@ def poll_realtime(push_alerts_callback=None) -> None:
         vid = v.get("vehicle_id", "")
         ns  = vehicle_next_stop.get(vid, "") or v.get("current_stop_id", "")
         v["current_stop_id"] = ns
+        delay_sec = vehicle_trips.get(vid, {}).get("delay_seconds")
+        if delay_sec is not None:
+            v["delay_seconds"] = delay_sec
 
     with vehicle_store.lock:
         vehicle_store.vehicles             = vehicles
@@ -294,6 +310,15 @@ def poll_realtime(push_alerts_callback=None) -> None:
     api_cache.invalidate("vehicles")
     api_cache.invalidate("next_dep")
     api_cache.invalidate_prefix("dep")
+
+    if config.TRAFFIC_ENABLED:
+        try:
+            from traffic_inference import process_vehicle_positions
+            from tasks.sse_tasks import push_traffic_update
+            process_vehicle_positions(vehicles, vehicle_trips)
+            push_traffic_update()
+        except Exception as e:
+            print(f"Traffic inference error: {e}")
 
     if alerts and push_alerts_callback:
         push_alerts_callback(alerts)

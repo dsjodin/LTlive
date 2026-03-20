@@ -160,18 +160,32 @@ function selectStop(id, name) {
 }
 
 // --- Alerts ---
-function updateAlerts(alerts) {
+let currentAlerts   = [];          // rådata från API, ofiltrerad
+let currentRouteIds = new Set();   // route_id:n från senaste avgångsladdning
+
+function applyAlertFilter() {
     const banner = document.getElementById("alert-banner");
-    if (!alerts || alerts.length === 0) {
+    const relevant = currentRouteIds.size === 0
+        ? []
+        : currentAlerts.filter(a =>
+            a.affected_routes && a.affected_routes.length > 0 &&
+            a.affected_routes.some(id => currentRouteIds.has(id))
+          );
+    if (relevant.length === 0) {
         banner.classList.remove("visible");
         banner.textContent = "";
     } else {
-        banner.textContent = alerts.map(a =>
+        banner.textContent = relevant.map(a =>
             `⚠ ${a.header}${a.description ? " — " + a.description : ""}`
         ).join("  ·  ");
         banner.classList.add("visible");
     }
     resizeBoard();
+}
+
+function updateAlerts(alerts) {
+    currentAlerts = alerts || [];
+    applyAlertFilter();
 }
 
 // --- SSE stream ---
@@ -280,5 +294,7 @@ function renderBoard(departures) {
         el.style.color      = `#${el.dataset.fg}`;
     });
 
+    currentRouteIds = new Set(departures.map(d => d.route_id).filter(Boolean));
+    applyAlertFilter();
     startCountdown();
 }

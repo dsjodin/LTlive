@@ -31,9 +31,11 @@ services:
       - MAP_CENTER_LON=${MAP_CENTER_LON:-15.2134}
       - MAP_DEFAULT_ZOOM=${MAP_DEFAULT_ZOOM:-13}
       - ENABLE_DEBUG_ENDPOINTS=${ENABLE_DEBUG_ENDPOINTS:-false}
+      - TRAFFIC_ENABLED=${TRAFFIC_ENABLED:-true}
     volumes:
       - gtfs-data:/app/data/gtfs
       - stats-data:/app/data/stats
+      - traffic-data:/app/data/traffic
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/api/health')"]
       interval: 30s
@@ -65,6 +67,7 @@ services:
 volumes:
   gtfs-data:
   stats-data:
+  traffic-data:
 
 networks:
   proxy:

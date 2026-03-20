@@ -87,6 +87,57 @@ def unregister_client(q: _queue.Queue, ip: str) -> None:
 
 _prev_vehicles: dict = {}  # vehicle_id -> vehicle dict, for delta computation
 
+# ---------------------------------------------------------------------------
+# Traffic push helper (called from bus_provider after inference update)
+# ---------------------------------------------------------------------------
+
+_TRAFFIC_PUSH_THROTTLE_SEC = 10  # don't push more often than this
+_last_traffic_push: float = 0.0
+
+
+def push_traffic_update() -> None:
+    """Push a ``traffic`` SSE event to all connected clients (throttled).
+
+    Reads the current segment states from traffic_store and serialises a
+    minimal GeoJSON-like payload.  Clients that have the traffic layer
+    disabled simply ignore the event.
+    """
+    global _last_traffic_push
+    now = time.time()
+    if now - _last_traffic_push < _TRAFFIC_PUSH_THROTTLE_SEC:
+        return
+    try:
+        from stores.traffic_store import traffic_store
+        from config import TRAFFIC_SEGMENT_LENGTH_M
+        SEV_ORDER = {"none": 0, "low": 1, "medium": 2, "high": 3}
+        features = []
+        with traffic_store.lock:
+            for seg_id, state in traffic_store.segment_states.items():
+                if state.get("severity", "none") == "none":
+                    continue
+                coords = traffic_store.shape_coords.get(seg_id, [])
+                if len(coords) < 2:
+                    continue
+                features.append({
+                    "type": "Feature",
+                    "geometry": {"type": "LineString", "coordinates": coords},
+                    "properties": {
+                        "segment_id":        seg_id,
+                        "severity":          state.get("severity", "none"),
+                        "confidence":        round(state.get("confidence", 0.0), 3),
+                        "current_speed_kmh": round(state["mean_speed_ms"] * 3.6, 1) if state.get("mean_speed_ms") else None,
+                        "expected_speed_kmh": round(state["baseline_speed_ms"] * 3.6, 1) if state.get("baseline_speed_ms") else None,
+                        "affected_vehicles": state.get("vehicle_count", 0),
+                        "unique_routes":     state.get("route_count", 0),
+                    },
+                })
+        if not features:
+            return
+        push_sse("traffic", {"type": "FeatureCollection", "features": features})
+        _last_traffic_push = now
+    except Exception as exc:
+        print(f"[sse] traffic push error: {exc}")
+
 
 def push_vehicle_update() -> None:
     """Merge buses + trains and push full + delta SSE events.
