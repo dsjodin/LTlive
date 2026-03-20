@@ -8,8 +8,8 @@ from flask import Blueprint, jsonify, request
 import config
 import gtfs_loader
 import stats as _stats
-from data.gtfs_store import gtfs_store
-from data.vehicle_store import vehicle_store
+from stores.gtfs_store import gtfs_store
+from stores.vehicle_store import vehicle_store
 from store import _data, _lock
 
 bp = Blueprint("status", __name__)

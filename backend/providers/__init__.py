@@ -7,9 +7,9 @@ Each provider owns one data domain:
 
 Providers write to the typed stores in data/:
 
-    from data.gtfs_store import gtfs_store
-    from data.vehicle_store import vehicle_store
-    from data.train_store import train_store
+    from stores.gtfs_store import gtfs_store
+    from stores.vehicle_store import vehicle_store
+    from stores.train_store import train_store
 
 New integrations (e.g. a new operator API) should follow the same pattern:
 create a new store class in data/ and a new provider class here.

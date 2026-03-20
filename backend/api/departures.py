@@ -12,9 +12,9 @@ from flask import Blueprint, jsonify, request
 
 import config
 import oxyfi
-from data.gtfs_store import gtfs_store
-from data.train_store import train_store
-from data.vehicle_store import vehicle_store
+from stores.gtfs_store import gtfs_store
+from stores.train_store import train_store
+from stores.vehicle_store import vehicle_store
 from store import _cache_get, _cache_set
 from trip_utils import merge_rt_static as _merge_rt_static
 

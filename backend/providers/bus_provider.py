@@ -16,9 +16,9 @@ import traceback
 import config
 import gtfs_loader
 import gtfs_rt
-from data.cache import api_cache
-from data.gtfs_store import gtfs_store
-from data.vehicle_store import vehicle_store
+from stores.cache import api_cache
+from stores.gtfs_store import gtfs_store
+from stores.vehicle_store import vehicle_store
 
 
 # ---------------------------------------------------------------------------

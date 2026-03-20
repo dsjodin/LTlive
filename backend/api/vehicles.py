@@ -6,7 +6,7 @@ import queue as _queue
 from flask import Blueprint, Response, jsonify, request, stream_with_context
 
 import oxyfi
-from data.vehicle_store import vehicle_store
+from stores.vehicle_store import vehicle_store
 from enrichment import enrich_vehicles
 from store import _cache_get, _cache_set, _lock, _data
 from tasks.sse_tasks import (

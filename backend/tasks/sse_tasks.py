@@ -15,7 +15,7 @@ import queue as _queue
 import time
 
 import oxyfi
-from data.vehicle_store import vehicle_store
+from stores.vehicle_store import vehicle_store
 from enrichment import enrich_vehicles
 from train_logic import (
     _annotate_oxyfi_from_announcements,

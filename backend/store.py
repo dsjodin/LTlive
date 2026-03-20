@@ -2,10 +2,10 @@
 
 New code should import typed store objects directly:
 
-    from data.gtfs_store import gtfs_store
-    from data.vehicle_store import vehicle_store
-    from data.train_store import train_store
-    from data.cache import api_cache
+    from stores.gtfs_store import gtfs_store
+    from stores.vehicle_store import vehicle_store
+    from stores.train_store import train_store
+    from stores.cache import api_cache
 
 Existing blueprint code continues to use the legacy API:
 
@@ -17,10 +17,10 @@ import os
 import threading
 from functools import wraps
 
-from data.cache import TTLCache, api_cache
-from data.gtfs_store import gtfs_store
-from data.vehicle_store import vehicle_store
-from data.train_store import train_store
+from stores.cache import TTLCache, api_cache
+from stores.gtfs_store import gtfs_store
+from stores.vehicle_store import vehicle_store
+from stores.train_store import train_store
 
 
 # ---------------------------------------------------------------------------

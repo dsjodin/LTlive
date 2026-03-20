@@ -14,8 +14,8 @@ import time
 
 import config
 import trafikverket as tv_api
-from data.cache import api_cache
-from data.train_store import train_store
+from stores.cache import api_cache
+from stores.train_store import train_store
 
 
 # ---------------------------------------------------------------------------
