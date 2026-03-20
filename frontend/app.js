@@ -1623,6 +1623,8 @@ function initDelaysPanel() {
 let trafficLayer = null;
 let showTraffic = false;
 let _trafficTimer = null;
+let zoneLayer = null;
+let showZones = false;
 
 const TRAFFIC_COLORS = { none: "#888", low: "#FFD600", medium: "#FF9800", high: "#F44336" };
 
@@ -1665,6 +1667,41 @@ function renderTrafficLayer(geojson) {
     }
 }
 
+async function fetchZones() {
+    try {
+        const resp = await fetch("/api/traffic/zones");
+        if (!resp.ok) return;
+        renderZoneLayer(await resp.json());
+    } catch (_) {}
+}
+
+function renderZoneLayer(data) {
+    if (!zoneLayer) zoneLayer = L.layerGroup().addTo(map);
+    zoneLayer.clearLayers();
+
+    for (const t of (data.terminal || [])) {
+        L.circle([t.lat, t.lon], {
+            radius: 60,
+            color: "#a855f7",
+            fillColor: "#a855f7",
+            fillOpacity: 0.15,
+            weight: 1.5,
+            opacity: 0.7,
+        }).bindTooltip("Ändhållplats", { sticky: true }).addTo(zoneLayer);
+    }
+
+    for (const s of (data.signal || [])) {
+        L.circle([s.lat, s.lon], {
+            radius: s.radius_m || 30,
+            color: "#f97316",
+            fillColor: "#f97316",
+            fillOpacity: 0.15,
+            weight: 1.5,
+            opacity: 0.7,
+        }).bindTooltip("Trafiksignal", { sticky: true }).addTo(zoneLayer);
+    }
+}
+
 function initTrafficLayer() {
     document.getElementById("traffic-btn").addEventListener("click", () => {
         showTraffic = !showTraffic;
@@ -1676,6 +1713,24 @@ function initTrafficLayer() {
         } else {
             clearInterval(_trafficTimer);
             if (trafficLayer) trafficLayer.clearLayers();
+            // Also hide zones when traffic is turned off
+            if (showZones) {
+                showZones = false;
+                document.getElementById("zone-overlay-btn").classList.remove("active");
+                document.getElementById("zone-legend-rows").classList.remove("visible");
+                if (zoneLayer) zoneLayer.clearLayers();
+            }
+        }
+    });
+
+    document.getElementById("zone-overlay-btn").addEventListener("click", () => {
+        showZones = !showZones;
+        document.getElementById("zone-overlay-btn").classList.toggle("active", showZones);
+        document.getElementById("zone-legend-rows").classList.toggle("visible", showZones);
+        if (showZones) {
+            fetchZones();
+        } else {
+            if (zoneLayer) zoneLayer.clearLayers();
         }
     });
 }

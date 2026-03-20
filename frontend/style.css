@@ -1363,7 +1363,7 @@ body.stop-open #map { bottom: calc(52vh + var(--ticker-h)); }
     padding: 8px 12px;
     font-size: 0.75em;
     color: var(--fg);
-    pointer-events: none;
+    pointer-events: auto;
     box-shadow: 0 2px 8px rgba(0,0,0,0.3);
 }
 #traffic-legend.visible { display: block; }
@@ -1384,4 +1384,35 @@ body.stop-open #map { bottom: calc(52vh + var(--ticker-h)); }
     height: 5px;
     border-radius: 3px;
     flex-shrink: 0;
+}
+#traffic-legend .tl-divider {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin: 6px 0;
+}
+#traffic-legend .tl-zone-btn {
+    width: 100%;
+    padding: 3px 6px;
+    font-size: 0.9em;
+    background: var(--bg3, var(--bg2));
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    color: var(--fg);
+    cursor: pointer;
+    text-align: center;
+    margin-bottom: 4px;
+}
+#traffic-legend .tl-zone-btn.active {
+    background: var(--accent, #4a9eff);
+    color: #fff;
+    border-color: transparent;
+}
+#zone-legend-rows { display: none; }
+#zone-legend-rows.visible { display: block; }
+#traffic-legend .tl-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    opacity: 0.85;
 }

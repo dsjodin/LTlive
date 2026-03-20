@@ -195,6 +195,16 @@ def _weekday_type_now():
     return "sunday"
 
 
+@bp.route("/api/traffic/zones")
+def get_traffic_zones():
+    """Return zone positions for map overlay visualization."""
+    with traffic_store.lock:
+        terminals = [{"lat": lat, "lon": lon} for lat, lon in traffic_store.terminal_positions]
+        signals   = [{"lat": z["lat"], "lon": z["lon"], "radius_m": z.get("radius_m", 30)}
+                     for z in traffic_store.signal_zones]
+    return jsonify({"terminal": terminals, "signal": signals})
+
+
 @bp.route("/api/traffic/debug")
 def get_traffic_debug():
     """Internal diagnostics for the traffic inference system."""
