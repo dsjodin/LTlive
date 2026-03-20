@@ -322,6 +322,7 @@ def _extract_segment_coords(coords, cumul, start_m, end_m):
 # ---------------------------------------------------------------------------
 
 _SIGNAL_ZONE_RADIUS_M = 30
+_SIGNAL_CLUSTER_RADIUS_M = 60  # merge radius — large intersections span ~50 m corner-to-corner
 
 
 def _fetch_signal_zones():
@@ -356,7 +357,7 @@ def _fetch_signal_zones():
         for lat, lon in raw_signals:
             merged = False
             for c in clusters:
-                if _haversine(lat, lon, c[0], c[1]) <= _SIGNAL_ZONE_RADIUS_M:
+                if _haversine(lat, lon, c[0], c[1]) <= _SIGNAL_CLUSTER_RADIUS_M:
                     # Update centroid
                     c[0] = (c[0] * c[2] + lat) / (c[2] + 1)
                     c[1] = (c[1] * c[2] + lon) / (c[2] + 1)
