@@ -166,32 +166,21 @@ def _do_build_segments():
     shape_cumul     = {}
     shape_coords_copy = {}
 
-    t0 = time.time()
     shape_list = list(shapes.items())
-    n_shapes   = len(shape_list)
-    _t_cumul = _t_bucket = _t_zone = _t_dict = 0.0
 
-    for shape_num, (shape_id, coords) in enumerate(shape_list):
-        if shape_num % 100 == 0 and shape_num > 0:
-            print(f"Traffic: building segments {shape_num}/{n_shapes} "
-                  f"({len(segments)} segs, {time.time()-t0:.1f}s) "
-                  f"cumul={_t_cumul:.2f}s bucket={_t_bucket:.2f}s "
-                  f"zone={_t_zone:.2f}s dict={_t_dict:.2f}s")
-
+    for shape_id, coords in shape_list:
         if len(coords) < 2:
             continue
 
         shape_coords_copy[shape_id] = coords
 
         # Build cumulative distances in one pass
-        _tc = time.time()
         cumul = [0.0]
         for i in range(1, len(coords)):
             d = _haversine(coords[i-1][0], coords[i-1][1],
                            coords[i][0],   coords[i][1])
             cumul.append(cumul[-1] + d)
         shape_cumul[shape_id] = cumul
-        _t_cumul += time.time() - _tc
 
         total_length = cumul[-1]
         if total_length < seg_len * 0.5:
@@ -201,26 +190,21 @@ def _do_build_segments():
         rids   = list(shape_routes.get(shape_id, []))
 
         # Single pass: bucket each shape point into its segment
-        _tb = time.time()
         seg_buckets = [[] for _ in range(n_segs)]
         for i, pt in enumerate(coords):
             bucket = min(int(cumul[i] / seg_len), n_segs - 1)
             seg_buckets[bucket].append(pt)
-        _t_bucket += time.time() - _tb
 
         for seg_idx in range(n_segs):
             seg_coords = seg_buckets[seg_idx]
             if len(seg_coords) < 2:
                 continue
 
-            # Midpoint-only zone check via fine grid — ~0 haversine calls/segment
-            _tz = time.time()
+            # Midpoint-only zone check via fine grid
             mlat, mlon = _midpoint(seg_coords)
             is_stop_zone = _in_zone_fast(mlat, mlon, stop_fine_grid, stop_radius, _CELL)
             is_terminal  = _in_zone_fast(mlat, mlon, term_fine_grid, 60, _CELL)
-            _t_zone += time.time() - _tz
 
-            _td = time.time()
             seg_id = f"{shape_id}_seg_{seg_idx}"
             segments[seg_id] = {
                 "shape_id":      shape_id,
@@ -232,7 +216,6 @@ def _do_build_segments():
                 "start_m":       seg_idx * seg_len,
                 "end_m":         min((seg_idx + 1) * seg_len, total_length),
             }
-            _t_dict += time.time() - _td
 
     with traffic_store.lock:
         traffic_store.segments        = segments
@@ -363,19 +346,35 @@ def _fetch_signal_zones():
                     "source": "osm",
                 })
 
-        # Mark segments that overlap signal zones
+        # Build fine grid outside the lock — same cell size as build_segments
+        _CELL = 0.0003
+        signal_positions = [(s["lat"], s["lon"]) for s in signal_zones]
+        signal_fine_grid = _build_fine_grid(signal_positions, _CELL)
+
+        # Get segments snapshot without a long lock hold
+        with traffic_store.lock:
+            segs_snapshot = dict(traffic_store.segments)
+
+        # Compute which segments are in signal zones — no lock held
+        marked = set()
+        for seg_id, seg in segs_snapshot.items():
+            seg_coords = seg.get("geometry", [])
+            if not seg_coords:
+                continue
+            mlat, mlon = _midpoint(seg_coords)
+            if _in_zone_fast(mlat, mlon, signal_fine_grid, _SIGNAL_ZONE_RADIUS_M, _CELL):
+                marked.add(seg_id)
+
+        # Apply flags under a brief lock
         with traffic_store.lock:
             traffic_store.signal_zones = signal_zones
             traffic_store.signal_zone_count = len(signal_zones)
+            for seg_id in marked:
+                if seg_id in traffic_store.segments:
+                    traffic_store.segments[seg_id]["signal_zone"] = True
 
-            signal_positions = [(s["lat"], s["lon"]) for s in signal_zones]
-            for seg_id, seg in traffic_store.segments.items():
-                if _check_zone(seg["geometry"], signal_positions, _SIGNAL_ZONE_RADIUS_M):
-                    seg["signal_zone"] = True
-
-        n_signal_segs = sum(1 for s in traffic_store.segments.values() if s.get("signal_zone"))
         print(f"Traffic: loaded {len(signal_zones)} signal zones from OSM, "
-              f"{n_signal_segs} segments marked")
+              f"{len(marked)} segments marked")
 
     except Exception as e:
         print(f"Traffic: could not fetch OSM signal zones: {e}")
