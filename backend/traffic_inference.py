@@ -344,15 +344,32 @@ def _fetch_signal_zones():
         resp.raise_for_status()
         data = resp.json()
 
-        signal_zones = []
-        for element in data.get("elements", []):
-            if element.get("type") == "node":
-                signal_zones.append({
-                    "lat": element["lat"],
-                    "lon": element["lon"],
-                    "radius_m": _SIGNAL_ZONE_RADIUS_M,
-                    "source": "osm",
-                })
+        raw_signals = [
+            (element["lat"], element["lon"])
+            for element in data.get("elements", [])
+            if element.get("type") == "node"
+        ]
+
+        # Cluster nearby nodes (same intersection may have many OSM nodes).
+        # Greedy: merge any node within _SIGNAL_ZONE_RADIUS_M of an existing cluster centre.
+        clusters = []  # list of [lat, lon, count]
+        for lat, lon in raw_signals:
+            merged = False
+            for c in clusters:
+                if _haversine(lat, lon, c[0], c[1]) <= _SIGNAL_ZONE_RADIUS_M:
+                    # Update centroid
+                    c[0] = (c[0] * c[2] + lat) / (c[2] + 1)
+                    c[1] = (c[1] * c[2] + lon) / (c[2] + 1)
+                    c[2] += 1
+                    merged = True
+                    break
+            if not merged:
+                clusters.append([lat, lon, 1])
+
+        signal_zones = [
+            {"lat": c[0], "lon": c[1], "radius_m": _SIGNAL_ZONE_RADIUS_M, "source": "osm"}
+            for c in clusters
+        ]
 
         # Build fine grid outside the lock — same cell size as build_segments
         _CELL = 0.0003
