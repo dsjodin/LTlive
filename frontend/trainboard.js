@@ -1,4 +1,6 @@
-const API = "/api";
+import { fetchVehicles, fetchStations, fetchDepartures, fetchArrivals, fetchStationMessages } from "./modules/api.js";
+import { updateClock } from "./modules/utils.js";
+
 const REFRESH_INTERVAL = 30000; // 30 s
 
 // Known stations: ordered list of fallback search terms tried in sequence.
@@ -19,12 +21,9 @@ let liveTibTrains      = []; // from /api/vehicles
 let platformMessages   = {}; // track → [{body, status}] from Plattformsskylt
 
 // ── Clock ──────────────────────────────────────────────
-function updateClock() {
-    document.getElementById("clock").textContent =
-        new Date().toLocaleTimeString("sv-SE");
-}
-setInterval(updateClock, 1000);
-updateClock();
+const clockEl = document.getElementById("clock");
+setInterval(() => updateClock(clockEl), 1000);
+updateClock(clockEl);
 
 // ── Layout ─────────────────────────────────────────────
 function resizeBoard() {
@@ -62,7 +61,7 @@ document.querySelectorAll(".station-btn[data-station]").forEach(btn => {
 // ── Live TiB train positions ───────────────────────────
 async function fetchLiveTrains() {
     try {
-        const data = await fetch(`${API}/vehicles`).then(r => r.json());
+        const data = await fetchVehicles();
         liveTibTrains = (data.vehicles || []).filter(v =>
             v.source === "oxyfi" || v.route_type === 2 || (100 <= (v.route_type || 0) && (v.route_type || 0) <= 199)
         );
@@ -105,7 +104,7 @@ async function loadTrainStops() {
         // Use parent stations (location_type=1) — one entry per station,
         // not one per platform. This avoids 20 identical "Örebro Resecentrum"
         // rows in search results. The departures API expands parent → children.
-        const data = await fetch(`${API}/stops/stations`).then(r => r.json());
+        const data = await fetchStations();
         allTrainStops = (data.stops || []);
     } catch {
         allTrainStops = [];
@@ -370,7 +369,7 @@ function startCountdown() {
 async function loadMessages() {
     if (!currentStopId) return;
     try {
-        const data = await fetch(`${API}/station-messages/${encodeURIComponent(currentStopId)}`).then(r => r.json());
+        const data = await fetchStationMessages(currentStopId);
 
         // Plattformsskylt: store globally so train rows can look up by track
         platformMessages = data.platform_messages || {};
@@ -432,9 +431,7 @@ async function refreshBoard() {
 }
 
 async function loadDepartures(board) {
-    const data = await fetch(
-        `${API}/departures/${encodeURIComponent(currentStopId)}?limit=20&route_type=train`
-    ).then(r => r.json());
+    const data = await fetchDepartures(currentStopId, 20, "train");
 
     const deps = data.departures || [];
     if (!deps.length) {
@@ -501,9 +498,7 @@ async function loadDepartures(board) {
 }
 
 async function loadArrivals(board) {
-    const data = await fetch(
-        `${API}/arrivals/${encodeURIComponent(currentStopId)}?limit=20&route_type=train`
-    ).then(r => r.json());
+    const data = await fetchArrivals(currentStopId, 20, "train");
 
     const arrs = data.arrivals || [];
     if (!arrs.length) {

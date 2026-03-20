@@ -4,29 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Statistik – LTlive</title>
-  <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    body { background: #0d1117; color: #e0e0e0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; padding: 2rem 1rem; }
-    h1 { font-size: 1.4rem; margin-bottom: 1.5rem; color: #fff; }
-    h1 span { color: #4c9be8; }
-    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1rem; margin-bottom: 2rem; }
-    .card { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 1rem 1.2rem; }
-    .card-label { font-size: .75rem; color: #8b949e; text-transform: uppercase; letter-spacing: .04em; margin-bottom: .4rem; }
-    .card-value { font-size: 2rem; font-weight: 700; color: #4c9be8; }
-    .card-sub { font-size: .8rem; color: #8b949e; margin-top: .2rem; }
-    table { width: 100%; border-collapse: collapse; font-size: .88rem; }
-    th { text-align: left; padding: .5rem .75rem; border-bottom: 1px solid #30363d; color: #8b949e; font-weight: 500; font-size: .75rem; text-transform: uppercase; }
-    td { padding: .5rem .75rem; border-bottom: 1px solid #21262d; }
-    tr:last-child td { border-bottom: none; }
-    .section { background: #161b22; border: 1px solid #30363d; border-radius: 8px; margin-bottom: 1.5rem; }
-    .section-title { padding: .75rem 1.2rem; font-size: .85rem; font-weight: 600; color: #8b949e; border-bottom: 1px solid #30363d; text-transform: uppercase; letter-spacing: .04em; }
-    .dur { color: #58a6ff; }
-    .page { font-family: monospace; color: #79c0ff; }
-    a { color: #4c9be8; text-decoration: none; }
-    a:hover { text-decoration: underline; }
-    .back { display: inline-block; margin-bottom: 1.2rem; font-size: .85rem; color: #8b949e; }
-    .back:hover { color: #fff; }
-  </style>
+  <link rel="stylesheet" href="stats.css" />
 </head>
 <body>
   <a class="back" href="/">← Tillbaka till kartan</a>
@@ -50,53 +28,6 @@
     </table>
   </div>
 
-  <script>
-  function fmt(secs) {
-    if (secs == null) return '–';
-    if (secs < 60) return secs + 's';
-    return Math.floor(secs/60) + 'm ' + (secs%60) + 's';
-  }
-  function fmtTime(epoch) {
-    return new Date(epoch * 1000).toLocaleString('sv-SE');
-  }
-
-  fetch('/api/stats')
-    .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
-    .then(data => {
-      const periods = [
-        { key: 'today',    label: 'Idag' },
-        { key: 'week',     label: '7 dagar' },
-        { key: 'month',    label: '30 dagar' },
-        { key: 'all_time', label: 'Totalt' },
-      ];
-      const summary = document.getElementById('summary');
-      periods.forEach(p => {
-        const d = data[p.key];
-        summary.insertAdjacentHTML('beforeend', `
-          <div class="card">
-            <div class="card-label">${p.label}</div>
-            <div class="card-value">${d.visits}</div>
-            <div class="card-sub">${d.unique} unika · avg ${fmt(d.avg_duration)}</div>
-          </div>
-        `);
-      });
-
-      const pagesTbody = document.querySelector('#pages-table tbody');
-      data.top_pages.forEach(r => {
-        pagesTbody.insertAdjacentHTML('beforeend',
-          `<tr><td class="page">${r.page}</td><td>${r.visits}</td></tr>`);
-      });
-
-      const recentTbody = document.querySelector('#recent-table tbody');
-      data.recent.forEach(r => {
-        recentTbody.insertAdjacentHTML('beforeend',
-          `<tr><td class="page">${r.page}</td><td>${fmtTime(r.started_at)}</td><td class="dur">${fmt(r.duration)}</td></tr>`);
-      });
-    })
-    .catch(err => {
-      document.getElementById('summary').innerHTML =
-        `<p style="color:red">Kunde inte hämta statistik: ${err.message}</p>`;
-    });
-  </script>
+  <script type="module" src="stats.js"></script>
 </body>
 </html>

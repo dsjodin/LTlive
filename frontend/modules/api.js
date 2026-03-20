@@ -12,6 +12,11 @@ export async function fetchStatus() {
     return r.json();
 }
 
+export async function fetchStats() {
+    const r = await fetch(`${API_BASE}/stats`);
+    return r.json();
+}
+
 export async function fetchVehicles() {
     const r = await fetch(`${API_BASE}/vehicles`);
     return r.json();
@@ -48,10 +53,11 @@ export async function fetchNextDepartures() {
     return r.json();
 }
 
-export async function fetchDepartures(stopId, limit) {
-    const url = limit
-        ? `${API_BASE}/departures/${encodeURIComponent(stopId)}?limit=${limit}`
-        : `${API_BASE}/departures/${encodeURIComponent(stopId)}`;
+export async function fetchDepartures(stopId, limit, routeType) {
+    const params = [];
+    if (limit) params.push(`limit=${limit}`);
+    if (routeType) params.push(`route_type=${encodeURIComponent(routeType)}`);
+    const url = `${API_BASE}/departures/${encodeURIComponent(stopId)}${params.length ? "?" + params.join("&") : ""}`;
     const r = await fetch(url);
     return r.json();
 }
@@ -85,6 +91,33 @@ export async function fetchNearbyDepartures(lat, lon, radius) {
     const r = await fetch(
         `${API_BASE}/nearby-departures?lat=${lat}&lon=${lon}&radius=${radius}`
     );
+    return r.json();
+}
+
+/** Return only parent stations (location_type=1). */
+export async function fetchStations() {
+    const r = await fetch(`${API_BASE}/stops/stations`);
+    return r.json();
+}
+
+/**
+ * @param {string} stopId
+ * @param {number} [limit]
+ * @param {string} [routeType]  e.g. "train"
+ */
+export async function fetchArrivals(stopId, limit, routeType) {
+    let url = `${API_BASE}/arrivals/${encodeURIComponent(stopId)}`;
+    const params = [];
+    if (limit) params.push(`limit=${limit}`);
+    if (routeType) params.push(`route_type=${encodeURIComponent(routeType)}`);
+    if (params.length) url += `?${params.join("&")}`;
+    const r = await fetch(url);
+    return r.json();
+}
+
+/** @param {string} stopId */
+export async function fetchStationMessages(stopId) {
+    const r = await fetch(`${API_BASE}/station-messages/${encodeURIComponent(stopId)}`);
     return r.json();
 }
 

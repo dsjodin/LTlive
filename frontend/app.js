@@ -629,7 +629,7 @@ function showStopDepartures(stop, marker) {
                     <div class="popup-stop">
                         <div class="popup-stop-name">${stop.stop_name}${platformChip}
                             ${favBtn}
-                            <a class="board-link" href="/board.html?stop_id=${encodeURIComponent(stop.stop_id)}&stop_name=${encodeURIComponent(stop.stop_name)}" target="_blank" title="Öppna avgångstavla">&#128507;</a>
+                            <a class="board-link" href="/busboard.html?stop_id=${encodeURIComponent(stop.stop_id)}&stop_name=${encodeURIComponent(stop.stop_name)}" target="_blank" title="Öppna avgångstavla">&#128507;</a>
                         </div>
                         <table class="dep-table"><tbody>${rows}</tbody></table>
                     </div>`;
@@ -1766,7 +1766,7 @@ async function init() {
     setInterval(pollAlerts, 30000);
     setInterval(pollStopDepartures, 60000);
 
-    // ?line=<route_short_name> — pre-open line filter (e.g. from board.html "Se på karta" link)
+    // ?line=<route_short_name> — pre-open line filter (e.g. from busboard.html "Se på karta" link)
     const preOpenLine = urlParams.get("line");
     if (preOpenLine) {
         // Wait until routes are loaded, then trigger the matching line button

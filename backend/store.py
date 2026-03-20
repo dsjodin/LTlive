@@ -1,7 +1,13 @@
-"""Shared application state.
+"""Shared application state — backward-compatibility shim.
 
-Imported by app.py and Blueprint modules to access the in-memory data
-store, cache, and the debug-endpoint decorator without circular imports.
+New code should import typed store objects directly:
+
+    from stores.gtfs_store import gtfs_store
+    from stores.vehicle_store import vehicle_store
+    from stores.train_store import train_store
+    from stores.cache import api_cache
+
+Existing blueprint code continues to use the legacy API:
 
     from store import _data, _lock, _api_cache, _cache_get, _cache_set
     from store import _invalidate_cache, _debug_only
@@ -9,8 +15,13 @@ store, cache, and the debug-endpoint decorator without circular imports.
 
 import os
 import threading
-import time
 from functools import wraps
+
+from stores.cache import TTLCache, api_cache
+from stores.gtfs_store import gtfs_store
+from stores.vehicle_store import vehicle_store
+from stores.train_store import train_store
+
 
 # ---------------------------------------------------------------------------
 # Debug endpoint flag
@@ -31,108 +42,100 @@ def _debug_only(f):
 
 
 # ---------------------------------------------------------------------------
-# In-memory data store
+# _DataView – dict-like proxy over the three typed stores
+#
+# Allows existing blueprint/app.py code to keep using _data["routes"] etc.
+# while new providers/tasks write to the typed store objects directly.
 # ---------------------------------------------------------------------------
 
-_data: dict = {
-    "routes": {},
-    "stops": {},
-    "trips": {},
-    "shapes": {},
-    "vehicles": [],
-    "vehicle_trips": {},
-    "vehicle_next_stop": {},
-    "alerts": [],
-    "trip_headsigns": {},
-    "last_vehicle_update": 0,
-    "last_rt_poll": 0,
-    "last_rt_poll_count": None,
-    "last_rt_error": None,
-    "gtfs_loaded": False,
-    "gtfs_error": None,
-    "static_stop_departures": {},
-    "static_stop_arrivals": {},
-    "trip_origin_map": {},
-    "rt_trip_short_names": {},
-    # Trafikverket data
-    "tv_announcements": {},   # {location_sig: {departures: [...], arrivals: [...]}}
-    "tv_stations": {},        # {location_sig: {name, lat, lon}}
-    "tv_positions": [],       # list of {train_number, lat, lon, bearing, ...}
-    "tv_messages": {},        # {location_sig: [{header, body, start, end}]}
-    "tv_last_poll": 0,
-    "tv_last_error": None,
-    "tv_sse_state": "disconnected",  # "connected" | "reconnecting" | "disconnected"
-}
+class _DataView:
+    """Read/write proxy that routes _data[key] to the correct store object."""
 
+    # Maps legacy _data key -> (store_singleton, attribute_name)
+    _MAP: dict = {
+        # GTFS store
+        "routes":                  (gtfs_store,    "routes"),
+        "stops":                   (gtfs_store,    "stops"),
+        "trips":                   (gtfs_store,    "trips"),
+        "shapes":                  (gtfs_store,    "shapes"),
+        "trip_headsigns":          (gtfs_store,    "trip_headsigns"),
+        "stop_route_map":          (gtfs_store,    "stop_route_map"),
+        "static_stop_departures":  (gtfs_store,    "static_stop_departures"),
+        "static_stop_arrivals":    (gtfs_store,    "static_stop_arrivals"),
+        "trip_origin_map":         (gtfs_store,    "trip_origin_map"),
+        "rt_trip_short_names":     (gtfs_store,    "rt_trip_short_names"),
+        "agencies":                (gtfs_store,    "agencies"),
+        "gtfs_loaded":             (gtfs_store,    "loaded"),
+        "gtfs_error":              (gtfs_store,    "error"),
+        # Vehicle store
+        "vehicles":                (vehicle_store, "vehicles"),
+        "vehicle_trips":           (vehicle_store, "vehicle_trips"),
+        "vehicle_next_stop":       (vehicle_store, "vehicle_next_stop"),
+        "stop_departures":         (vehicle_store, "stop_departures"),
+        "alerts":                  (vehicle_store, "alerts"),
+        "last_vehicle_update":     (vehicle_store, "last_vehicle_update"),
+        "last_rt_poll":            (vehicle_store, "last_rt_poll"),
+        "last_rt_poll_count":      (vehicle_store, "last_rt_poll_count"),
+        "last_rt_error":           (vehicle_store, "last_rt_error"),
+        # Train store
+        "tv_announcements":        (train_store,   "announcements"),
+        "tv_stations":             (train_store,   "stations"),
+        "tv_positions":            (train_store,   "positions"),
+        "tv_messages":             (train_store,   "messages"),
+        "tv_last_poll":            (train_store,   "last_poll"),
+        "tv_last_error":           (train_store,   "last_error"),
+        "tv_sse_state":            (train_store,   "sse_state"),
+    }
+
+    def __getitem__(self, key: str):
+        try:
+            store, attr = self._MAP[key]
+        except KeyError:
+            raise KeyError(f"Unknown _data key: {key!r}")
+        return getattr(store, attr)
+
+    def __setitem__(self, key: str, value):
+        try:
+            store, attr = self._MAP[key]
+        except KeyError:
+            raise KeyError(f"Unknown _data key: {key!r}")
+        setattr(store, attr, value)
+
+    def get(self, key: str, default=None):
+        try:
+            return self[key]
+        except KeyError:
+            return default
+
+    def __contains__(self, key: str) -> bool:
+        return key in self._MAP
+
+
+# Singleton proxy (backward compat)
+_data = _DataView()
+
+# Global lock kept for backward compat with existing blueprint code that does
+#   with _lock: ... _data[key] ...
+# New code should use the per-store locks (gtfs_store.lock, etc.) for finer
+# granularity and to avoid bus/train polling blocking each other.
 _lock = threading.Lock()
 
 
 # ---------------------------------------------------------------------------
-# TTL-based response cache
+# TTL cache — backward-compat wrappers around data/cache.py
 # ---------------------------------------------------------------------------
 
-class _TTLCache:
-    """Per-key TTL cache with selective prefix invalidation.
-
-    Keys:
-      "vehicles"                           -> 4s  TTL
-      "next_dep"                           -> 30s TTL
-      ("dep", stop_id, limit, trains_only) -> 10s TTL
-    """
-    _TTL = {"vehicles": 4, "next_dep": 30, "dep": 10}
-
-    def __init__(self):
-        self._store: dict = {}
-        self._lock = threading.Lock()
-
-    def get(self, key):
-        with self._lock:
-            entry = self._store.get(key)
-        if entry is None:
-            return None
-        payload, expires_at = entry
-        if time.time() > expires_at:
-            with self._lock:
-                self._store.pop(key, None)
-            return None
-        return payload
-
-    def set(self, key, payload, ttl: int | None = None):
-        if ttl is None:
-            key_type = key if isinstance(key, str) else key[0]
-            ttl = self._TTL.get(key_type, 10)
-        with self._lock:
-            self._store[key] = (payload, time.time() + ttl)
-
-    def invalidate(self, *keys):
-        with self._lock:
-            for k in keys:
-                self._store.pop(k, None)
-
-    def invalidate_prefix(self, prefix: str):
-        """Invalidate all keys whose type (string or first tuple element) matches prefix."""
-        with self._lock:
-            to_del = [k for k in self._store
-                      if (k[0] if isinstance(k, tuple) else k) == prefix]
-            for k in to_del:
-                del self._store[k]
-
-    def clear(self):
-        with self._lock:
-            self._store.clear()
-
-
-_api_cache = _TTLCache()
+_api_cache = api_cache
 
 
 def _cache_get(key):
-    return _api_cache.get(key)
+    return api_cache.get(key)
 
 
 def _cache_set(key, payload):
-    _api_cache.set(key, payload)
+    api_cache.set(key, payload)
 
 
 def _invalidate_cache():
-    """Full cache wipe — use only on GTFS static refresh. Prefer selective invalidation."""
-    _api_cache.clear()
+    """Full cache wipe — use only on GTFS static refresh."""
+    api_cache.clear()
