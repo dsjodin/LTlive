@@ -1290,32 +1290,21 @@ function closeDashboardPanel() {
     document.getElementById("dashboard-panel").classList.remove("open");
 }
 
-// --- Alerts → bottom ticker ---
-function updateAlerts(alerts) {
-    updateDashboardAlerts(alerts);
-    const el = document.getElementById("ticker-content");
-    if (!el) return;
-    if (alerts.length === 0) {
-        el.textContent = "Inga aktiva störningar";
-        el.className = "ticker-move no-alerts";
-        return;
-    }
-    const text = alerts.map((a) => `⚠  ${a.header}${a.description ? " — " + a.description : ""}`).join("          ◆          ");
-    el.textContent = text;
-    // Measure after content is set; restart animation with exact pixel positions
-    // so the text fully exits before looping.
-    el.style.animation = "none";
-    el.className = "ticker-move has-alerts";
-    requestAnimationFrame(() => {
-        const wrapW = el.parentElement.offsetWidth;
-        const textW = el.scrollWidth;
-        const px_per_sec = 80;
-        const dur = (wrapW + textW) / px_per_sec;
-        el.style.setProperty("--ticker-from", `${wrapW}px`);
-        el.style.setProperty("--ticker-to", `${-textW}px`);
-        el.style.setProperty("--ticker-dur", `${dur}s`);
-        el.style.animation = "";
+// --- Alerts ---
+function filterAlertsForDisplayedLines(alerts) {
+    if (ALLOWED_LINE_NUMBERS.size === 0) return alerts;
+    return alerts.filter(a => {
+        if (!a.affected_routes || a.affected_routes.length === 0) return false;
+        return a.affected_routes.some(routeId => {
+            const route = routeData[routeId];
+            return route && ALLOWED_LINE_NUMBERS.has(route.route_short_name);
+        });
     });
+}
+
+function updateAlerts(alerts) {
+    const filtered = filterAlertsForDisplayedLines(alerts);
+    updateDashboardAlerts(filtered);
 }
 
 // --- Status banner ---
@@ -1692,17 +1681,6 @@ document.getElementById("toggle-darkmode").addEventListener("change", (e) => {
         btn.setAttribute("aria-expanded", open ? "true" : "false");
     });
 
-    // Ticker collapse / reopen
-    document.getElementById("ticker-toggle").addEventListener("click", () => {
-        document.getElementById("bottom-ticker").classList.add("collapsed");
-        document.body.classList.add("ticker-collapsed");
-        map.invalidateSize();
-    });
-    document.getElementById("ticker-reopener").addEventListener("click", () => {
-        document.getElementById("bottom-ticker").classList.remove("collapsed");
-        document.body.classList.remove("ticker-collapsed");
-        map.invalidateSize();
-    });
 
 }
 
