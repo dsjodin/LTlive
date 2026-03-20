@@ -4,7 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>LTlive - Bussar och tåg i Örebro</title>
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+          integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
     <link rel="stylesheet" href="style.css" />
 </head>
 <body>
@@ -110,16 +111,10 @@
     </div>
     <button id="ticker-reopener" title="Visa trafikinfo">TRAFIK &#8963;</button>
 
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+            integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
     <script src="config.js"></script>
-    <script src="app.js"></script>
-    <script>
-    (function(){var s=Math.random().toString(36).slice(2),t=Date.now(),p=location.pathname;
-    fetch('/api/stats/visit',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:s,page:p}),keepalive:true}).catch(function(){});
-    function leave(){navigator.sendBeacon('/api/stats/leave',JSON.stringify({session_id:s,duration:Math.round((Date.now()-t)/1000)}));}
-    window.addEventListener('beforeunload',leave);
-    document.addEventListener('visibilitychange',function(){if(document.hidden)leave();});
-    })();
-    </script>
+    <script type="module" src="app.js"></script>
+    <script src="analytics.js"></script>
 </body>
 </html>

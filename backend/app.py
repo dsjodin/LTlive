@@ -7,7 +7,6 @@ import queue as _queue
 import threading
 import time
 import traceback
-from functools import wraps
 
 from dotenv import load_dotenv
 load_dotenv()
@@ -23,6 +22,21 @@ import oxyfi
 import stats as _stats
 import trafikverket as tv_api
 
+# Shared state, cache and debug decorator (used by app.py and Blueprint modules)
+from store import (
+    _data, _lock, _api_cache,
+    _cache_get, _cache_set, _invalidate_cache,
+    _debug_only,
+)
+# Departure merge utility (also used by stops Blueprint)
+from trip_utils import merge_rt_static as _merge_rt_static
+# Train processing logic (isolated from bus pipeline)
+from train_logic import (
+    _tv_trains_from_positions,
+    _annotate_oxyfi_from_announcements,
+    _merge_trains,
+)
+
 app = Flask(__name__)
 
 # Restrict CORS to explicitly configured origins (default: none — all traffic is same-origin in prod).
@@ -30,56 +44,20 @@ app = Flask(__name__)
 _allowed_origins = [o.strip() for o in os.environ.get("ALLOWED_ORIGINS", "").split(",") if o.strip()]
 CORS(app, resources={r"/api/*": {"origins": _allowed_origins or [], "methods": ["GET", "POST"]}})
 
-# Debug endpoints are disabled by default; set ENABLE_DEBUG_ENDPOINTS=true to enable locally.
-_DEBUG_ENDPOINTS = os.environ.get("ENABLE_DEBUG_ENDPOINTS", "false").lower() in ("true", "1", "yes")
-
-
-def _debug_only(f):
-    """Decorator: return 404 unless ENABLE_DEBUG_ENDPOINTS=true."""
-    @wraps(f)
-    def wrapper(*args, **kwargs):
-        if not _DEBUG_ENDPOINTS:
-            return jsonify({"error": "Not found"}), 404
-        return f(*args, **kwargs)
-    return wrapper
-
+# Register Blueprints
+from api.debug_bp import bp as _debug_bp
+from api.routes_shapes_bp import bp as _routes_shapes_bp
+from api.stops_bp import bp as _stops_bp
+app.register_blueprint(_debug_bp)
+app.register_blueprint(_routes_shapes_bp)
+app.register_blueprint(_stops_bp)
 
 _stats.init_db()
 
-# In-memory data store
+# Stop-sequence cache — used only by line_departures endpoint in this file
 _stop_seq_cache = {}   # (route_id, dir_id) -> [{"stop_id", "stop_name"}, ...]
 _stop_seq_lock = threading.Lock()
 
-_data = {
-    "routes": {},
-    "stops": {},
-    "trips": {},
-    "shapes": {},
-    "vehicles": [],
-    "vehicle_trips": {},
-    "vehicle_next_stop": {},
-    "alerts": [],
-    "trip_headsigns": {},
-    "last_vehicle_update": 0,
-    "last_rt_poll": 0,
-    "last_rt_poll_count": None,
-    "last_rt_error": None,
-    "gtfs_loaded": False,
-    "gtfs_error": None,
-    "static_stop_departures": {},
-    "static_stop_arrivals": {},
-    "trip_origin_map": {},
-    "rt_trip_short_names": {},
-    # Trafikverket data
-    "tv_announcements": {},   # {location_sig: {departures: [...], arrivals: [...]}}
-    "tv_stations": {},        # {location_sig: {name, lat, lon}}
-    "tv_positions": [],       # list of {train_number, lat, lon, bearing, ...}
-    "tv_messages": {},        # {location_sig: [{header, body, start, end}]}
-    "tv_last_poll": 0,
-    "tv_last_error": None,
-    "tv_sse_state": "disconnected",  # "connected" | "reconnecting" | "disconnected"
-}
-_lock = threading.Lock()
 _gtfs_retry_count = 0
 _gtfs_next_retry_at = 0  # epoch seconds; 0 = retry immediately
 
@@ -91,78 +69,6 @@ _sse_clients_lock = threading.Lock()
 _sse_ip_counts: dict[str, int] = {}
 _sse_ip_lock = threading.Lock()
 _MAX_SSE_PER_IP = 4
-
-# Response cache: key -> (payload_dict, last_vehicle_update_when_cached)
-_api_cache = {}
-_api_cache_lock = threading.Lock()
-
-_RT_STATIC_WINDOW = 20 * 60  # seconds — static entry within this window of an RT entry = same trip
-
-
-def _merge_rt_static(rt_deps, static_deps):
-    """Merge RT and static departures for one stop.
-
-    RT entries take precedence.  A static entry is suppressed if:
-      - its trip_id matches an RT entry, OR
-      - its scheduled time is within _RT_STATIC_WINDOW seconds of any RT
-        departure (handles delayed/early trips where the GTFS-RT trip_id or
-        route_id format differs from the static GTFS data).
-
-    RT entries are annotated with "sched_time" (the static GTFS scheduled
-    time) so that callers can show the original scheduled time alongside the
-    realtime time even when they differ.
-    """
-    if not rt_deps:
-        return list(static_deps)
-
-    # Build trip_id → static scheduled time so we can annotate RT entries
-    static_by_trip: dict[str, int] = {d["trip_id"]: d["time"] for d in static_deps}
-
-    rt_trip_ids = set()
-    annotated_rt = []
-    for dep in rt_deps:
-        trip_id = dep["trip_id"]
-        rt_trip_ids.add(trip_id)
-        sched = static_by_trip.get(trip_id)
-        annotated_rt.append({**dep, "sched_time": sched} if sched is not None else dep)
-
-    rt_times = [d["time"] for d in annotated_rt]
-
-    filtered_static = []
-    for dep in static_deps:
-        if dep["trip_id"] in rt_trip_ids:
-            continue
-        dep_time = dep["time"]
-        if any(abs(dep_time - rt_time) <= _RT_STATIC_WINDOW for rt_time in rt_times):
-            continue
-        filtered_static.append(dep)
-
-    return annotated_rt + filtered_static
-
-
-def _cache_get(key):
-    with _api_cache_lock:
-        entry = _api_cache.get(key)
-    if entry is None:
-        return None
-    payload, cached_at = entry
-    with _lock:
-        if _data["last_vehicle_update"] != cached_at:
-            return None
-    return payload
-
-
-def _cache_set(key, payload):
-    with _lock:
-        ts = _data["last_vehicle_update"]
-    with _api_cache_lock:
-        _api_cache[key] = (payload, ts)
-
-
-def _invalidate_cache():
-    with _api_cache_lock:
-        _api_cache.clear()
-
 
 def _enrich_vehicles(vehicle_list):
     """Enrich vehicle list with route/trip/stop info (extracted for reuse by SSE + HTTP)."""
@@ -205,7 +111,6 @@ def _enrich_vehicles(vehicle_list):
         })
     return enriched
 
-
 def _push_sse(event_type, data):
     """Push an SSE event to all connected clients."""
     msg = f"event: {event_type}\ndata: {json.dumps(data, separators=(',', ':'))}\n\n"
@@ -225,7 +130,6 @@ def _push_sse(event_type, data):
                 except ValueError:
                     pass
 
-
 def _gtfs_data_valid():
     """Check if GTFS data directory has valid extracted data."""
     gtfs_dir = config.GTFS_DATA_DIR
@@ -234,7 +138,6 @@ def _gtfs_data_valid():
         return False
     # Check that routes.txt is non-empty (not a corrupt extract)
     return os.path.getsize(routes_file) > 10
-
 
 def _clean_gtfs_dir():
     """Remove all files in GTFS data directory for a clean re-download."""
@@ -246,7 +149,6 @@ def _clean_gtfs_dir():
         except OSError:
             pass
     print("Cleaned GTFS data directory for fresh download")
-
 
 def init_gtfs_static():
     """Download and load GTFS static data."""
@@ -313,7 +215,6 @@ def init_gtfs_static():
         with _lock:
             _data["gtfs_error"] = error_msg
 
-
 def _refresh_static_departures():
     """Reload today's static departures without re-downloading the GTFS zip.
 
@@ -335,7 +236,6 @@ def _refresh_static_departures():
         print(f"Static departures refreshed: {len(static_stop_departures)} stops with service today")
     except Exception as e:
         print(f"Error refreshing static departures: {e}")
-
 
 def refresh_gtfs_static():
     """Re-download GTFS static data (scheduled every GTFS_REFRESH_HOURS)."""
@@ -362,7 +262,8 @@ def refresh_gtfs_static():
             _data["static_stop_arrivals"] = static_stop_arrivals
             _data["trip_origin_map"] = trip_origin_map
             _data["gtfs_error"] = None
-        # Invalidate stop-sequence cache so it is rebuilt with fresh trip data
+        # Invalidate all API caches — routes, shapes, stops, departures all changed.
+        _invalidate_cache()
         with _stop_seq_lock:
             _stop_seq_cache.clear()
 
@@ -372,7 +273,6 @@ def refresh_gtfs_static():
         print(f"Error refreshing GTFS static data: {error_msg}")
         with _lock:
             _data["gtfs_error"] = error_msg
-
 
 def poll_realtime():
     """Poll GTFS-RT vehicle positions + trip updates."""
@@ -455,13 +355,15 @@ def poll_realtime():
             _data["alerts"] = alerts
         _data["last_vehicle_update"] = int(time.time())
 
-    _invalidate_cache()
+    # Selectively invalidate: bus poll changes vehicles + departures, not shapes/routes.
+    _api_cache.invalidate("vehicles")
+    _api_cache.invalidate("next_dep")
+    _api_cache.invalidate_prefix("dep")
 
     # Vehicles SSE is handled by _push_train_positions (runs every 5 s)
     # which merges buses + trains in one push, avoiding double events.
     if alerts:
         _push_sse("alerts", {"alerts": alerts, "count": len(alerts)})
-
 
 # --- API Routes ---
 
@@ -469,10 +371,27 @@ def poll_realtime():
 def health():
     return jsonify({"status": "ok", "gtfs_loaded": _data["gtfs_loaded"]})
 
-
 @app.route("/api/status")
 def status():
-    """Debug endpoint showing data loading status."""
+    """Public status — only the fields the frontend needs. No internal details."""
+    with _lock:
+        gtfs_error = _data["gtfs_error"]
+        routes_count = len(_data["routes"])
+        gtfs_loaded = _data["gtfs_loaded"]
+    return jsonify({
+        "gtfs_loaded": gtfs_loaded,
+        # Expose a boolean flag only — never the raw error string (may contain paths/keys)
+        "gtfs_error": bool(gtfs_error),
+        "routes_count": routes_count,
+        "nearby_radius_meters": config.NEARBY_RADIUS_METERS,
+        "frontend_poll_interval_ms": config.FRONTEND_POLL_INTERVAL_MS,
+        "map_center_lat": config.MAP_CENTER_LAT,
+        "map_center_lon": config.MAP_CENTER_LON,
+        "map_default_zoom": config.MAP_DEFAULT_ZOOM,
+    })
+
+def status_debug():
+    """Internal status — full diagnostic info. Protected by Nginx allow/deny + @_debug_only."""
     with _lock:
         return jsonify({
             "gtfs_loaded": _data["gtfs_loaded"],
@@ -503,9 +422,6 @@ def status():
             "tv_last_error": _data.get("tv_last_error"),
         })
 
-
-@app.route("/api/debug/matching")
-@_debug_only
 def debug_matching():
     """Debug: show how well vehicle->trip->route matching works."""
     with _lock:
@@ -577,7 +493,6 @@ def debug_matching():
         "sample_static_trip_keys": list(trips.keys())[:3],
     })
 
-
 @app.route("/api/vehicles")
 def vehicles():
     """Return current vehicle positions with route info (buses + trains)."""
@@ -596,8 +511,6 @@ def vehicles():
     _cache_set("vehicles", result)
     return jsonify(result)
 
-
-@app.route("/api/routes")
 def routes_bus():
     """Return bus routes only."""
     with _lock:
@@ -606,8 +519,6 @@ def routes_bus():
                   if r["route_type"] == 3 or 700 <= r["route_type"] <= 799]
     return jsonify({"routes": bus_routes, "count": len(bus_routes)})
 
-
-@app.route("/api/routes/trains")
 def routes_trains():
     """Return train routes only (GTFS route_type 2 = rail, or 100–199)."""
     with _lock:
@@ -616,16 +527,12 @@ def routes_trains():
                     if r["route_type"] == 2 or 100 <= r["route_type"] <= 199]
     return jsonify({"routes": train_routes, "count": len(train_routes)})
 
-
-@app.route("/api/routes/all")
 def routes_all():
     """Return all routes regardless of type."""
     with _lock:
         route_list = list(_data["routes"].values())
     return jsonify({"routes": route_list, "count": len(route_list)})
 
-
-@app.route("/api/stops")
 def stops():
     """Return stops, optionally filtered by route_ids query param."""
     route_ids_param = request.args.get("route_ids", "")[:500]  # cap length
@@ -642,8 +549,6 @@ def stops():
 
     return jsonify({"stops": stop_list, "count": len(stop_list)})
 
-
-@app.route("/api/nearby-departures")
 def nearby_departures():
     """Return upcoming departures for stops within radius of a lat/lon position."""
     try:
@@ -739,7 +644,6 @@ def nearby_departures():
         })
 
     return jsonify({"stops": result})
-
 
 @app.route("/api/departures/<stop_id>")
 def departures_for_stop(stop_id):
@@ -1019,7 +923,6 @@ def departures_for_stop(stop_id):
     result = {"stop_id": stop_id, "departures": deps, "count": len(deps)}
     _cache_set(cache_key, result)
     return jsonify(result)
-
 
 @app.route("/api/arrivals/<stop_id>")
 def arrivals_for_stop(stop_id):
@@ -1321,8 +1224,6 @@ def arrivals_for_stop(stop_id):
 
     return jsonify({"stop_id": stop_id, "arrivals": arrs, "count": len(arrs)})
 
-
-@app.route("/api/stops/stations")
 def stations():
     """Return only parent stations (location_type=1)."""
     with _lock:
@@ -1330,8 +1231,6 @@ def stations():
     result = [s for s in stop_list if s["location_type"] == 1]
     return jsonify({"stops": result, "count": len(result)})
 
-
-@app.route("/api/shapes/trains")
 def train_shapes():
     """Return one representative rail shape per (route_id, direction_id).
 
@@ -1372,16 +1271,12 @@ def train_shapes():
 
     return jsonify({"shapes": shapes_out, "count": len(shapes_out)})
 
-
-@app.route("/api/shapes")
 def shapes():
     """Return all shapes (route geometries)."""
     with _lock:
         all_shapes = _data["shapes"]
     return jsonify({"shapes": all_shapes, "count": len(all_shapes)})
 
-
-@app.route("/api/shapes/bulk")
 def shapes_bulk():
     """Return shapes for multiple routes in one request (avoids burst of parallel HTTP calls)."""
     route_ids_param = request.args.get("route_ids", "")[:2000]
@@ -1410,8 +1305,6 @@ def shapes_bulk():
 
     return jsonify({"routes": result, "count": len(result)})
 
-
-@app.route("/api/shapes/<route_id>")
 def shapes_for_route(route_id):
     """Return shapes for a specific route."""
     with _lock:
@@ -1426,8 +1319,6 @@ def shapes_for_route(route_id):
     route_shapes = {sid: all_shapes[sid] for sid in shape_ids if sid in all_shapes}
     return jsonify({"shapes": route_shapes, "route_id": route_id})
 
-
-@app.route("/api/debug/agencies")
 def debug_agencies():
     """Debug: list all agencies in the GTFS data with their agency_id."""
     with _lock:
@@ -1449,8 +1340,6 @@ def debug_agencies():
     result.sort(key=lambda x: x["agency_name"])
     return jsonify({"agencies": result, "tib_agency_id_configured": config.TIB_AGENCY_ID})
 
-
-@app.route("/api/debug/stops-fields")
 def debug_stops_fields():
     """Debug: show coverage of platform_code / stop_desc / parent_station in GTFS stops.
 
@@ -1509,9 +1398,6 @@ def debug_stops_fields():
         ],
     })
 
-
-@app.route("/api/debug/routes")
-@_debug_only
 def debug_routes():
     """Debug: show all unique route_short_names in loaded GTFS data."""
     with _lock:
@@ -1532,9 +1418,6 @@ def debug_routes():
         "by_short_name": by_name,
     })
 
-
-@app.route("/api/debug/trip-names")
-@_debug_only
 def debug_trip_names():
     """Debug: inspect trip_short_name values for train routes (sample of 10 per route)."""
     with _lock:
@@ -1572,9 +1455,6 @@ def debug_trip_names():
         "rt_sample": rt_sample,
     })
 
-
-@app.route("/api/debug/rt-feed")
-@_debug_only
 def debug_rt_feed():
     """Return cached RT feed stats (no extra Trafiklab request)."""
     with _lock:
@@ -1605,9 +1485,6 @@ def debug_rt_feed():
         "trip_update_mappings": len(vehicle_trips),
     })
 
-
-@app.route("/api/debug/tv-stations")
-@_debug_only
 def debug_tv_stations():
     """Show cached Trafikverket station lookup table."""
     with _lock:
@@ -1620,7 +1497,6 @@ def debug_tv_stations():
         "configured_mapping": config_mapping,
         "api_key_set": bool(config.TRAFIKVERKET_API_KEY),
     })
-
 
 @app.route("/api/station-messages/<stop_id>")
 def station_messages(stop_id):
@@ -1669,9 +1545,6 @@ def station_messages(stop_id):
         "station_name": tv_stations.get(loc_sig, {}).get("name", "") if loc_sig else "",
     })
 
-
-@app.route("/api/debug/tv-announcements")
-@_debug_only
 def debug_tv_announcements():
     """Show cached Trafikverket TrainAnnouncement data."""
     with _lock:
@@ -1694,9 +1567,6 @@ def debug_tv_announcements():
         "announcements": summary,
     })
 
-
-@app.route("/api/debug/tv-match")
-@_debug_only
 def debug_tv_match():
     """Find GTFS stop_id ↔ Trafikverket LocationSignature matches by name/proximity.
 
@@ -1756,9 +1626,6 @@ def debug_tv_match():
         "hint": "Set TRAFIKVERKET_STATIONS=<gtfs_stop_id>:<LocationSig> in .env",
     })
 
-
-@app.route("/api/debug/trains")
-@_debug_only
 def debug_trains():
     """Show current Oxyfi train state."""
     trains = oxyfi.get_trains()
@@ -1769,9 +1636,6 @@ def debug_trains():
         "trains": trains,
     })
 
-
-@app.route("/api/debug/tv-positions")
-@_debug_only
 def debug_tv_positions():
     """Show raw Trafikverket TrainPosition cache and geo-filtered trains within radius."""
     with _lock:
@@ -1804,7 +1668,6 @@ def debug_tv_positions():
         "trains": sorted(filtered, key=lambda t: t.get("label", "")),
     })
 
-
 @app.route("/api/stats/visit", methods=["POST"])
 def stats_visit():
     data = request.get_json(silent=True) or {}
@@ -1814,7 +1677,6 @@ def stats_visit():
     if session_id:
         _stats.record_visit(session_id, page, ip)
     return "", 204
-
 
 @app.route("/api/stats/leave", methods=["POST"])
 def stats_leave():
@@ -1828,11 +1690,9 @@ def stats_leave():
         _stats.record_leave(session_id, duration)
     return "", 204
 
-
 @app.route("/api/stats")
 def stats_view():
     return jsonify(_stats.get_stats())
-
 
 @app.route("/api/alerts")
 def alerts():
@@ -1840,7 +1700,6 @@ def alerts():
     with _lock:
         alert_list = _data["alerts"]
     return jsonify({"alerts": alert_list, "count": len(alert_list)})
-
 
 @app.route("/api/stream")
 def sse_stream():
@@ -1899,7 +1758,6 @@ def sse_stream():
         },
     )
 
-
 @app.route("/api/line/<route_id>")
 def line_detail(route_id):
     """Return detailed info for a specific route/line."""
@@ -1928,7 +1786,6 @@ def line_detail(route_id):
         "trip_count": len(route_trips),
     })
 
-
 def _parse_gtfs_time_secs(time_str):
     """Parse GTFS time string 'HH:MM:SS' (may exceed 24h) to seconds from midnight."""
     if not time_str:
@@ -1938,7 +1795,6 @@ def _parse_gtfs_time_secs(time_str):
         return int(parts[0]) * 3600 + int(parts[1]) * 60 + int(parts[2])
     except (IndexError, ValueError):
         return None
-
 
 def _get_stop_sequence(route_id, direction_id):
     """Return ordered stops for a route+direction, loading from stop_times if needed."""
@@ -1980,7 +1836,6 @@ def _get_stop_sequence(route_id, direction_id):
     with _stop_seq_lock:
         _stop_seq_cache[key] = seq
     return seq
-
 
 @app.route("/api/line-departures/<route_id>")
 def line_departures(route_id):
@@ -2103,8 +1958,6 @@ def line_departures(route_id):
         "directions": directions_out,
     })
 
-
-@app.route("/api/stops/next-departure")
 def stops_next_departure():
     """Return the soonest upcoming departure per stop (used for map badges).
 
@@ -2164,289 +2017,61 @@ def stops_next_departure():
     _cache_set("next_dep", result)
     return jsonify(result)
 
-
 # --- Startup ---
 
-def _tv_operator_style(op: str, prod: str) -> tuple[str, str]:
-    """Return (hex_color, long_name) for a train operator string."""
-    op_l = op.lower()
-    prod_l = prod.lower()
-    if "mälartåg" in op_l or "mälartåg" in prod_l:
-        return "005B99", "Mälartåg"
-    if "sj" in op_l:
-        return "D4004C", "SJ"
-    if "arriva" in op_l or "tib" in prod_l or "bergslagen" in prod_l:
-        return "E87722", "Tåg i Bergslagen"
-    if "snälltåget" in op_l:
-        return "1A1A1A", "Snälltåget"
-    if "mtr" in op_l:
-        return "007BC0", "MTR"
-    return "555555", op.title() or "Tåg"
-
-
-def _tv_trains_from_positions() -> list:
-    """Build vehicle-like dicts from Trafikverket TrainPosition data.
-
-    Includes every train whose GPS position is within
-    config.TV_POSITION_RADIUS_KM of the configured center point
-    (default: Örebro C).  Operator/colour is resolved first from
-    tv_announcements (most accurate) and falls back to the
-    InformationOwner field in the TrainPosition record itself.
-    Positions older than 10 minutes are discarded.
-    """
-    with _lock:
-        tv_positions = list(_data.get("tv_positions", []))
-        tv_announcements = dict(_data.get("tv_announcements", {}))
-
-    # Build train_number → {operator, product} from announcement data (preferred source)
-    ann_info: dict[str, dict] = {}
-    for bucket in tv_announcements.values():
-        for entry in bucket.get("departures", []) + bucket.get("arrivals", []):
-            tn = entry.get("train_number", "")
-            if tn and tn not in ann_info:
-                ann_info[tn] = {
-                    "operator": entry.get("operator", ""),
-                    "product": entry.get("product", ""),
-                }
-
-    center_lat = config.TV_POSITION_CENTER_LAT
-    center_lon = config.TV_POSITION_CENTER_LON
-    radius_m = config.TV_POSITION_RADIUS_KM * 1000
-    cos_clat = math.cos(math.radians(center_lat))
-
-    cutoff = int(time.time()) - 600  # discard positions older than 10 min
-
-    # Deduplicate: keep only the newest position per train number
-    newest: dict[str, dict] = {}
-    for pos in tv_positions:
-        tn = pos.get("train_number", "")
-        if not tn:
-            continue
-        ts = pos.get("timestamp") or 0
-        if ts and ts < cutoff:
-            continue
-        if tn not in newest or (ts or 0) > (newest[tn].get("timestamp") or 0):
-            newest[tn] = pos
-
-    result = []
-    for tn, pos in newest.items():
-        ts = pos.get("timestamp") or 0
-
-        # Radius filter
-        plat, plon = pos["lat"], pos["lon"]
-        dlat = math.radians(plat - center_lat)
-        dlon = math.radians(plon - center_lon)
-        a = math.sin(dlat / 2) ** 2 + cos_clat * math.cos(math.radians(plat)) * math.sin(dlon / 2) ** 2
-        dist_m = 2 * 6_371_000 * math.asin(math.sqrt(max(0.0, a)))
-        if dist_m > radius_m:
-            continue
-
-        # Resolve operator: announcement data first, then InformationOwner from position
-        if tn in ann_info:
-            op = ann_info[tn]["operator"]
-            prod = ann_info[tn]["product"]
-        else:
-            op = pos.get("operator", "")
-            prod = ""
-
-        color, long_name = _tv_operator_style(op, prod)
-
-        result.append({
-            "id": f"tv_{tn}",
-            "vehicle_id": f"tv_{tn}",
-            "label": tn,
-            "lat": plat,
-            "lon": plon,
-            "bearing": pos.get("bearing"),
-            "speed": pos.get("speed"),
-            "current_status": "I trafik",
-            "current_stop_id": "",
-            "trip_id": "",
-            "route_id": "",
-            "direction_id": None,
-            "start_date": "",
-            "timestamp": ts or int(time.time()),
-            "vehicle_type": "train",
-            "route_short_name": tn,
-            "route_long_name": long_name,
-            "route_color": color,
-            "route_text_color": "FFFFFF",
-            "trip_headsign": "",
-            "next_stop_name": "",
-            "next_stop_platform": "",
-        })
-    return result
-
-
-def _annotate_oxyfi_from_announcements(trains: list) -> list:
-    """For Oxyfi trains still missing tv_service_number, try to identify them
-    by finding the nearest configured station and matching the TV announcement
-    whose realtime/scheduled time is closest to now.
-
-    This is a fallback for when TV TrainPosition data is unavailable.  It works
-    purely from announcements (departures + arrivals), which are always fetched.
-    """
-    with _lock:
-        tv_ann = _data.get("tv_announcements", {})
-        tv_stations = _data.get("tv_stations", {})
-
-    if not tv_ann:
-        return trains
-
-    # Build station anchors using authoritative Trafikverket WGS84 coordinates.
-    # tv_stations is populated from the TrainStation API at startup so its
-    # coordinates are guaranteed to match the same reference frame as TrainPosition.
-    station_anchors: list[tuple] = []
-    for loc_sig in tv_ann:
-        st = tv_stations.get(loc_sig, {})
-        lat, lon = st.get("lat"), st.get("lon")
-        if lat and lon:
-            station_anchors.append((loc_sig, float(lat), float(lon)))
-
-    if not station_anchors:
-        return trains
-
-    now = int(time.time())
-    WINDOW = 1200  # ±20 min — covers trains currently between stops
-
-    # Phase 1: collect all (time_diff, oxyfi_index, train_number, sched_time) candidates
-    candidates = []
-    for idx, v in enumerate(trains):
-        if v.get("tv_service_number") or (v.get("vehicle_id") or "").startswith("tv_"):
-            continue
-        o_lat, o_lon = v.get("lat"), v.get("lon")
-        if not (o_lat and o_lon):
-            continue
-
-        # Nearest configured station
-        best_dist = float("inf")
-        nearest_loc_sig = None
-        for loc_sig, s_lat, s_lon in station_anchors:
-            dlat = math.radians(s_lat - o_lat)
-            dlon = math.radians(s_lon - o_lon)
-            a = (math.sin(dlat / 2) ** 2
-                 + math.cos(math.radians(o_lat)) * math.cos(math.radians(s_lat))
-                 * math.sin(dlon / 2) ** 2)
-            dist = 6_371_000 * 2 * math.asin(math.sqrt(max(0.0, a)))
-            if dist < best_dist:
-                best_dist = dist
-                nearest_loc_sig = loc_sig
-
-        if not nearest_loc_sig:
-            continue
-
-        ann_bucket = tv_ann.get(nearest_loc_sig, {})
-        for entry in ann_bucket.get("departures", []) + ann_bucket.get("arrivals", []):
-            op = (entry.get("operator") or "").lower()
-            pr = (entry.get("product") or "").lower()
-            if not ("arriva" in op or "bergslagen" in pr or "tib" in pr):
-                continue
-            rt = entry.get("realtime_time") or entry.get("scheduled_time")
-            if rt is None:
-                continue
-            diff = abs(rt - now)
-            if diff <= WINDOW:
-                candidates.append((diff, idx,
-                                   entry.get("train_number", ""),
-                                   entry.get("scheduled_time", 0)))
-
-    # Phase 2: greedy exclusive assignment — sort by time_diff (best match first).
-    # Each (train_number, scheduled_time) key can only be assigned to one Oxyfi train.
-    # This prevents all vehicles from matching the same through-running service.
-    candidates.sort()
-    used_keys: set = set()
-    assigned: dict = {}  # oxyfi_index -> train_number
-    for diff, idx, tn, sched_t in candidates:
-        ann_key = (tn, sched_t)
-        if idx not in assigned and ann_key not in used_keys:
-            assigned[idx] = tn
-            used_keys.add(ann_key)
-
-    return [
-        ({**v, "tv_service_number": assigned[i]} if i in assigned else v)
-        for i, v in enumerate(trains)
-    ]
-
-
-def _merge_trains(oxyfi_trains: list, tv_trains: list) -> list:
-    """Merge Oxyfi and TV trains.
-
-    Pass 1: exact label match (both sides have the same advertised train number).
-    Pass 2: position proximity — Oxyfi sends rolling-stock IDs (9xxx) while TV uses
-    service numbers (8xxx), so the same physical train will never match on label alone.
-    If an unmatched Oxyfi train is within 2 km of an unmatched TV train we treat them
-    as the same physical train: keep Oxyfi's GPS position, add TV's service number as
-    `tv_service_number` so the diag can display both IDs, and suppress the TV duplicate.
-    """
-    matched_tv_ids: set = set()
-    result: list = []
-
-    for oxyfi in oxyfi_trains:
-        o_label = oxyfi.get("label", "")
-        # Pass 1: exact label
-        tv_exact = next((t for t in tv_trains if t.get("label", "") == o_label), None)
-        if tv_exact:
-            matched_tv_ids.add(tv_exact["vehicle_id"])
-            result.append({**oxyfi, "tv_service_number": tv_exact["label"]})
-            continue
-
-        # Pass 2: position + bearing proximity.
-        # Tight distance threshold (300 m) avoids matching different trains at the
-        # same station. When both sides have a bearing we also require them to be
-        # within 45° of each other so northbound and southbound trains on parallel
-        # tracks are never confused.
-        o_lat, o_lon = oxyfi.get("lat"), oxyfi.get("lon")
-        o_bearing = oxyfi.get("bearing")
-        best_tv = None
-        best_dist = float("inf")
-        if o_lat and o_lon:
-            for t in tv_trains:
-                if t["vehicle_id"] in matched_tv_ids:
-                    continue
-                t_lat, t_lon = t.get("lat"), t.get("lon")
-                if not (t_lat and t_lon):
-                    continue
-                dlat = math.radians(t_lat - o_lat)
-                dlon = math.radians(t_lon - o_lon)
-                a = (math.sin(dlat / 2) ** 2
-                     + math.cos(math.radians(o_lat)) * math.cos(math.radians(t_lat))
-                     * math.sin(dlon / 2) ** 2)
-                dist = 6_371_000 * 2 * math.asin(math.sqrt(max(0.0, a)))
-                if dist >= 300:
-                    continue
-                # Bearing check: if both sides report heading, require < 45° difference
-                t_bearing = t.get("bearing")
-                if o_bearing is not None and t_bearing is not None:
-                    diff = abs((o_bearing - t_bearing + 180) % 360 - 180)
-                    if diff > 45:
-                        continue
-                if dist < best_dist:
-                    best_dist = dist
-                    best_tv = t
-
-        if best_tv:
-            matched_tv_ids.add(best_tv["vehicle_id"])
-            result.append({**oxyfi, "tv_service_number": best_tv["label"]})
-        else:
-            result.append(oxyfi)
-
-    # Add TV trains not matched to any Oxyfi vehicle
-    result += [t for t in tv_trains if t["vehicle_id"] not in matched_tv_ids]
-    return result
-
+_prev_vehicles: dict = {}   # vehicle_id -> vehicle dict, for delta computation
 
 def _push_train_positions():
-    """Push merged bus+train positions via SSE every 5 s."""
-    oxyfi_trains = oxyfi.get_trains()
-    tv_trains = _tv_trains_from_positions()
-    trains = _merge_trains(oxyfi_trains, tv_trains)
-    with _lock:
-        vehicle_list = list(_data["vehicles"])
-        ts = _data["last_vehicle_update"]
-    buses = _enrich_vehicles(vehicle_list)  # takes _lock internally — must be outside our lock
+    """Push merged bus+train positions via SSE every 5 s.
+
+    Each data source is wrapped in its own try/except so that a failure in
+    one source (e.g. train merge crash, Oxyfi disconnect) never silences the
+    other sources. Buses always stream even when trains are broken, and vice versa.
+
+    Emits two SSE events per tick:
+      - ``vehicles``       — full list (backward-compat with old clients)
+      - ``vehicles_delta`` — only changed/removed vehicles (≈80-95% smaller payload)
+    """
+    global _prev_vehicles
+
+    trains = []
+    try:
+        oxyfi_trains = oxyfi.get_trains()
+        tv_trains = _tv_trains_from_positions()
+        trains = _merge_trains(oxyfi_trains, tv_trains)
+    except Exception as exc:
+        print(f"[sse] train source error (buses will still push): {exc}")
+
+    buses = []
+    ts = int(time.time())
+    try:
+        with _lock:
+            vehicle_list = list(_data["vehicles"])
+            ts = _data["last_vehicle_update"]
+        buses = _enrich_vehicles(vehicle_list)
+    except Exception as exc:
+        print(f"[sse] bus source error: {exc}")
+
     combined = buses + trains
     _push_sse("vehicles", {"vehicles": combined, "timestamp": ts, "count": len(combined)})
 
+    # --- Delta event ---
+    current: dict = {v["vehicle_id"]: v for v in combined if v.get("vehicle_id")}
+    prev_ids = set(_prev_vehicles)
+    curr_ids = set(current)
+
+    removed = list(prev_ids - curr_ids)
+    updated = [
+        v for vid, v in current.items()
+        if vid not in _prev_vehicles or _prev_vehicles[vid] != v
+    ]
+    if updated or removed:
+        _push_sse("vehicles_delta", {
+            "updated": updated,
+            "removed": removed,
+            "timestamp": ts,
+        })
+    _prev_vehicles = current
 
 def _update_tv_positions(new_positions: list) -> None:
     """Merge a batch of streaming TrainPosition updates into _data['tv_positions'].
@@ -2467,8 +2092,7 @@ def _update_tv_positions(new_positions: list) -> None:
             else:
                 current[tn] = p
         _data["tv_positions"] = list(current.values())
-    _invalidate_cache()
-
+    # TV position ticks go straight to SSE — no API cache to invalidate here.
 
 def _run_tv_position_stream() -> None:
     """Background thread: subscribe to TrainPosition changes via Trafikverket SSE.
@@ -2499,7 +2123,6 @@ def _run_tv_position_stream() -> None:
                     _data["tv_positions"] = positions
                     _data["tv_last_poll"] = int(time.time())
                     _data["tv_last_error"] = None
-                _invalidate_cache()
                 last_event_id = None  # fresh endpoint, start from beginning
                 if not sseurl:
                     print("tv-sse: no SSEURL returned — position streaming unavailable")
@@ -2550,7 +2173,6 @@ def _run_tv_position_stream() -> None:
             time.sleep(backoff)
             backoff = min(backoff * 2, 300)
 
-
 def _init_trafikverket():
     """Load TrainStation lookup table, start SSE position stream, do first announcement poll."""
     stations = tv_api.fetch_train_stations()
@@ -2558,7 +2180,6 @@ def _init_trafikverket():
         _data["tv_stations"] = stations
     threading.Thread(target=_run_tv_position_stream, daemon=True, name="tv-sse").start()
     _poll_trafikverket()
-
 
 def _poll_trafikverket():
     """Fetch TrainAnnouncement + StationMessages (positions come via SSE stream)."""
@@ -2577,12 +2198,12 @@ def _poll_trafikverket():
                 _data["tv_announcements"] = announcements
             _data["tv_messages"] = messages
             _data["tv_last_error"] = None
-        _invalidate_cache()
+        # Announcement updates affect departure boards — invalidate dep caches only.
+        _api_cache.invalidate_prefix("dep")
     except Exception as exc:
         print(f"tv-poll error: {exc}")
         with _lock:
             _data["tv_last_error"] = str(exc)
-
 
 def start_background_tasks():
     """Initialize GTFS data and start polling."""
@@ -2610,7 +2231,6 @@ def start_background_tasks():
     if config.TRAFIKVERKET_API_KEY:
         threading.Thread(target=_init_trafikverket, daemon=True).start()
 
-
 def _retry_gtfs_if_needed():
     """Retry loading GTFS static with exponential backoff, max 5 attempts."""
     global _gtfs_retry_count, _gtfs_next_retry_at
@@ -2635,7 +2255,6 @@ def _retry_gtfs_if_needed():
     with _lock:
         if _data["gtfs_loaded"]:
             _gtfs_retry_count = 0  # reset on success
-
 
 start_background_tasks()
 

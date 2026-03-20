@@ -21,7 +21,33 @@
             --red: #c0392b;
             --header-bg: #00303c;
             --header-text: #ffffff;
+            --alert-bg: #fff8e1;
+            --alert-border: #f5c842;
+            --alert-text: #6b4800;
         }
+
+        body.dark {
+            --bg: #1a1a1e;
+            --bg2: #242428;
+            --border: rgba(255,255,255,0.1);
+            --text: #f0f0f0;
+            --muted: #8e8e93;
+            --accent: #3fa8e0;
+            --accent-dark: #63bff0;
+            --green: #6fae43;
+            --green-light: #9dcc77;
+            --orange: #e07b00;
+            --red: #e05050;
+            --header-bg: #111418;
+            --header-text: #e0e0e0;
+            --alert-bg: #3a2e00;
+            --alert-border: #a08010;
+            --alert-text: #f5d060;
+        }
+        body.dark .dep-row:hover { background: #2e2e34; }
+        body.dark .dep-row.dep-now { background: #1a2e14; border-left: 3px solid var(--green); }
+        body.dark #stop-search { color: var(--text); }
+        body.dark .search-result-item:hover { background: #2e2e34; }
 
         html, body {
             height: 100%;
@@ -42,6 +68,8 @@
             gap: 16px;
         }
 
+        #header-left { min-width: 0; flex: 1; }
+
         #stop-title {
             font-size: clamp(1.1rem, 3vw, 1.8rem);
             font-weight: 800;
@@ -56,6 +84,29 @@
             font-size: 0.78rem;
             color: rgba(255,255,255,0.6);
             margin-top: 2px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        #sse-dot {
+            display: inline-block;
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background: #555;
+            flex-shrink: 0;
+            transition: background 0.4s;
+        }
+        #sse-dot.live    { background: var(--green-light); }
+        #sse-dot.polling { background: var(--orange); }
+        #sse-dot.error   { background: var(--red); }
+
+        #header-right {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-shrink: 0;
         }
 
         #clock {
@@ -64,15 +115,14 @@
             font-variant-numeric: tabular-nums;
             color: var(--green-light);
             letter-spacing: 1px;
-            flex-shrink: 0;
             font-family: monospace;
         }
 
-        #back-btn {
+        .hdr-btn {
             background: rgba(255,255,255,0.1);
             border: 1px solid rgba(255,255,255,0.25);
             color: rgba(255,255,255,0.85);
-            padding: 6px 12px;
+            padding: 6px 10px;
             border-radius: 8px;
             cursor: pointer;
             font-size: 0.82rem;
@@ -83,7 +133,19 @@
             gap: 6px;
             transition: background 0.15s, border-color 0.15s;
         }
-        #back-btn:hover { background: rgba(255,255,255,0.18); border-color: rgba(255,255,255,0.5); color: #fff; }
+        .hdr-btn:hover { background: rgba(255,255,255,0.18); border-color: rgba(255,255,255,0.5); color: #fff; }
+
+        /* Alerts banner */
+        #alert-banner {
+            display: none;
+            padding: 8px 24px;
+            background: var(--alert-bg);
+            border-bottom: 1px solid var(--alert-border);
+            color: var(--alert-text);
+            font-size: 0.85rem;
+            font-weight: 500;
+        }
+        #alert-banner.visible { display: block; }
 
         /* Stop search / selector */
         #search-bar {
@@ -109,6 +171,21 @@
         }
         #stop-search:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(0,115,185,0.15); }
         #stop-search::placeholder { color: var(--muted); }
+
+        #share-btn {
+            background: none;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            color: var(--muted);
+            padding: 8px 10px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            flex-shrink: 0;
+            transition: color 0.15s, border-color 0.15s;
+            display: none;
+        }
+        #share-btn.visible { display: inline-flex; align-items: center; }
+        #share-btn:hover { color: var(--accent); border-color: var(--accent); }
 
         #search-results {
             position: absolute;
@@ -152,7 +229,7 @@
 
         .dep-row {
             display: grid;
-            grid-template-columns: 64px 1fr auto auto;
+            grid-template-columns: 72px 1fr auto auto;
             align-items: center;
             gap: 0 16px;
             padding: 14px 24px;
@@ -162,6 +239,8 @@
         }
         .dep-row:hover { background: #f0f8fd; }
         .dep-row.dep-now { background: #edfbf0; border-left: 3px solid var(--green); }
+
+        .dep-badge-wrap { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; }
 
         .dep-badge {
             display: inline-flex;
@@ -176,10 +255,29 @@
             text-align: center;
         }
 
+        .dep-platform {
+            font-size: 0.7rem;
+            color: var(--muted);
+            font-weight: 600;
+            letter-spacing: 0.3px;
+            white-space: nowrap;
+        }
+
         .dep-headsign {
             font-size: clamp(0.95rem, 2.4vw, 1.35rem);
             font-weight: 500;
             color: var(--text);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .dep-headsign-sub {
+            display: block;
+            font-size: 0.75rem;
+            color: var(--muted);
+            font-weight: 400;
+            margin-top: 2px;
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
@@ -217,6 +315,7 @@
             vertical-align: middle;
             font-weight: 700;
         }
+        body.dark .dep-rt-badge { background: #1a3a10; }
 
         /* Empty / loading states */
         .board-msg {
@@ -241,37 +340,43 @@
         #refresh-bar.running { transform: scaleX(1); }
 
         /* Fullscreen hint */
-        #fs-btn {
-            background: rgba(255,255,255,0.1);
-            border: 1px solid rgba(255,255,255,0.25);
-            color: rgba(255,255,255,0.85);
-            padding: 6px 10px;
-            border-radius: 8px;
-            cursor: pointer;
-            font-size: 0.82rem;
-            flex-shrink: 0;
-            transition: background 0.15s, border-color 0.15s;
+        #fs-btn { }
+
+        @media (max-width: 480px) {
+            #header { padding: 10px 14px; gap: 10px; }
+            #search-bar { padding: 8px 14px; }
+            .dep-row { padding: 12px 14px; gap: 0 10px; }
+            .dep-eta { min-width: 80px; }
+            #clock { display: none; }
         }
-        #fs-btn:hover { background: rgba(255,255,255,0.18); border-color: rgba(255,255,255,0.5); color: #fff; }
     </style>
 </head>
 <body>
 
 <div id="header">
-    <div>
+    <div id="header-left">
         <div id="stop-title">Avgångstavla</div>
-        <div id="stop-subtitle">LTlive · Välj hållplats nedan</div>
+        <div id="stop-subtitle">
+            <span id="sse-dot"></span>
+            <span id="stop-subtitle-text">LTlive · Välj hållplats nedan</span>
+        </div>
     </div>
-    <div id="clock">--:--:--</div>
-    <button id="fs-btn" title="Helskärm" onclick="toggleFullscreen()">⛶</button>
-    <a id="back-btn" href="/">&#8592; Karta</a>
+    <div id="header-right">
+        <div id="clock">--:--:--</div>
+        <button class="hdr-btn" id="dark-btn" title="Mörkt/ljust tema" aria-label="Byt tema">🌙</button>
+        <button class="hdr-btn" id="fs-btn" title="Helskärm" onclick="toggleFullscreen()">⛶</button>
+        <a class="hdr-btn" id="back-btn" href="/">&#8592; Karta</a>
+    </div>
 </div>
+
+<div id="alert-banner"></div>
 
 <div id="search-bar">
     <div id="search-wrap">
         <input id="stop-search" type="text" placeholder="Sök hållplats…" autocomplete="off" />
         <div id="search-results"></div>
     </div>
+    <button id="share-btn" title="Kopiera länk">🔗</button>
 </div>
 
 <div id="refresh-bar"></div>
@@ -290,7 +395,20 @@ let refreshTimer = null;
 let allStops = [];
 let etaCountdownTimer = null;
 
-// Clock
+// --- Dark mode ---
+let darkMode = localStorage.getItem("darkMode") === "true";
+function applyDarkMode() {
+    document.body.classList.toggle("dark", darkMode);
+    document.getElementById("dark-btn").textContent = darkMode ? "☀️" : "🌙";
+}
+applyDarkMode();
+document.getElementById("dark-btn").addEventListener("click", () => {
+    darkMode = !darkMode;
+    localStorage.setItem("darkMode", darkMode);
+    applyDarkMode();
+});
+
+// --- Clock ---
 function updateClock() {
     document.getElementById("clock").textContent =
         new Date().toLocaleTimeString("sv-SE");
@@ -298,33 +416,35 @@ function updateClock() {
 setInterval(updateClock, 1000);
 updateClock();
 
-// Board height
+// --- Board height ---
 function resizeBoard() {
-    const header = document.getElementById("header").offsetHeight;
+    const header    = document.getElementById("header").offsetHeight;
+    const alertBar  = document.getElementById("alert-banner").offsetHeight;
     const searchBar = document.getElementById("search-bar").offsetHeight;
-    const bar = document.getElementById("refresh-bar").offsetHeight;
-    const wrap = document.getElementById("board-wrap");
+    const bar       = document.getElementById("refresh-bar").offsetHeight;
+    const wrap      = document.getElementById("board-wrap");
     wrap.style.position = "absolute";
-    wrap.style.top = (header + searchBar + bar) + "px";
-    wrap.style.bottom = "0";
-    wrap.style.left = "0";
-    wrap.style.right = "0";
+    wrap.style.top      = (header + alertBar + searchBar + bar) + "px";
+    wrap.style.bottom   = "0";
+    wrap.style.left     = "0";
+    wrap.style.right    = "0";
 }
 window.addEventListener("resize", resizeBoard);
 resizeBoard();
 
-// Read URL params
+// --- Read URL params ---
 const params = new URLSearchParams(location.search);
 if (params.get("stop_id")) {
-    currentStopId = params.get("stop_id");
+    currentStopId   = params.get("stop_id");
     currentStopName = params.get("stop_name") || currentStopId;
-    document.getElementById("stop-title").textContent = currentStopName;
-    document.getElementById("stop-subtitle").textContent = "LTlive · Avgångstavla";
-    document.getElementById("stop-search").value = currentStopName;
+    document.getElementById("stop-title").textContent       = currentStopName;
+    document.getElementById("stop-subtitle-text").textContent = "LTlive · Avgångstavla";
+    document.getElementById("stop-search").value            = currentStopName;
+    document.getElementById("share-btn").classList.add("visible");
     loadDepartures();
 }
 
-// Fullscreen
+// --- Fullscreen ---
 function toggleFullscreen() {
     if (!document.fullscreenElement) {
         document.documentElement.requestFullscreen().catch(() => {});
@@ -333,7 +453,17 @@ function toggleFullscreen() {
     }
 }
 
-// ETA formatting
+// --- Share / copy URL ---
+document.getElementById("share-btn").addEventListener("click", async () => {
+    try {
+        await navigator.clipboard.writeText(location.href);
+        const btn = document.getElementById("share-btn");
+        btn.textContent = "✓";
+        setTimeout(() => { btn.textContent = "🔗"; }, 1500);
+    } catch {}
+});
+
+// --- ETA formatting ---
 function formatEta(secs) {
     if (secs <= 0) return { text: "Nu", cls: "eta-now" };
     if (secs < 60) return { text: `${secs} s`, cls: "eta-now" };
@@ -343,25 +473,25 @@ function formatEta(secs) {
     return { text: `${m}:${String(s).padStart(2, "0")}`, cls };
 }
 
-// Live countdown
+// --- Live countdown ---
 function startCountdown() {
     clearInterval(etaCountdownTimer);
     etaCountdownTimer = setInterval(() => {
         const now = Date.now() / 1000;
         document.querySelectorAll(".dep-eta[data-ts]").forEach(el => {
-            const ts = parseFloat(el.dataset.ts);
+            const ts   = parseFloat(el.dataset.ts);
             const secs = Math.round(ts - now);
             const { text, cls } = formatEta(secs);
             el.textContent = text;
-            el.className = `dep-eta ${cls}`;
+            el.className   = `dep-eta ${cls}`;
             const row = el.closest(".dep-row");
             if (row) row.classList.toggle("dep-now", secs <= 0);
         });
     }, 1000);
 }
 
-// Load stops for search
-let stopHeadsigns = {}; // stop_id -> headsign string
+// --- Load stops for search ---
+let stopHeadsigns = {};
 async function loadStops() {
     try {
         const [stopsData, nextDep] = await Promise.all([
@@ -376,8 +506,8 @@ async function loadStops() {
 }
 loadStops();
 
-// Search
-const searchInput = document.getElementById("stop-search");
+// --- Search ---
+const searchInput   = document.getElementById("stop-search");
 const searchResults = document.getElementById("search-results");
 
 searchInput.addEventListener("input", () => {
@@ -392,9 +522,7 @@ searchInput.addEventListener("input", () => {
         const sub = dir ? `<span class="search-result-dir">mot ${dir}</span>` : "";
         return `<div class="search-result-item" data-id="${s.stop_id}" data-name="${s.stop_name}">${s.stop_name}${sub}</div>`;
     }).join("");
-    // Position dropdown below the input
-    const rect = searchInput.getBoundingClientRect();
-    searchResults.style.top = (searchInput.offsetHeight + 4) + "px";
+    searchResults.style.top   = (searchInput.offsetHeight + 4) + "px";
     searchResults.style.width = searchInput.offsetWidth + "px";
     searchResults.classList.add("open");
 });
@@ -402,13 +530,8 @@ searchInput.addEventListener("input", () => {
 searchResults.addEventListener("click", e => {
     const item = e.target.closest(".search-result-item");
     if (!item) return;
-    currentStopId = item.dataset.id;
-    currentStopName = item.dataset.name;
-    searchInput.value = currentStopName;
+    selectStop(item.dataset.id, item.dataset.name);
     searchResults.classList.remove("open");
-    document.getElementById("stop-title").textContent = currentStopName;
-    document.getElementById("stop-subtitle").textContent = "LTlive · Avgångstavla";
-    history.replaceState(null, "", `?stop_id=${encodeURIComponent(currentStopId)}&stop_name=${encodeURIComponent(currentStopName)}`);
     loadDepartures();
 });
 
@@ -416,7 +539,82 @@ document.addEventListener("click", e => {
     if (!e.target.closest("#search-wrap")) searchResults.classList.remove("open");
 });
 
-// Load departures
+function selectStop(id, name) {
+    currentStopId   = id;
+    currentStopName = name;
+    searchInput.value = name;
+    document.getElementById("stop-title").textContent         = name;
+    document.getElementById("stop-subtitle-text").textContent = "LTlive · Avgångstavla";
+    document.getElementById("share-btn").classList.add("visible");
+    history.replaceState(null, "", `?stop_id=${encodeURIComponent(id)}&stop_name=${encodeURIComponent(name)}`);
+}
+
+// --- Alerts ---
+function updateAlerts(alerts) {
+    const banner = document.getElementById("alert-banner");
+    if (!alerts || alerts.length === 0) {
+        banner.classList.remove("visible");
+        banner.textContent = "";
+    } else {
+        banner.textContent = alerts.map(a =>
+            `⚠ ${a.header}${a.description ? " — " + a.description : ""}`
+        ).join("  ·  ");
+        banner.classList.add("visible");
+    }
+    resizeBoard();
+}
+
+// --- SSE stream ---
+let sseSource       = null;
+let sseFallback     = null;
+let sseDotEl        = document.getElementById("sse-dot");
+
+function setSseStatus(status) {
+    sseDotEl.className = "";
+    sseDotEl.classList.add(status);  // "live" | "polling" | "error"
+}
+
+function initSSE() {
+    if (sseSource) { sseSource.close(); sseSource = null; }
+
+    sseSource = new EventSource(`${API}/stream`);
+
+    sseSource.addEventListener("alerts", e => {
+        try { updateAlerts(JSON.parse(e.data).alerts); } catch {}
+    });
+
+    // When we receive a vehicles event for the active stop, refresh departures immediately.
+    sseSource.addEventListener("vehicles_delta", e => {
+        // Light-weight check: if any updated vehicle has next stop matching our stop, refresh
+        if (!currentStopId) return;
+        try {
+            const d = JSON.parse(e.data);
+            const relevant = (d.updated || []).some(
+                v => v.next_stop_id === currentStopId || v.next_stop_name === currentStopName
+            );
+            if (relevant) loadDepartures();
+        } catch {}
+    });
+
+    sseSource.onopen = () => {
+        setSseStatus("live");
+        if (sseFallback) { clearInterval(sseFallback); sseFallback = null; }
+    };
+
+    sseSource.onerror = () => {
+        setSseStatus("error");
+        if (!sseFallback) {
+            setSseStatus("polling");
+            sseFallback = setInterval(() => { loadDepartures(); }, 20000);
+        }
+    };
+}
+
+// Fetch initial alerts
+fetch(`${API}/alerts`).then(r => r.json()).then(d => updateAlerts(d.alerts)).catch(() => {});
+initSSE();
+
+// --- Load departures ---
 async function loadDepartures() {
     if (!currentStopId) return;
     const board = document.getElementById("board");
@@ -425,7 +623,7 @@ async function loadDepartures() {
     }
 
     try {
-        const data = await fetch(`${API}/departures/${encodeURIComponent(currentStopId)}`).then(r => r.json());
+        const data = await fetch(`${API}/departures/${encodeURIComponent(currentStopId)}?limit=20`).then(r => r.json());
         renderBoard(data.departures || []);
     } catch {
         board.innerHTML = `<div class="board-msg">Kunde inte hämta avgångar</div>`;
@@ -434,10 +632,10 @@ async function loadDepartures() {
     // Refresh bar animation
     const bar = document.getElementById("refresh-bar");
     bar.style.transition = "none";
-    bar.style.transform = "scaleX(0)";
+    bar.style.transform  = "scaleX(0)";
     requestAnimationFrame(() => {
         bar.style.transition = "transform 20s linear";
-        bar.style.transform = "scaleX(1)";
+        bar.style.transform  = "scaleX(1)";
     });
 
     clearTimeout(refreshTimer);
@@ -446,7 +644,7 @@ async function loadDepartures() {
 
 function renderBoard(departures) {
     const board = document.getElementById("board");
-    const now = Date.now() / 1000;
+    const now   = Date.now() / 1000;
 
     if (departures.length === 0) {
         board.innerHTML = `<div class="board-msg">Inga kommande avgångar</div>`;
@@ -454,32 +652,36 @@ function renderBoard(departures) {
     }
 
     board.innerHTML = departures.map(d => {
-        const secs = Math.round(d.departure_time - now);
+        const secs             = Math.round(d.departure_time - now);
         const { text: etaText, cls: etaCls } = formatEta(secs);
-        const clock = new Date(d.departure_time * 1000)
+        const clock            = new Date(d.departure_time * 1000)
             .toLocaleTimeString("sv-SE", { hour: "2-digit", minute: "2-digit" });
-        const bg = d.route_color ? `#${d.route_color}` : "#555";
-        const fg = d.route_text_color ? `#${d.route_text_color}` : "#fff";
-        const rt = d.is_realtime ? `<span class="dep-rt-badge">RT</span>` : "";
-        const nowClass = secs <= 0 ? "dep-now" : "";
-        return `<div class="dep-row ${nowClass}">
-            <span class="dep-badge" style="background:${bg};color:${fg}">${d.route_short_name || "?"}</span>
-            <span class="dep-headsign">${d.headsign || ""}${rt}</span>
+        const rt               = d.is_realtime ? `<span class="dep-rt-badge">RT</span>` : "";
+        const nowClass         = secs <= 0 ? "dep-now" : "";
+        const platformHtml     = d.platform_code
+            ? `<span class="dep-platform">Läge ${d.platform_code}</span>` : "";
+        const mapLink          = d.route_id
+            ? `<a href="/?line=${encodeURIComponent(d.route_short_name || d.route_id)}" title="Visa på karta" style="color:var(--muted);text-decoration:none;font-size:0.8rem">🗺</a>` : "";
+        return `<div class="dep-row ${nowClass}" data-bg="${d.route_color || '555'}" data-fg="${d.route_text_color || 'fff'}">
+            <div class="dep-badge-wrap">
+                <span class="dep-badge" data-bg="${d.route_color || '555'}" data-fg="${d.route_text_color || 'fff'}">${d.route_short_name || "?"}</span>
+                ${platformHtml}
+            </div>
+            <span class="dep-headsign">${d.headsign || ""}${rt}${mapLink ? `<span class="dep-headsign-sub">${mapLink} Se på karta</span>` : ""}</span>
             <span class="dep-clock">${clock}</span>
             <span class="dep-eta ${etaCls}" data-ts="${d.departure_time}">${etaText}</span>
         </div>`;
     }).join("");
 
+    // Apply dynamic badge colors via JS (avoids inline style= attributes)
+    board.querySelectorAll(".dep-badge[data-bg]").forEach(el => {
+        el.style.background = `#${el.dataset.bg}`;
+        el.style.color      = `#${el.dataset.fg}`;
+    });
+
     startCountdown();
 }
 </script>
-<script>
-(function(){var s=Math.random().toString(36).slice(2),t=Date.now(),p=location.pathname;
-fetch('/api/stats/visit',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:s,page:p}),keepalive:true}).catch(function(){});
-function leave(){navigator.sendBeacon('/api/stats/leave',JSON.stringify({session_id:s,duration:Math.round((Date.now()-t)/1000)}));}
-window.addEventListener('beforeunload',leave);
-document.addEventListener('visibilitychange',function(){if(document.hidden)leave();});
-})();
-</script>
+<script src="analytics.js"></script>
 </body>
 </html>

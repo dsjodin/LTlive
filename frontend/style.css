@@ -918,3 +918,16 @@ body.ticker-collapsed #ticker-reopener {
     /* GPS button above ticker, left side on mobile */
     #gps-btn { right: auto; left: 14px; }
 }
+
+/* ===== Vehicle icon helpers (replaces inline style= in divIcon html strings) ===== */
+.vehicle-svg          { overflow: visible; display: block; }
+.vehicle-svg-label    { user-select: none; pointer-events: none; }
+.icon-shadow          { filter: drop-shadow(0 2px 4px rgba(0,0,0,.45)); }
+
+/* Stop badge wrap — replaces inline style="display:flex;align-items:center;gap:3px;pointer-events:none" */
+.stop-badge-wrap {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    pointer-events: none;
+}
