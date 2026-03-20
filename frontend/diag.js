@@ -79,6 +79,16 @@ function render({ status, vehicles, matching, tvPositions }) {
     (byLine[name] = byLine[name] || []).push(v);
   }
 
+  // Show banner if debug endpoints are disabled (backend returns {"error":...})
+  if (matching?.error || tvPositions?.error) {
+    const banner = document.createElement('div');
+    banner.className = 'debug-disabled-banner';
+    banner.innerHTML = `<strong>⚠ ENABLE_DEBUG_ENDPOINTS=false</strong> — Sätt
+      <code>ENABLE_DEBUG_ENDPOINTS=true</code> i <code>.env</code> och starta om
+      backend för att aktivera RT-matchning, Tåg inom radien och RT-flöde rådata.`;
+    page.appendChild(banner);
+  }
+
   page.appendChild(buildSysStatus(status, vehicles.length));
   page.appendChild(buildTvPositions(tvPositions));
   page.appendChild(buildLinesTable(byLine));

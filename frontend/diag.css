@@ -234,6 +234,24 @@ a:hover { text-decoration: underline; }
   color: #aab;
 }
 
+/* ── Debug disabled banner ───────────────────────────── */
+.debug-disabled-banner {
+  background: #2a2000;
+  border: 1px solid #6a5000;
+  border-radius: 8px;
+  padding: 10px 16px;
+  color: #f0c040;
+  font-size: 12px;
+  line-height: 1.6;
+}
+.debug-disabled-banner code {
+  background: #3a3000;
+  border-radius: 3px;
+  padding: 1px 5px;
+  font-family: monospace;
+  font-size: 11px;
+}
+
 /* ── Loading state ───────────────────────────────────── */
 #loading {
   padding: 40px;
