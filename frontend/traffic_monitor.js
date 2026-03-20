@@ -1,7 +1,7 @@
 /**
  * Traffic inference monitor — /traffic_monitor.html
  * Polls /api/traffic/monitor every 5 s and renders a live dashboard.
- * All styling via CSS classes — no inline style attributes (CSP compliance).
+ * Zero inline styles — fully CSP-compliant (style-src 'self').
  */
 
 const API = "/api/traffic/monitor";
@@ -32,7 +32,6 @@ function zoneTags(row) {
   return t || "–";
 }
 
-/** Severity class from speed ratio (speed/baseline). */
 function ratioSev(speed, baseline) {
   if (!baseline || !speed) return "none";
   const r = speed / baseline;
@@ -42,13 +41,14 @@ function ratioSev(speed, baseline) {
   return "high";
 }
 
+/** Speed cell using <progress> — value attribute, no inline style. */
 function speedCell(speed, baseline) {
   if (!speed) return "–";
   const sev = ratioSev(speed, baseline);
   const pct = baseline ? Math.round(Math.min(1, speed / baseline) * 100) : 100;
   return `<div class="speed-cell">
     <span>${speed} km/h</span>
-    <div class="bar-wrap"><div class="bar-fill bar-sev-${sev}" data-pct="${pct}"></div></div>
+    <progress class="speed-bar sev-${sev}" value="${pct}" max="100"></progress>
     <span class="speed-pct">${pct}%</span>
   </div>`;
 }
@@ -59,15 +59,13 @@ function confClass(c) {
   return "conf-bad";
 }
 
-// ── Apply data-driven styles after innerHTML (bar widths) ─────────────
-
-function applyBarWidths(container) {
-  container.querySelectorAll(".bar-fill[data-pct]").forEach(el => {
-    el.style.width = el.dataset.pct + "%";
-  });
-  container.querySelectorAll(".hg-cell[data-opacity]").forEach(el => {
-    el.style.opacity = el.dataset.opacity;
-  });
+/** Map observation count to a CSS opacity class (no inline opacity). */
+function hgOpClass(count) {
+  if (count <= 0)   return "";
+  if (count <= 100) return "hg-op-1";  // 0.4  (base for has-data)
+  if (count <= 300) return "hg-op-2";  // 0.65
+  if (count <= 500) return "hg-op-3";  // 0.9
+  return "hg-op-4";                    // 1.0
 }
 
 // ── Clock ─────────────────────────────────────────────────────────────
@@ -134,7 +132,7 @@ function render(d) {
   // ── Segments table ───────────────────────────────────────────────
   let segRows = "";
   if (!d.segments || d.segments.length === 0) {
-    segRows = `<tr><td colspan="9" class="txt-dim" style="padding:12px;text-align:center">Inga observationer ännu — väntar på fordon…</td></tr>`;
+    segRows = `<tr><td colspan="9" class="txt-dim seg-empty-row">Inga observationer ännu — väntar på fordon…</td></tr>`;
   } else {
     for (const r of d.segments) {
       const mapLink = (r.lat && r.lon)
@@ -157,7 +155,7 @@ function render(d) {
   const segHtml = `
     <div class="card">
       <div class="card-header"><h2>Segment med observationer</h2><span class="meta">Topp ${d.segments.length} av ${d.segments_with_obs}</span></div>
-      <div class="card-body" style="padding:0;overflow-x:auto">
+      <div class="card-body card-body-flush">
         <table class="lines-table">
           <thead><tr>
             <th>Segment-ID</th><th>Obs</th><th>Fordon/Linjer</th>
@@ -182,23 +180,17 @@ function render(d) {
   for (const day of DAYS) {
     gridRows += `<div class="hg-row-label">${DAY_LABELS[day]}</div>`;
     for (let h = 0; h < 24; h++) {
-      const key   = `${day}:${h}`;
-      const count = d.hour_coverage[key] || 0;
-      const cls   = count > 0 ? "hg-cell has-data" : "hg-cell";
-      const title = `${DAY_LABELS[day]} ${String(h).padStart(2,"0")}:00 — ${count} segment med ≥5 obs`;
-      if (count > 0) {
-        const opacity = Math.min(1, 0.3 + count / 500).toFixed(2);
-        gridRows += `<div class="${cls}" data-opacity="${opacity}" title="${title}"></div>`;
-      } else {
-        gridRows += `<div class="${cls}" title="${title}"></div>`;
-      }
+      const count  = d.hour_coverage[`${day}:${h}`] || 0;
+      const cls    = count > 0 ? `hg-cell has-data ${hgOpClass(count)}` : "hg-cell";
+      const title  = `${DAY_LABELS[day]} ${String(h).padStart(2,"0")}:00 — ${count} segment med ≥5 obs`;
+      gridRows += `<div class="${cls}" title="${title}"></div>`;
     }
   }
   const baselineHtml = `
     <div class="card">
       <div class="card-header"><h2>Baslinje-täckning</h2><span class="meta">${d.baseline_keys} nycklar totalt</span></div>
       <div class="card-body">
-        <p class="txt-muted-sm" style="margin-bottom:10px">Varje ruta = en timme. Grön = minst ett segment har ≥5 observationer. Mörkare = fler segment.</p>
+        <p class="txt-muted-sm baseline-hint">Varje ruta = en timme. Grön = minst ett segment har ≥5 observationer. Mörkare = fler segment.</p>
         <div id="hour-grid">${gridRows}</div>
       </div>
     </div>`;
@@ -220,7 +212,6 @@ function render(d) {
     </div>`;
 
   page.innerHTML = overviewHtml + sevHtml + segHtml + baselineHtml + vehHtml;
-  applyBarWidths(page);
 }
 
 // ── Fetch ─────────────────────────────────────────────────────────────
