@@ -218,6 +218,13 @@ function getDelayBorderColor(vehicle) {
     return "#F44336";
 }
 
+function getDelayClass(vehicle) {
+    const d = vehicle.delay_seconds;
+    if (d == null || d <= 60) return "";
+    if (d <= 300) return " delay-warning";
+    return " delay-critical";
+}
+
 // Icon size varies with zoom level so buses don't dominate zoomed-out views.
 function getIconR() {
     const zoom = map ? map.getZoom() : 14;
@@ -244,7 +251,7 @@ function createBusIcon(vehicle) {
         // Tiny dot at low zoom / labels off — use DOM element to avoid inline style=
         const d = R * 2;
         const dot = document.createElement("div");
-        dot.className = "bus-icon-inner";
+        dot.className = "bus-icon-inner" + getDelayClass(vehicle);
         dot.style.width        = `${d}px`;
         dot.style.height       = `${d}px`;
         dot.style.borderRadius = "50%";
@@ -285,7 +292,7 @@ function createBusIcon(vehicle) {
 
     return L.divIcon({
         className: "bus-icon-wrapper",
-        html: `<div class="bus-icon-inner icon-shadow">${svg}</div>`,
+        html: `<div class="bus-icon-inner icon-shadow${getDelayClass(vehicle)}">${svg}</div>`,
         iconSize: [W, W],
         iconAnchor: [CX, CY],
     });
@@ -808,12 +815,26 @@ function showVehiclePopup(vehicle, marker) {
         ? ` <span class="popup-platform">Läge ${nextStopPlatform}</span>`
         : "";
 
+    let delayHtml = "";
+    if (!isTrain && vehicle.delay_seconds != null) {
+        const delayMin = Math.round(vehicle.delay_seconds / 60);
+        if (vehicle.delay_seconds > 60) {
+            const nextStopPart = nextStop ? ` till ${nextStop}` : "";
+            delayHtml = `<span class="popup-delay popup-delay--late">${delayMin} min försenad${nextStopPart}</span><br/>`;
+        } else if (vehicle.delay_seconds < -60) {
+            delayHtml = `<span class="popup-delay popup-delay--early">${Math.abs(delayMin)} min tidig</span><br/>`;
+        } else {
+            delayHtml = `<span class="popup-delay popup-delay--ontime">I tid</span><br/>`;
+        }
+    }
+
     const html = `
         <div class="popup-vehicle">
             <div class="popup-title" data-color="${color}">
                 ${title}
             </div>
             <div class="popup-details">
+                ${delayHtml}
                 ${nextStop ? `${nextStopLabel}: ${nextStop}${platformChip}<br/>` : ""}
                 ${speed ? `Hastighet: ${speed}<br/>` : ""}
                 Uppdaterad: ${updatedAt}

@@ -647,6 +647,18 @@ body.panel-open #map {
     padding-top: 8px;
 }
 
+/* Delay status row in vehicle popup */
+.popup-delay {
+    font-weight: 700;
+    font-size: 13px;
+    border-radius: 4px;
+    padding: 1px 6px;
+    display: inline-block;
+}
+.popup-delay--late   { background: rgba(244,67,54,.2); color: #f44336; }
+.popup-delay--early  { background: rgba(100,181,246,.2); color: #64b5f6; }
+.popup-delay--ontime { background: rgba(76,175,80,.2); color: #4caf50; }
+
 /* ===== Stop departure board ===== */
 .popup-stop-name { font-size: 14px; font-weight: 700; margin-bottom: 8px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .popup-platform {
@@ -856,6 +868,17 @@ body.panel-open #map {
 .vehicle-svg          { overflow: visible; display: block; }
 .vehicle-svg-label    { user-select: none; pointer-events: none; }
 .icon-shadow          { filter: drop-shadow(0 2px 4px rgba(0,0,0,.45)); }
+
+@keyframes delay-pulse-warning {
+    0%, 100% { filter: drop-shadow(0 2px 4px rgba(0,0,0,.45)) drop-shadow(0 0 2px #FFD600); }
+    50%       { filter: drop-shadow(0 2px 4px rgba(0,0,0,.45)) drop-shadow(0 0 7px #FFD600); }
+}
+@keyframes delay-pulse-critical {
+    0%, 100% { filter: drop-shadow(0 2px 4px rgba(0,0,0,.45)) drop-shadow(0 0 2px #F44336); }
+    50%       { filter: drop-shadow(0 2px 4px rgba(0,0,0,.45)) drop-shadow(0 0 9px #F44336); }
+}
+.bus-icon-inner.delay-warning  { animation: delay-pulse-warning  1.8s ease-in-out infinite; }
+.bus-icon-inner.delay-critical { animation: delay-pulse-critical 1.1s ease-in-out infinite; }
 
 /* Stop badge wrap — replaces inline style="display:flex;align-items:center;gap:3px;pointer-events:none" */
 .stop-badge-wrap {
