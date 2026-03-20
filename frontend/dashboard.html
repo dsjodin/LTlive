@@ -1,0 +1,529 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard – LTlive</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        :root {
+            --bg: #111418;
+            --bg2: #1c2027;
+            --bg3: #242830;
+            --border: rgba(255,255,255,0.09);
+            --text: #e8eaf0;
+            --muted: #7a8394;
+            --accent: #3fa8e0;
+            --green: #5cb85c;
+            --green-dim: #2e5e2e;
+            --orange: #e09c3f;
+            --red: #e05555;
+            --header-bg: #0c0f14;
+            --card-radius: 12px;
+        }
+
+        html, body {
+            min-height: 100%;
+            background: var(--bg);
+            color: var(--text);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        }
+
+        /* ===== Header ===== */
+        #topbar {
+            background: var(--header-bg);
+            border-bottom: 1px solid var(--border);
+            padding: 14px 24px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+        .topbar-brand { font-size: 1.3rem; font-weight: 800; color: var(--accent); letter-spacing: -0.5px; }
+        .topbar-brand span { font-size: 0.85rem; font-weight: 400; color: var(--muted); margin-left: 6px; }
+        .topbar-nav { display: flex; gap: 8px; align-items: center; }
+        .nav-link {
+            color: var(--muted);
+            text-decoration: none;
+            font-size: 0.85rem;
+            padding: 5px 10px;
+            border-radius: 7px;
+            border: 1px solid transparent;
+            transition: color 0.15s, border-color 0.15s;
+        }
+        .nav-link:hover { color: var(--text); border-color: var(--border); }
+        .nav-link.active { color: var(--accent); border-color: rgba(63,168,224,0.3); }
+
+        #last-refresh {
+            font-size: 0.75rem;
+            color: var(--muted);
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        #status-dot {
+            width: 8px; height: 8px; border-radius: 50%;
+            background: var(--muted);
+            flex-shrink: 0;
+            transition: background 0.4s;
+        }
+        #status-dot.live    { background: var(--green); box-shadow: 0 0 6px var(--green); }
+        #status-dot.error   { background: var(--red); }
+
+        /* ===== Grid ===== */
+        #grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 16px;
+            padding: 24px;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .card {
+            background: var(--bg2);
+            border: 1px solid var(--border);
+            border-radius: var(--card-radius);
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+        .card-wide { grid-column: 1 / -1; }
+
+        .card-title {
+            font-size: 0.7rem;
+            font-weight: 700;
+            letter-spacing: 1.2px;
+            text-transform: uppercase;
+            color: var(--muted);
+        }
+
+        /* ===== Vehicle counts ===== */
+        #counts-card { flex-direction: row; align-items: stretch; gap: 0; padding: 0; overflow: hidden; }
+        .count-cell {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 24px 16px;
+            border-right: 1px solid var(--border);
+        }
+        .count-cell:last-child { border-right: none; }
+        .count-label { font-size: 0.7rem; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; }
+        .count-value { font-size: 2.8rem; font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1; }
+        .count-value.total { color: var(--accent); }
+        .count-value.buses { color: #5b8de0; }
+        .count-value.trains { color: var(--orange); }
+
+        /* ===== Active lines ===== */
+        #lines-wrap {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            min-height: 36px;
+        }
+        .line-chip {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-weight: 800;
+            font-size: 0.85rem;
+            min-width: 36px;
+            text-align: center;
+            cursor: default;
+            transition: transform 0.1s;
+        }
+        .line-chip:hover { transform: scale(1.08); }
+        #lines-empty { color: var(--muted); font-size: 0.9rem; }
+
+        /* ===== Alerts ===== */
+        #alerts-list { display: flex; flex-direction: column; gap: 8px; }
+        .alert-item {
+            background: rgba(255,200,50,0.07);
+            border: 1px solid rgba(255,200,50,0.18);
+            border-radius: 8px;
+            padding: 10px 14px;
+            font-size: 0.88rem;
+            line-height: 1.4;
+        }
+        .alert-header { font-weight: 600; color: #f5d060; }
+        .alert-desc { color: var(--muted); margin-top: 3px; font-size: 0.82rem; }
+        #no-alerts { color: var(--muted); font-size: 0.9rem; display: flex; align-items: center; gap: 8px; }
+        .ok-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); flex-shrink: 0; }
+
+        /* ===== System status ===== */
+        .status-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 7px 0;
+            border-bottom: 1px solid var(--border);
+            font-size: 0.88rem;
+        }
+        .status-row:last-child { border-bottom: none; }
+        .status-key { color: var(--muted); }
+        .status-val { font-weight: 600; }
+        .status-val.ok  { color: var(--green); }
+        .status-val.err { color: var(--red); }
+        .status-val.warn { color: var(--orange); }
+
+        /* ===== Stats ===== */
+        .stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        .stat-box {
+            background: var(--bg3);
+            border-radius: 8px;
+            padding: 12px 14px;
+        }
+        .stat-box-label { font-size: 0.7rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 4px; }
+        .stat-box-value { font-size: 1.5rem; font-weight: 800; font-variant-numeric: tabular-nums; color: var(--accent); }
+        .stat-box-sub { font-size: 0.75rem; color: var(--muted); margin-top: 2px; }
+
+        @media (max-width: 600px) {
+            #grid { padding: 12px; gap: 12px; }
+            .card { padding: 16px; }
+            #topbar { padding: 10px 14px; }
+            .count-value { font-size: 2.2rem; }
+        }
+    </style>
+</head>
+<body>
+
+<div id="topbar">
+    <div>
+        <span class="topbar-brand">LTlive<span>Dashboard</span></span>
+    </div>
+    <nav class="topbar-nav">
+        <a href="/" class="nav-link">🗺 Karta</a>
+        <a href="/board.html" class="nav-link">🚏 Tavla</a>
+        <a href="/stats.html" class="nav-link">📊 Statistik</a>
+        <a href="/dashboard.html" class="nav-link active">⚡ Dashboard</a>
+    </nav>
+    <div id="last-refresh">
+        <span id="status-dot"></span>
+        <span id="refresh-time">–</span>
+    </div>
+</div>
+
+<div id="grid">
+
+    <!-- Vehicle counts -->
+    <div class="card card-wide" id="counts-card" style="padding:0">
+        <div class="count-cell">
+            <div class="count-label">Fordon totalt</div>
+            <div class="count-value total" id="cnt-total">–</div>
+        </div>
+        <div class="count-cell">
+            <div class="count-label">Bussar</div>
+            <div class="count-value buses" id="cnt-buses">–</div>
+        </div>
+        <div class="count-cell">
+            <div class="count-label">Tåg</div>
+            <div class="count-value trains" id="cnt-trains">–</div>
+        </div>
+    </div>
+
+    <!-- Active lines -->
+    <div class="card card-wide">
+        <div class="card-title">Aktiva linjer</div>
+        <div id="lines-wrap">
+            <span id="lines-empty" style="color:var(--muted)">Laddar…</span>
+        </div>
+    </div>
+
+    <!-- Alerts -->
+    <div class="card">
+        <div class="card-title">Störningar</div>
+        <div id="alerts-list">
+            <div id="no-alerts" style="display:none">
+                <span class="ok-dot"></span> Inga aktiva störningar
+            </div>
+        </div>
+    </div>
+
+    <!-- System status -->
+    <div class="card">
+        <div class="card-title">Systemstatus</div>
+        <div id="system-status">
+            <div class="status-row"><span class="status-key">GTFS-data</span><span class="status-val" id="s-gtfs">–</span></div>
+            <div class="status-row"><span class="status-key">SSE-stream</span><span class="status-val" id="s-sse">–</span></div>
+            <div class="status-row"><span class="status-key">Senast fordon</span><span class="status-val" id="s-vehicles">–</span></div>
+            <div class="status-row"><span class="status-key">Senaste larm</span><span class="status-val" id="s-alerts-time">–</span></div>
+        </div>
+    </div>
+
+    <!-- Stats -->
+    <div class="card">
+        <div class="card-title">Statistik idag</div>
+        <div class="stat-grid" id="stats-grid">
+            <div class="stat-box">
+                <div class="stat-box-label">Besök</div>
+                <div class="stat-box-value" id="stat-visits">–</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-box-label">Unika</div>
+                <div class="stat-box-value" id="stat-unique">–</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-box-label">Snitt tid</div>
+                <div class="stat-box-value" id="stat-duration">–</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-box-label">7 dagar</div>
+                <div class="stat-box-value" id="stat-week">–</div>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+<script>
+const API = "/api";
+
+// Chip colors — mirrors config.js logic for Stadstrafiken / Länsbuss
+const LINE_COLORS_CUSTOM = {
+    "1":  { bg: "5B2D8E", text: "FFFFFF" },
+    "2":  { bg: "2E8B3A", text: "FFFFFF" },
+    "3":  { bg: "E87722", text: "FFFFFF" },
+    "4":  { bg: "1A7A7A", text: "FFFFFF" },
+    "5":  { bg: "1565C0", text: "FFFFFF" },
+    "6":  { bg: "F5C800", text: "1C1C1E" },
+    "7":  { bg: "D4607A", text: "FFFFFF" },
+    lansbuss: { bg: "7B5C3E", text: "FFFFFF" },
+};
+const LINE_CONFIG_LANSBUSS = [
+    "200","230","300","308","314","324","351","400","401","403","406","420","430","431","490",
+    "500","502","506","520","590","593","600","620","630","700","701","710","800","807","819","820","840",
+];
+
+function lineStyle(shortName) {
+    if (LINE_COLORS_CUSTOM[shortName]) return LINE_COLORS_CUSTOM[shortName];
+    if (LINE_CONFIG_LANSBUSS.includes(shortName)) return LINE_COLORS_CUSTOM.lansbuss;
+    return { bg: "555", text: "fff" };
+}
+
+// --- Vehicle data → UI ---
+let lastVehicleTs = 0;
+
+function updateVehicles(vehicles) {
+    const buses  = vehicles.filter(v => v.vehicle_type !== "train");
+    const trains = vehicles.filter(v => v.vehicle_type === "train");
+    document.getElementById("cnt-total").textContent  = vehicles.length;
+    document.getElementById("cnt-buses").textContent  = buses.length;
+    document.getElementById("cnt-trains").textContent = trains.length;
+
+    // Active lines (deduplicated, sorted numerically)
+    const seen = new Map(); // route_short_name -> vehicle (first seen)
+    vehicles.forEach(v => {
+        if (v.route_short_name && !seen.has(v.route_short_name)) seen.set(v.route_short_name, v);
+    });
+
+    const sorted = [...seen.entries()].sort(([a], [b]) => {
+        const na = parseInt(a), nb = parseInt(b);
+        if (!isNaN(na) && !isNaN(nb)) return na - nb;
+        return a.localeCompare(b, "sv");
+    });
+
+    const wrap = document.getElementById("lines-wrap");
+    const emptyEl = document.getElementById("lines-empty");
+
+    if (sorted.length === 0) {
+        wrap.innerHTML = "";
+        if (!emptyEl) {
+            const s = document.createElement("span");
+            s.id = "lines-empty";
+            s.style.color = "var(--muted)";
+            s.textContent = "Inga aktiva linjer";
+            wrap.appendChild(s);
+        } else {
+            wrap.appendChild(emptyEl);
+        }
+        return;
+    }
+
+    // Remove empty placeholder
+    if (emptyEl && emptyEl.parentNode) emptyEl.parentNode.removeChild(emptyEl);
+
+    // Rebuild chips (preserve existing if unchanged)
+    const existingNames = new Set([...wrap.querySelectorAll(".line-chip")].map(c => c.dataset.line));
+    const newNames      = new Set(sorted.map(([n]) => n));
+
+    // Remove stale chips
+    wrap.querySelectorAll(".line-chip").forEach(c => {
+        if (!newNames.has(c.dataset.line)) wrap.removeChild(c);
+    });
+
+    // Add new chips
+    sorted.forEach(([name]) => {
+        if (existingNames.has(name)) return;
+        const style = lineStyle(name);
+        const chip  = document.createElement("span");
+        chip.className    = "line-chip";
+        chip.dataset.line = name;
+        chip.textContent  = name;
+        chip.style.background = `#${style.bg}`;
+        chip.style.color      = `#${style.text}`;
+        chip.title = `Linje ${name} — se på karta`;
+        chip.addEventListener("click", () => {
+            window.location.href = `/?line=${encodeURIComponent(name)}`;
+        });
+        wrap.appendChild(chip);
+    });
+
+    lastVehicleTs = Date.now();
+    updateSseTime();
+}
+
+// --- Alerts ---
+let lastAlertTs = 0;
+
+function updateAlerts(alerts) {
+    lastAlertTs = Date.now();
+    const list    = document.getElementById("alerts-list");
+    const noAlert = document.getElementById("no-alerts");
+    list.innerHTML = "";
+
+    if (!alerts || alerts.length === 0) {
+        noAlert.style.display = "flex";
+        list.appendChild(noAlert);
+        return;
+    }
+
+    noAlert.style.display = "none";
+    alerts.forEach(a => {
+        const item = document.createElement("div");
+        item.className = "alert-item";
+        const hdr  = document.createElement("div");
+        hdr.className   = "alert-header";
+        hdr.textContent = `⚠ ${a.header || ""}`;
+        item.appendChild(hdr);
+        if (a.description) {
+            const desc = document.createElement("div");
+            desc.className   = "alert-desc";
+            desc.textContent = a.description;
+            item.appendChild(desc);
+        }
+        list.appendChild(item);
+    });
+}
+
+// --- System status ---
+function updateSseTime() {
+    if (lastVehicleTs) {
+        const secs = Math.round((Date.now() - lastVehicleTs) / 1000);
+        document.getElementById("s-vehicles").textContent =
+            secs < 10 ? "Just nu" : `${secs} s sedan`;
+    }
+    if (lastAlertTs) {
+        const secs = Math.round((Date.now() - lastAlertTs) / 1000);
+        document.getElementById("s-alerts-time").textContent =
+            secs < 10 ? "Just nu" : `${secs} s sedan`;
+    }
+}
+setInterval(updateSseTime, 5000);
+
+function setGtfsStatus(loaded, error) {
+    const el = document.getElementById("s-gtfs");
+    if (error) { el.textContent = "Fel"; el.className = "status-val err"; }
+    else if (loaded) { el.textContent = "Laddad"; el.className = "status-val ok"; }
+    else { el.textContent = "Laddar…"; el.className = "status-val warn"; }
+}
+
+function setSseStatus(status) {
+    const dot = document.getElementById("status-dot");
+    const el  = document.getElementById("s-sse");
+    dot.className   = "";
+    dot.classList.add(status);
+    el.textContent  = status === "live" ? "Live" : status === "error" ? "Fel" : "Ansluter";
+    el.className    = `status-val ${status === "live" ? "ok" : status === "error" ? "err" : "warn"}`;
+}
+
+// --- Stats ---
+async function loadStats() {
+    try {
+        const d = await fetch(`${API}/stats`).then(r => r.json());
+        const t = d.today || {};
+        document.getElementById("stat-visits").textContent   = t.visits    ?? "–";
+        document.getElementById("stat-unique").textContent   = t.unique    ?? "–";
+        const dur = t.avg_duration;
+        document.getElementById("stat-duration").textContent = dur != null
+            ? `${Math.floor(dur / 60)}:${String(dur % 60).padStart(2, "0")}`
+            : "–";
+        document.getElementById("stat-week").textContent = (d.week || {}).visits ?? "–";
+    } catch {}
+}
+loadStats();
+setInterval(loadStats, 5 * 60 * 1000);
+
+// --- Status ---
+async function loadStatus() {
+    try {
+        const d = await fetch(`${API}/status`).then(r => r.json());
+        setGtfsStatus(d.gtfs_loaded, d.gtfs_error);
+    } catch {}
+}
+loadStatus();
+
+// --- SSE ---
+let sseSource = null;
+let _vehicleState = new Map();
+let _deltaReady   = false;
+
+function initSSE() {
+    if (sseSource) { sseSource.close(); }
+    _deltaReady = false;
+    setSseStatus("warn");
+
+    sseSource = new EventSource(`${API}/stream`);
+
+    sseSource.addEventListener("vehicles", e => {
+        try {
+            const d = JSON.parse(e.data);
+            _vehicleState.clear();
+            (d.vehicles || []).forEach(v => { if (v.vehicle_id) _vehicleState.set(v.vehicle_id, v); });
+            updateVehicles(d.vehicles || []);
+            _deltaReady = true;
+            const now = new Date().toLocaleTimeString("sv-SE");
+            document.getElementById("refresh-time").textContent = now;
+        } catch {}
+    });
+
+    sseSource.addEventListener("vehicles_delta", e => {
+        if (!_deltaReady) return;
+        try {
+            const d = JSON.parse(e.data);
+            (d.updated || []).forEach(v => { if (v.vehicle_id) _vehicleState.set(v.vehicle_id, v); });
+            (d.removed || []).forEach(id => _vehicleState.delete(id));
+            updateVehicles(Array.from(_vehicleState.values()));
+        } catch {}
+    });
+
+    sseSource.addEventListener("alerts", e => {
+        try { updateAlerts(JSON.parse(e.data).alerts); } catch {}
+    });
+
+    sseSource.onopen  = () => { setSseStatus("live"); _deltaReady = false; };
+    sseSource.onerror = () => { setSseStatus("error"); };
+}
+
+// Initial data load
+Promise.all([
+    fetch(`${API}/vehicles`).then(r => r.json()),
+    fetch(`${API}/alerts`).then(r => r.json()),
+]).then(([vd, ad]) => {
+    updateVehicles(vd.vehicles || []);
+    updateAlerts(ad.alerts || []);
+}).catch(() => {});
+
+initSSE();
+</script>
+<script src="analytics.js"></script>
+</body>
+</html>

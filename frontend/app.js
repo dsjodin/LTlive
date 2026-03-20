@@ -104,6 +104,15 @@ function getRouteColor(route) {
     return `#${LINE_COLORS[Math.abs(hash) % LINE_COLORS.length]}`;
 }
 
+// Apply dynamic badge colors via JS after innerHTML assignment.
+// Avoids inline style= HTML attributes, which are blocked by strict style-src CSP.
+function applyBadgeColors(container) {
+    container.querySelectorAll("[data-bg]").forEach(el => {
+        el.style.background = el.dataset.bg.startsWith("#") ? el.dataset.bg : `#${el.dataset.bg}`;
+        if (el.dataset.fg) el.style.color = el.dataset.fg.startsWith("#") ? el.dataset.fg : `#${el.dataset.fg}`;
+    });
+}
+
 function getRouteTextColor(route) {
     const custom = getLineStyle(route.route_short_name);
     if (custom) return `#${custom.text}`;
@@ -213,11 +222,19 @@ function createBusIcon(vehicle) {
     const R = getIconR() + (label.length >= 3 ? 4 : label.length >= 2 ? 1 : 0);
 
     if (!showLabels || !label || R <= 6) {
-        // Tiny dot at low zoom / labels off
+        // Tiny dot at low zoom / labels off — use DOM element to avoid inline style=
         const d = R * 2;
+        const dot = document.createElement("div");
+        dot.className = "bus-icon-inner";
+        dot.style.width        = `${d}px`;
+        dot.style.height       = `${d}px`;
+        dot.style.borderRadius = "50%";
+        dot.style.background   = color;
+        dot.style.border       = "2px solid white";
+        dot.style.boxShadow    = "0 1px 4px rgba(0,0,0,.5)";
         return L.divIcon({
             className: "bus-icon-wrapper",
-            html: `<div class="bus-icon-inner" style="width:${d}px;height:${d}px;border-radius:50%;background:${color};border:2px solid white;box-shadow:0 1px 4px rgba(0,0,0,.5)"></div>`,
+            html: dot,
             iconSize: [d, d],
             iconAnchor: [R, R],
         });
@@ -235,8 +252,7 @@ function createBusIcon(vehicle) {
         : "";
 
     const svg = `
-    <svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${W}"
-         style="overflow:visible;display:block">
+    <svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${W}" class="vehicle-svg">
       <g transform="rotate(${hasBearing ? bearing : 0},${CX},${CY})">
         ${tipPath}
         <circle cx="${CX}" cy="${CY}" r="${R}" fill="${color}" stroke="white" stroke-width="2.5"/>
@@ -244,12 +260,12 @@ function createBusIcon(vehicle) {
       <text x="${CX}" y="${CY}" text-anchor="middle" dominant-baseline="central"
             font-size="${fs}" font-weight="800" fill="${textColor}"
             font-family="-apple-system,BlinkMacSystemFont,sans-serif"
-            style="user-select:none;pointer-events:none">${label}</text>
+            class="vehicle-svg-label">${label}</text>
     </svg>`;
 
     return L.divIcon({
         className: "bus-icon-wrapper",
-        html: `<div class="bus-icon-inner" style="filter:drop-shadow(0 2px 4px rgba(0,0,0,.45))">${svg}</div>`,
+        html: `<div class="bus-icon-inner icon-shadow">${svg}</div>`,
         iconSize: [W, W],
         iconAnchor: [CX, CY],
     });
@@ -269,9 +285,16 @@ function createTrainIcon(vehicle) {
 
     if (zoom <= 12) {
         const d = 10;
+        const dot = document.createElement("div");
+        dot.style.width        = `${d}px`;
+        dot.style.height       = `${d}px`;
+        dot.style.borderRadius = "2px";
+        dot.style.background   = color;
+        dot.style.border       = "2px solid white";
+        dot.style.boxShadow    = "0 1px 4px rgba(0,0,0,.5)";
         return L.divIcon({
             className: "bus-icon-wrapper",
-            html: `<div style="width:${d}px;height:${d}px;border-radius:2px;background:${color};border:2px solid white;box-shadow:0 1px 4px rgba(0,0,0,.5)"></div>`,
+            html: dot,
             iconSize: [d, d],
             iconAnchor: [d / 2, d / 2],
         });
@@ -308,7 +331,7 @@ function createTrainIcon(vehicle) {
     <path d="M ${noseTipX},${cy} L ${noseBaseX},${cy - noseHH} L ${noseBaseX},${cy + noseHH} Z"
           fill="${locoFill}" stroke="${outline}" stroke-width="2" stroke-linejoin="round"/>`;
 
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${W}" style="overflow:visible;display:block">
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${W}" class="vehicle-svg">
   <g transform="rotate(${rotation},${cx},${cy})">
     <rect x="${c2x}" y="${cy_c}" width="${cW}" height="${cH}" rx="${rx}" ry="${rx}"
           fill="${carriageFill}" stroke="${outline}" stroke-width="2"/>
@@ -320,12 +343,12 @@ function createTrainIcon(vehicle) {
   <text x="${cx}" y="${cy}" text-anchor="middle" dominant-baseline="central"
         font-size="${fs}" font-weight="800" fill="${textFill}"
         font-family="-apple-system,BlinkMacSystemFont,sans-serif"
-        style="user-select:none;pointer-events:none">${label}</text>
+        class="vehicle-svg-label">${label}</text>
 </svg>`;
 
     return L.divIcon({
         className: "bus-icon-wrapper",
-        html: `<div class="bus-icon-inner" style="filter:drop-shadow(0 2px 4px rgba(0,0,0,.45))">${svg}</div>`,
+        html: `<div class="bus-icon-inner icon-shadow">${svg}</div>`,
         iconSize: [W, W],
         iconAnchor: [cx, cy],
     });
@@ -574,7 +597,7 @@ function showStopDepartures(stop, marker) {
                         : "";
                     return `
                         <tr>
-                            <td><span class="dep-badge" style="background:${bg};color:${fg}">${d.route_short_name}</span></td>
+                            <td><span class="dep-badge" data-bg="${bg}" data-fg="${fg}">${d.route_short_name}</span></td>
                             <td class="dep-headsign">${d.headsign}</td>
                             <td class="dep-time"><span class="dep-countdown" data-ts="${d.departure_time}">${timeStr}</span>${rt}</td>
                             <td class="dep-clock">${clock}</td>
@@ -591,7 +614,15 @@ function showStopDepartures(stop, marker) {
                         <table class="dep-table"><tbody>${rows}</tbody></table>
                     </div>`;
             }
-            if (marker.isPopupOpen()) marker.setPopupContent(html);
+            if (marker.isPopupOpen()) {
+                marker.setPopupContent(html);
+                // Apply dynamic badge colors after DOM is updated
+                const popup = marker.getPopup();
+                if (popup) {
+                    const el = popup.getElement();
+                    if (el) applyBadgeColors(el);
+                }
+            }
         })
         .catch(() => {
             if (marker.isPopupOpen()) {
@@ -662,7 +693,7 @@ function showVehiclePopup(vehicle, marker) {
 
     const html = `
         <div class="popup-vehicle">
-            <div class="popup-title" style="color:${color}">
+            <div class="popup-title" data-color="${color}">
                 ${title}
             </div>
             <div class="popup-details">
@@ -672,10 +703,15 @@ function showVehiclePopup(vehicle, marker) {
             </div>
         </div>
     `;
-    L.popup({ maxWidth: 250 })
+    const popup = L.popup({ maxWidth: 250 })
         .setLatLng(marker.getLatLng())
         .setContent(html)
         .openOn(map);
+    // Apply dynamic color after popup is in DOM
+    requestAnimationFrame(() => {
+        const el = popup.getElement();
+        if (el) el.querySelectorAll("[data-color]").forEach(e => { e.style.color = e.dataset.color; });
+    });
 }
 
 // --- Stops ---
@@ -986,9 +1022,11 @@ function openLinePanel(route) {
 
     const color = getRouteColor(route);
     const textColor = getRouteTextColor(route);
-    document.getElementById("line-panel-title").innerHTML =
-        `<span class="dep-badge" style="background:${color};color:${textColor}">${route.route_short_name}</span>` +
+    const titleEl = document.getElementById("line-panel-title");
+    titleEl.innerHTML =
+        `<span class="dep-badge" data-bg="${color}" data-fg="${textColor}">${route.route_short_name}</span>` +
         `<span class="lp-route-name">${route.route_long_name || ""}</span>`;
+    applyBadgeColors(titleEl);
     document.getElementById("line-panel-content").innerHTML =
         `<div class="lp-loading">Hämtar avgångar…</div>`;
     document.getElementById("line-panel").classList.add("open");
@@ -1183,31 +1221,51 @@ function updateStopBadges() {
         const isStation = stop.location_type === 1;
         const dep = stopNextDep[stopId];
 
-        let iconHtml, iconSize, iconAnchor;
+        let iconEl, iconSize, iconAnchor;
         if (dep && showBadges) {
-            const min = dep.minutes;
+            const min   = dep.minutes;
             const label = min === 0 ? "Nu" : `${min}m`;
-            const bg = dep.route_color || "0074D9";
-            const fg = dep.route_text_color || "FFFFFF";
-            const dotClass = isStation ? "station-marker" : "stop-marker";
-            const platformHtml = stop.platform_code
-                ? `<span class="sbp-platform">${stop.platform_code}</span>`
-                : "";
-            iconHtml = `<div style="display:flex;align-items:center;gap:3px;pointer-events:none">` +
-                `<div class="${dotClass}" style="flex-shrink:0"></div>` +
-                `<span class="stop-badge-pill"><span class="sbp-line" style="background:#${bg};color:#${fg}">${dep.route_short_name}</span><span class="sbp-time">${label}</span>${platformHtml}</span>` +
-                `</div>`;
+            const bg    = dep.route_color    || "0074D9";
+            const fg    = dep.route_text_color || "FFFFFF";
+
+            // Build badge with DOM API — avoids inline style= HTML attributes
+            const wrap = document.createElement("div");
+            wrap.className = "stop-badge-wrap";  // see style.css
+            const dot = document.createElement("div");
+            dot.className = isStation ? "station-marker" : "stop-marker";
+            const pill = document.createElement("span");
+            pill.className = "stop-badge-pill";
+            const lineSpan = document.createElement("span");
+            lineSpan.className   = "sbp-line";
+            lineSpan.textContent = dep.route_short_name;
+            lineSpan.style.background = `#${bg}`;
+            lineSpan.style.color      = `#${fg}`;
+            const timeSpan = document.createElement("span");
+            timeSpan.className   = "sbp-time";
+            timeSpan.textContent = label;
+            pill.appendChild(lineSpan);
+            pill.appendChild(timeSpan);
+            if (stop.platform_code) {
+                const plat = document.createElement("span");
+                plat.className   = "sbp-platform";
+                plat.textContent = stop.platform_code;
+                pill.appendChild(plat);
+            }
+            wrap.appendChild(dot);
+            wrap.appendChild(pill);
+            iconEl = wrap;
             const extraWidth = stop.platform_code ? 14 : 0;
-            iconSize = isStation ? [80 + extraWidth, 14] : [72 + extraWidth, 10];
+            iconSize   = isStation ? [80 + extraWidth, 14] : [72 + extraWidth, 10];
             iconAnchor = isStation ? [6, 7] : [4, 5];
         } else {
-            const dotClass = isStation ? "station-marker" : "stop-marker";
-            iconHtml = `<div class="${dotClass}"></div>`;
-            iconSize = isStation ? [12, 12] : [8, 8];
+            const dot = document.createElement("div");
+            dot.className = isStation ? "station-marker" : "stop-marker";
+            iconEl     = dot;
+            iconSize   = isStation ? [12, 12] : [8, 8];
             iconAnchor = isStation ? [6, 6] : [4, 4];
         }
 
-        marker.setIcon(L.divIcon({ className: "", html: iconHtml, iconSize, iconAnchor }));
+        marker.setIcon(L.divIcon({ className: "", html: iconEl, iconSize, iconAnchor }));
     });
 }
 
@@ -1357,7 +1415,7 @@ function fetchNearbyDepartures(lat, lon) {
                     const minClass = min <= 2 ? "nearby-min soon" : "nearby-min";
                     const rt = d.is_realtime ? `<span class="lp-rt">RT</span>` : "";
                     return `<div class="nearby-dep">
-                        <span class="dep-badge" style="background:${bg};color:${fg}">${d.route_short_name}</span>
+                        <span class="dep-badge" data-bg="${bg}" data-fg="${fg}">${d.route_short_name}</span>
                         <span class="nearby-headsign">${d.headsign}</span>
                         <span class="${minClass}">${minStr}</span>
                         ${rt}
@@ -1376,6 +1434,7 @@ function fetchNearbyDepartures(lat, lon) {
                     ${deps}
                 </div>`;
             }).join("");
+            applyBadgeColors(body);
         })
         .catch(() => {
             if (!nearbyPanelOpen) return;
@@ -1513,7 +1572,8 @@ async function init() {
     } catch (_) { /* use built-in defaults */ }
 
     initMap();
-    if (new URLSearchParams(location.search).has("debug")) {
+    const urlParams = new URLSearchParams(location.search);
+    if (urlParams.has("debug")) {
         addDriftsplatsOverlay();
     }
     initControls();
@@ -1529,6 +1589,21 @@ async function init() {
     initSSE();
     setInterval(pollAlerts, 30000);
     setInterval(pollStopDepartures, 60000);
+
+    // ?line=<route_short_name> — pre-open line filter (e.g. from board.html "Se på karta" link)
+    const preOpenLine = urlParams.get("line");
+    if (preOpenLine) {
+        // Wait until routes are loaded, then trigger the matching line button
+        const tryOpenLine = setInterval(() => {
+            if (!routesLoaded) return;
+            clearInterval(tryOpenLine);
+            const route = Object.values(routeData).find(
+                r => r.route_short_name === preOpenLine || r.route_id === preOpenLine
+            );
+            if (route) openLinePanel(route);
+        }, 500);
+    }
+
     // Keep checking if GTFS data has loaded (retry every 10s until loaded)
     const statusInterval = setInterval(async () => {
         await checkStatus();
