@@ -1321,7 +1321,7 @@ function buildDelaysTable() {
         .filter(v => v && v.vehicle_type !== "train" && v.delay_seconds != null && v.delay_seconds > 60);
 
     buses.sort((a, b) => b.delay_seconds - a.delay_seconds);
-    const top = buses.slice(0, 10);
+    const top = buses.slice(0, 20);
 
     const tbody = document.getElementById("delays-tbody");
     const empty = document.getElementById("delays-empty");
