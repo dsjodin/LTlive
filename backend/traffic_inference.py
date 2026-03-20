@@ -97,30 +97,37 @@ def _build_segments_worker():
         traceback.print_exc()
 
 
-def _make_grid(positions, cell_deg=0.01):
-    """Build a dict mapping (lat_cell, lon_cell) → list of (lat, lon)."""
+def _build_fine_grid(positions, cell_deg):
+    """Map each position to a grid cell; returns dict cell→[(lat,lon)]."""
     grid = defaultdict(list)
     for lat, lon in positions:
         grid[(int(lat / cell_deg), int(lon / cell_deg))].append((lat, lon))
     return grid
 
 
-def _check_zone_grid(seg_coords, grid, radius_m, cell_deg=0.01):
-    """Fast zone check using pre-built spatial grid.
+def _midpoint(seg_coords):
+    """Return (lat, lon) midpoint of a segment."""
+    n = len(seg_coords)
+    return (
+        sum(c[0] for c in seg_coords) / n,
+        sum(c[1] for c in seg_coords) / n,
+    )
 
-    Only queries grid cells within 1 cell-width of each segment coordinate,
-    reducing haversine calls from O(n_all_stops) to O(n_nearby_stops).
+
+def _in_zone_fast(mlat, mlon, grid, radius_m, cell_deg):
+    """O(1) zone check using fine grid + haversine only on nearby stops.
+
+    Uses the segment midpoint instead of all coords — precise enough
+    because stop_radius (35 m) << segment length (100 m).
     """
-    # Extra cells to search: 1 deg ≈ 111 km, so radius_m / 111320 in degrees
-    extra_cells = max(1, int(radius_m / (cell_deg * 111_320)) + 1)
-    for clat, clon in seg_coords:
-        ci = int(clat / cell_deg)
-        cj = int(clon / cell_deg)
-        for di in range(-extra_cells, extra_cells + 1):
-            for dj in range(-extra_cells, extra_cells + 1):
-                for slat, slon in grid.get((ci + di, cj + dj), []):
-                    if _haversine(slat, slon, clat, clon) <= radius_m:
-                        return True
+    extra = max(1, int(radius_m / (cell_deg * 111_320)) + 1)
+    ci = int(mlat / cell_deg)
+    cj = int(mlon / cell_deg)
+    for di in range(-extra, extra + 1):
+        for dj in range(-extra, extra + 1):
+            for slat, slon in grid.get((ci + di, cj + dj), []):
+                if _haversine(slat, slon, mlat, mlon) <= radius_m:
+                    return True
     return False
 
 
@@ -133,15 +140,19 @@ def _do_build_segments():
     seg_len     = config.TRAFFIC_SEGMENT_LENGTH_M
     stop_radius = config.TRAFFIC_STOP_ZONE_RADIUS_M
 
-    # Collect stop positions and build spatial grid
+    # Fine grid (0.0003° ≈ 33 m/cell) — nearly zero haversine calls per segment
+    _CELL = 0.0003
+
     stop_positions = [
         (s["stop_lat"], s["stop_lon"])
         for s in stops.values()
         if s.get("location_type", 0) != 1
     ]
-    # Terminal positions
+    stop_fine_grid = _build_fine_grid(stop_positions, _CELL)
+
     terminal_positions = set()
     _identify_terminals(trips, stops, terminal_positions)
+    term_fine_grid = _build_fine_grid(list(terminal_positions), _CELL)
 
     # shape_id → set of route_ids
     shape_routes = defaultdict(set)
@@ -184,30 +195,10 @@ def _do_build_segments():
         n_segs = max(1, int(total_length / seg_len))
         rids   = list(shape_routes.get(shape_id, []))
 
-        # Pre-filter stops/terminals to this shape's bounding box + buffer
-        # Avoids checking all 3494 stops for every segment of every shape
-        buf_deg = (max(stop_radius, 60) + 50) / 111_320.0
-        lats = [c[0] for c in coords]
-        lons = [c[1] for c in coords]
-        min_lat = min(lats) - buf_deg
-        max_lat = max(lats) + buf_deg
-        min_lon = min(lons) - buf_deg
-        max_lon = max(lons) + buf_deg
-        local_stops = [
-            p for p in stop_positions
-            if min_lat <= p[0] <= max_lat and min_lon <= p[1] <= max_lon
-        ]
-        local_terms = [
-            p for p in terminal_positions
-            if min_lat <= p[0] <= max_lat and min_lon <= p[1] <= max_lon
-        ]
-
-        # Build all segment coord-lists in a single pass through shape points
-        # Each point belongs to exactly one segment bucket
+        # Single pass: bucket each shape point into its segment
         seg_buckets = [[] for _ in range(n_segs)]
         for i, pt in enumerate(coords):
-            d = cumul[i]
-            bucket = min(int(d / seg_len), n_segs - 1)
+            bucket = min(int(cumul[i] / seg_len), n_segs - 1)
             seg_buckets[bucket].append(pt)
 
         for seg_idx in range(n_segs):
@@ -215,8 +206,10 @@ def _do_build_segments():
             if len(seg_coords) < 2:
                 continue
 
-            is_stop_zone = _check_zone(seg_coords, local_stops, stop_radius)
-            is_terminal  = _check_zone(seg_coords, local_terms, 60)
+            # Midpoint-only zone check via fine grid — ~0 haversine calls/segment
+            mlat, mlon = _midpoint(seg_coords)
+            is_stop_zone = _in_zone_fast(mlat, mlon, stop_fine_grid, stop_radius, _CELL)
+            is_terminal  = _in_zone_fast(mlat, mlon, term_fine_grid, 60, _CELL)
 
             seg_id = f"{shape_id}_seg_{seg_idx}"
             segments[seg_id] = {
