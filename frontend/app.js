@@ -101,10 +101,10 @@ try {
 let favoritesTimer = null;
 
 // Saved trips (line + stop combos)
-let savedTrips = new Map(); // "${route_id}::${stop_id}" -> {route_id, route_short_name, route_color, route_text_color, stop_id, stop_name}
+let savedTrips = new Map(); // "${route_short_name}::${stop_id}" -> {route_id, route_short_name, route_color, route_text_color, stop_id, stop_name}
 try {
     const saved = JSON.parse(localStorage.getItem("savedTrips") || "[]");
-    saved.forEach(t => savedTrips.set(`${t.route_id}::${t.stop_id}`, t));
+    saved.forEach(t => savedTrips.set(`${t.route_short_name}::${t.stop_id}`, t));
 } catch (_) {}
 
 const TILES = {
@@ -643,7 +643,7 @@ function buildStopDepartureRows(stop, data) {
                     ? `<span class="dep-delay early" title="Tidig">${delay}</span>`
                     : `<span class="dep-delay ontime" title="I tid">✓</span>`)
             : "";
-        const tripKey = `${d.route_id}::${stop.stop_id}`;
+        const tripKey = `${d.route_short_name}::${stop.stop_id}`;
         const isSaved = savedTrips.has(tripKey);
         const pinBtn = `<button class="save-trip-btn${isSaved ? " active" : ""}"
             data-route-id="${d.route_id}"
@@ -683,7 +683,7 @@ function bindStopDepartureEvents(el, stop) {
                 btn.dataset.routeColor, btn.dataset.routeTextColor,
                 btn.dataset.stopId, btn.dataset.stopName
             );
-            const key = `${btn.dataset.routeId}::${btn.dataset.stopId}`;
+            const key = `${btn.dataset.routeShort}::${btn.dataset.stopId}`;
             btn.classList.toggle("active", savedTrips.has(key));
             btn.title = savedTrips.has(key) ? "Ta bort sparad resa" : "Spara resa";
         });
@@ -839,7 +839,7 @@ function saveSavedTrips() {
 }
 
 function toggleSavedTrip(route_id, route_short_name, route_color, route_text_color, stop_id, stop_name) {
-    const key = `${route_id}::${stop_id}`;
+    const key = `${route_short_name}::${stop_id}`;
     if (savedTrips.has(key)) {
         savedTrips.delete(key);
     } else {
@@ -957,7 +957,7 @@ function fetchSavedTripDepartures() {
         fetchDepartures(trip.stop_id, 8).then(data => {
             const el = document.getElementById(`trip-deps-${safeKey}`);
             if (!el) return;
-            const filtered = (data.departures || []).filter(d => d.route_id === trip.route_id);
+            const filtered = (data.departures || []).filter(d => d.route_short_name === trip.route_short_name);
             if (filtered.length === 0) {
                 el.innerHTML = `<span class="fav-empty-deps">Inga avgångar</span>`;
                 return;
