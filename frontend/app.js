@@ -2157,6 +2157,14 @@ async function init() {
     if (urlParams.has("debug")) {
         addDriftsplatsOverlay();
     }
+
+    // ?lat=&lon=&zoom= — fly to specific location (e.g. from traffic segment links)
+    const urlLat  = parseFloat(urlParams.get("lat"));
+    const urlLon  = parseFloat(urlParams.get("lon"));
+    const urlZoom = parseInt(urlParams.get("zoom"), 10);
+    if (!isNaN(urlLat) && !isNaN(urlLon)) {
+        map.setView([urlLat, urlLon], !isNaN(urlZoom) ? urlZoom : 17);
+    }
     initControls();
     initGps();
     initFavoritesPanel();
