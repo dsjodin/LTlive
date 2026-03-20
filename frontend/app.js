@@ -71,6 +71,14 @@ const TRAIL_MAX_POINTS = 10;
 // Live ETA countdown
 let etaTimer = null;
 
+// Favorite stops
+let favoriteStops = new Map(); // stop_id -> {stop_name, stop_id}
+try {
+    const saved = JSON.parse(localStorage.getItem("favoriteStops") || "[]");
+    saved.forEach(s => favoriteStops.set(s.stop_id, s));
+} catch (_) {}
+let favoritesTimer = null;
+
 const TILES = {
     dark: "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
     light: "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png",
@@ -558,6 +566,7 @@ function updateVehicles(vehicles) {
 
     document.getElementById("vehicle-count").textContent = vehicles.length;
     document.getElementById("last-update").textContent = new Date().toLocaleTimeString("sv-SE");
+    updateDashboard(vehicles);
 }
 
 // --- Stop departure board ---
@@ -595,20 +604,31 @@ function showStopDepartures(stop, marker) {
                     const rt = d.is_realtime
                         ? '<span class="dep-rt" title="Realtid">RT</span>'
                         : "";
+                    const delay = d.delay_minutes || 0;
+                    const delayHtml = d.is_realtime
+                        ? (delay > 0
+                            ? `<span class="dep-delay late" title="Försenad">+${delay}</span>`
+                            : delay < 0
+                                ? `<span class="dep-delay early" title="Tidig">${delay}</span>`
+                                : `<span class="dep-delay ontime" title="I tid">✓</span>`)
+                        : "";
                     return `
                         <tr>
                             <td><span class="dep-badge" data-bg="${bg}" data-fg="${fg}">${d.route_short_name}</span></td>
                             <td class="dep-headsign">${d.headsign}</td>
-                            <td class="dep-time"><span class="dep-countdown" data-ts="${d.departure_time}">${timeStr}</span>${rt}</td>
+                            <td class="dep-time"><span class="dep-countdown" data-ts="${d.departure_time}">${timeStr}</span>${rt}${delayHtml}</td>
                             <td class="dep-clock">${clock}</td>
                         </tr>`;
                 }).join("");
                 const platformChip = stop.platform_code
                     ? `<span class="popup-platform">Läge ${stop.platform_code}</span>`
                     : "";
+                const isFav = favoriteStops.has(stop.stop_id);
+                const favBtn = `<button class="fav-btn${isFav ? " active" : ""}" data-stop-id="${stop.stop_id}" title="${isFav ? "Ta bort favorit" : "Spara som favorit"}">★</button>`;
                 html = `
                     <div class="popup-stop">
                         <div class="popup-stop-name">${stop.stop_name}${platformChip}
+                            ${favBtn}
                             <a class="board-link" href="/board.html?stop_id=${encodeURIComponent(stop.stop_id)}&stop_name=${encodeURIComponent(stop.stop_name)}" target="_blank" title="Öppna avgångstavla">&#128507;</a>
                         </div>
                         <table class="dep-table"><tbody>${rows}</tbody></table>
@@ -620,7 +640,17 @@ function showStopDepartures(stop, marker) {
                 const popup = marker.getPopup();
                 if (popup) {
                     const el = popup.getElement();
-                    if (el) applyBadgeColors(el);
+                    if (el) {
+                        applyBadgeColors(el);
+                        el.querySelectorAll(".fav-btn").forEach(btn => {
+                            btn.addEventListener("click", (e) => {
+                                e.stopPropagation();
+                                toggleFavorite(stop);
+                                btn.classList.toggle("active", favoriteStops.has(stop.stop_id));
+                                btn.title = favoriteStops.has(stop.stop_id) ? "Ta bort favorit" : "Spara som favorit";
+                            });
+                        });
+                    }
                 }
             }
         })
@@ -648,6 +678,81 @@ function startEtaCountdown() {
             el.textContent = m > 0 ? `${m} min ${String(s).padStart(2,"0")} s` : `${secs} s`;
         });
     }, 1000);
+}
+
+// --- Favorite stops ---
+function saveFavorites() {
+    localStorage.setItem("favoriteStops", JSON.stringify([...favoriteStops.values()]));
+}
+
+function toggleFavorite(stop) {
+    if (favoriteStops.has(stop.stop_id)) {
+        favoriteStops.delete(stop.stop_id);
+    } else {
+        favoriteStops.set(stop.stop_id, { stop_id: stop.stop_id, stop_name: stop.stop_name });
+    }
+    saveFavorites();
+    renderFavoritesPanel();
+}
+
+function renderFavoritesPanel() {
+    const panel = document.getElementById("favorites-panel");
+    const body = document.getElementById("favorites-panel-body");
+    if (!panel || !body) return;
+    if (favoriteStops.size === 0) {
+        body.innerHTML = `<div class="fav-empty">Inga favorithållplatser ännu.<br>Klicka på ★ i en hållplats-popup för att spara.</div>`;
+        return;
+    }
+    body.innerHTML = [...favoriteStops.values()].map(s => `
+        <div class="fav-stop" data-stop-id="${s.stop_id}">
+            <span class="fav-stop-name">${s.stop_name}</span>
+            <div class="fav-stop-deps" id="fav-deps-${s.stop_id}">
+                <span class="fav-loading">Hämtar…</span>
+            </div>
+        </div>`).join("");
+    fetchFavoriteDepartures();
+}
+
+function fetchFavoriteDepartures() {
+    favoriteStops.forEach(s => {
+        fetchDepartures(s.stop_id, 3).then(data => {
+            const el = document.getElementById(`fav-deps-${s.stop_id}`);
+            if (!el) return;
+            if (!data.departures || data.departures.length === 0) {
+                el.innerHTML = `<span class="fav-empty-deps">Inga avgångar</span>`;
+                return;
+            }
+            const now = Date.now() / 1000;
+            el.innerHTML = data.departures.map(d => {
+                const mins = Math.max(0, Math.round((d.departure_time - now) / 60));
+                const timeStr = mins === 0 ? "Nu" : `${mins} min`;
+                const custom = getLineStyle(d.route_short_name);
+                const bg = custom ? `#${custom.bg}` : `#${d.route_color}`;
+                const fg = custom ? `#${custom.text}` : `#${d.route_text_color}`;
+                return `<span class="fav-dep">
+                    <span class="fav-dep-badge" style="background:${bg};color:${fg}">${d.route_short_name}</span>
+                    <span class="fav-dep-headsign">${d.headsign}</span>
+                    <span class="fav-dep-time">${timeStr}</span>
+                </span>`;
+            }).join("");
+        }).catch(() => {
+            const el = document.getElementById(`fav-deps-${s.stop_id}`);
+            if (el) el.innerHTML = `<span class="fav-empty-deps">Fel</span>`;
+        });
+    });
+}
+
+function openFavoritesPanel() {
+    renderFavoritesPanel();
+    document.getElementById("favorites-panel").classList.add("open");
+    clearInterval(favoritesTimer);
+    favoritesTimer = setInterval(fetchFavoriteDepartures, 15000);
+}
+
+function closeFavoritesPanel() {
+    document.getElementById("favorites-panel").classList.remove("open");
+    clearInterval(favoritesTimer);
+    favoritesTimer = null;
 }
 
 function showVehiclePopup(vehicle, marker) {
@@ -1014,6 +1119,11 @@ function initTypeFilterButtons() {
             }
         });
     });
+
+    const dashBtn = document.getElementById("dashboard-btn");
+    if (dashBtn) dashBtn.addEventListener("click", openDashboardPanel);
+    const dashClose = document.getElementById("dashboard-panel-close");
+    if (dashClose) dashClose.addEventListener("click", closeDashboardPanel);
 }
 
 // --- Line departure panel ---
@@ -1102,8 +1212,87 @@ function fetchLineDepartures(routeId) {
         });
 }
 
+// --- Dashboard panel ---
+let _dashAlerts = [];
+
+function updateDashboard(vehicles) {
+    const buses = vehicles.filter(v => v.vehicle_type !== "train").length;
+    const trains = vehicles.filter(v => v.vehicle_type === "train").length;
+    const routes = new Set(vehicles.map(v => v.route_id).filter(Boolean)).size;
+    const elB = document.getElementById("dash-buses");
+    const elT = document.getElementById("dash-trains");
+    const elR = document.getElementById("dash-routes");
+    if (elB) elB.textContent = buses;
+    if (elT) elT.textContent = trains;
+    if (elR) elR.textContent = routes;
+}
+
+function updateDashboardAlerts(alerts) {
+    _dashAlerts = alerts;
+    const el = document.getElementById("dash-alerts");
+    const card = document.getElementById("dash-alerts-card");
+    const list = document.getElementById("dash-alerts-list");
+    if (el) el.textContent = alerts.length;
+    if (card) card.classList.toggle("has-alerts", alerts.length > 0);
+    if (list) {
+        list.innerHTML = alerts.length === 0
+            ? `<div class="dash-no-alerts">Inga aktiva störningar</div>`
+            : alerts.map(a => `<div class="dash-alert-item">
+                <span class="dash-alert-icon">⚠</span>
+                <div><strong>${a.header}</strong>${a.description ? `<br><span class="dash-alert-desc">${a.description}</span>` : ""}</div>
+              </div>`).join("");
+    }
+}
+
+function renderDashboardFavorites() {
+    const section = document.getElementById("dash-favorites-body");
+    if (!section) return;
+    if (favoriteStops.size === 0) {
+        section.innerHTML = `<div class="dash-no-fav">Inga favorithållplatser. Klicka ★ i en hållplats-popup.</div>`;
+        return;
+    }
+    section.innerHTML = [...favoriteStops.values()].map(s => `
+        <div class="dash-fav-stop" data-stop-id="${s.stop_id}">
+            <span class="dash-fav-name">${s.stop_name}</span>
+            <div class="dash-fav-deps" id="dashdeps-${s.stop_id}"><span class="fav-loading">Hämtar…</span></div>
+        </div>`).join("");
+    favoriteStops.forEach(s => {
+        fetchDepartures(s.stop_id, 3).then(data => {
+            const el = document.getElementById(`dashdeps-${s.stop_id}`);
+            if (!el) return;
+            if (!data.departures || data.departures.length === 0) {
+                el.innerHTML = `<span class="fav-empty-deps">Inga avgångar</span>`;
+                return;
+            }
+            const now = Date.now() / 1000;
+            el.innerHTML = data.departures.map(d => {
+                const mins = Math.max(0, Math.round((d.departure_time - now) / 60));
+                const timeStr = mins === 0 ? "Nu" : `${mins} min`;
+                const custom = getLineStyle(d.route_short_name);
+                const bg = custom ? `#${custom.bg}` : `#${d.route_color}`;
+                const fg = custom ? `#${custom.text}` : `#${d.route_text_color}`;
+                return `<span class="fav-dep">
+                    <span class="fav-dep-badge" style="background:${bg};color:${fg}">${d.route_short_name}</span>
+                    <span class="fav-dep-headsign">${d.headsign}</span>
+                    <span class="fav-dep-time">${timeStr}</span>
+                </span>`;
+            }).join("");
+        });
+    });
+}
+
+function openDashboardPanel() {
+    updateDashboardAlerts(_dashAlerts);
+    renderDashboardFavorites();
+    document.getElementById("dashboard-panel").classList.add("open");
+}
+function closeDashboardPanel() {
+    document.getElementById("dashboard-panel").classList.remove("open");
+}
+
 // --- Alerts → bottom ticker ---
 function updateAlerts(alerts) {
+    updateDashboardAlerts(alerts);
     const el = document.getElementById("ticker-content");
     if (!el) return;
     if (alerts.length === 0) {
@@ -1267,6 +1456,14 @@ function updateStopBadges() {
 
         marker.setIcon(L.divIcon({ className: "", html: iconEl, iconSize, iconAnchor }));
     });
+}
+
+// --- Favorites panel ---
+function initFavoritesPanel() {
+    const btn = document.getElementById("fav-panel-btn");
+    if (btn) btn.addEventListener("click", openFavoritesPanel);
+    const closeBtn = document.getElementById("favorites-panel-close");
+    if (closeBtn) closeBtn.addEventListener("click", closeFavoritesPanel);
 }
 
 // --- GPS / Nearby panel ---
@@ -1578,6 +1775,7 @@ async function init() {
     }
     initControls();
     initGps();
+    initFavoritesPanel();
 
     // Check status — loads stops/routes when GTFS is ready
     await checkStatus();

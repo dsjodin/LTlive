@@ -36,6 +36,8 @@ from train_logic import (
     _annotate_oxyfi_from_announcements,
     _merge_trains,
 )
+# Vehicle enrichment shared with vehicles_bp and SSE stream
+from enrichment import enrich_vehicles as _enrich_vehicles
 
 app = Flask(__name__)
 
@@ -48,9 +50,11 @@ CORS(app, resources={r"/api/*": {"origins": _allowed_origins or [], "methods": [
 from api.debug_bp import bp as _debug_bp
 from api.routes_shapes_bp import bp as _routes_shapes_bp
 from api.stops_bp import bp as _stops_bp
+from api.vehicles_bp import bp as _vehicles_bp
 app.register_blueprint(_debug_bp)
 app.register_blueprint(_routes_shapes_bp)
 app.register_blueprint(_stops_bp)
+app.register_blueprint(_vehicles_bp)
 
 _stats.init_db()
 
@@ -70,46 +74,6 @@ _sse_ip_counts: dict[str, int] = {}
 _sse_ip_lock = threading.Lock()
 _MAX_SSE_PER_IP = 4
 
-def _enrich_vehicles(vehicle_list):
-    """Enrich vehicle list with route/trip/stop info (extracted for reuse by SSE + HTTP)."""
-    with _lock:
-        routes = _data["routes"]
-        stops = _data["stops"]
-        trips = _data["trips"]
-        trip_headsigns = _data["trip_headsigns"]
-
-    enriched = []
-    for v in vehicle_list:
-        route_info = {}
-        trip_id = v.get("trip_id", "")
-        trip_info = trips.get(trip_id, {})
-        route_id = v.get("route_id") or trip_info.get("route_id", "")
-        if route_id:
-            route_info = routes.get(route_id, {})
-
-        headsign = trip_info.get("trip_headsign", "")
-        if not headsign and trip_id:
-            headsign = trip_headsigns.get(trip_id, "")
-        if not headsign:
-            headsign = route_info.get("route_long_name", "")
-
-        stop_id = v.get("current_stop_id", "")
-        next_stop = stops.get(stop_id, {}) if stop_id else {}
-        next_stop_name = next_stop.get("stop_name", "")
-        next_stop_platform = next_stop.get("platform_code", "")
-
-        enriched.append({
-            **v,
-            "route_id": route_id,
-            "route_short_name": route_info.get("route_short_name", ""),
-            "route_long_name": route_info.get("route_long_name", ""),
-            "route_color": route_info.get("route_color", "0074D9"),
-            "route_text_color": route_info.get("route_text_color", "FFFFFF"),
-            "trip_headsign": headsign,
-            "next_stop_name": next_stop_name,
-            "next_stop_platform": next_stop_platform,
-        })
-    return enriched
 
 def _push_sse(event_type, data):
     """Push an SSE event to all connected clients."""
@@ -390,260 +354,6 @@ def status():
         "map_default_zoom": config.MAP_DEFAULT_ZOOM,
     })
 
-def status_debug():
-    """Internal status — full diagnostic info. Protected by Nginx allow/deny + @_debug_only."""
-    with _lock:
-        return jsonify({
-            "gtfs_loaded": _data["gtfs_loaded"],
-            "gtfs_error": _data["gtfs_error"],
-            "routes_count": len(_data["routes"]),
-            "stops_count": len(_data["stops"]),
-            "trips_count": len(_data["trips"]),
-            "shapes_count": len(_data["shapes"]),
-            "vehicles_count": len(_data["vehicles"]),
-            "alerts_count": len(_data["alerts"]),
-            "last_vehicle_update": _data["last_vehicle_update"],
-            "last_rt_poll": _data["last_rt_poll"],
-            "last_rt_poll_count": _data["last_rt_poll_count"],
-            "last_rt_error": _data["last_rt_error"],
-            "nearby_radius_meters": config.NEARBY_RADIUS_METERS,
-            "frontend_poll_interval_ms": config.FRONTEND_POLL_INTERVAL_MS,
-            "map_center_lat": config.MAP_CENTER_LAT,
-            "map_center_lon": config.MAP_CENTER_LON,
-            "map_default_zoom": config.MAP_DEFAULT_ZOOM,
-            "operator": config.OPERATOR,
-            "has_static_key": bool(config.TRAFIKLAB_GTFS_STATIC_KEY),
-            "has_rt_key": bool(config.TRAFIKLAB_GTFS_RT_KEY),
-            "static_stops_with_departures": len(_data.get("static_stop_departures", {})),
-            "has_tv_key": bool(config.TRAFIKVERKET_API_KEY),
-            "tv_stations_configured": len(config.TRAFIKVERKET_STATIONS),
-            "tv_announcements_loaded": len(_data.get("tv_announcements", {})),
-            "tv_last_poll": _data.get("tv_last_poll", 0),
-            "tv_last_error": _data.get("tv_last_error"),
-        })
-
-def debug_matching():
-    """Debug: show how well vehicle->trip->route matching works."""
-    with _lock:
-        vehicle_list = list(_data["vehicles"])
-        all_routes = _data["routes"]
-        trips = _data["trips"]
-        vehicle_trips = _data.get("vehicle_trips", {})
-
-    with_route = []
-    without_route = []
-    trip_match_ok = 0
-    trip_match_fail = 0
-
-    for v in vehicle_list:
-        vid = v.get("vehicle_id", "")
-        trip_id = v.get("trip_id", "")
-        route_id = v.get("route_id", "")
-
-        trip_info = trips.get(trip_id, {}) if trip_id else {}
-        if trip_info:
-            trip_match_ok += 1
-        elif trip_id:
-            trip_match_fail += 1
-
-        if route_id:
-            route_info = all_routes.get(route_id, {})
-            with_route.append({
-                "vehicle_id": vid,
-                "route_id": route_id,
-                "route_short_name": route_info.get("route_short_name", ""),
-                "trip_id": trip_id,
-                "trip_headsign": trip_info.get("trip_headsign", ""),
-                "route_long_name": route_info.get("route_long_name", ""),
-            })
-        else:
-            without_route.append({
-                "vehicle_id": vid,
-                "trip_id": trip_id,
-                "route_id_raw": route_id,
-            })
-
-    # Show a sample TripUpdate mapping with static trip lookup
-    sample_mappings = []
-    for vid, tu in list(vehicle_trips.items())[:5]:
-        tid = tu.get("trip_id", "")
-        static_trip = trips.get(tid, {})
-        rid = tu.get("route_id", "")
-        route = all_routes.get(rid, {})
-        sample_mappings.append({
-            "vehicle_id": vid,
-            "trip_update_trip_id": tid,
-            "trip_update_route_id": rid,
-            "static_trip_found": bool(static_trip),
-            "static_trip_headsign": static_trip.get("trip_headsign", ""),
-            "route_short_name": route.get("route_short_name", ""),
-            "route_long_name": route.get("route_long_name", ""),
-        })
-
-    return jsonify({
-        "total_vehicles": len(vehicle_list),
-        "with_route": len(with_route),
-        "without_route": len(without_route),
-        "trip_id_match_ok": trip_match_ok,
-        "trip_id_match_fail": trip_match_fail,
-        "total_trip_update_mappings": len(vehicle_trips),
-        "sample_with_route": with_route[:5],
-        "sample_without_route": without_route[:10],
-        "sample_trip_update_mappings": sample_mappings,
-        "sample_static_trip_keys": list(trips.keys())[:3],
-    })
-
-@app.route("/api/vehicles")
-def vehicles():
-    """Return current vehicle positions with route info (buses + trains)."""
-    cached = _cache_get("vehicles")
-    if cached:
-        return jsonify(cached)
-
-    with _lock:
-        vehicle_list = list(_data["vehicles"])
-        ts = _data["last_vehicle_update"]
-
-    trains = _merge_trains(oxyfi.get_trains(), _tv_trains_from_positions())
-    trains = _annotate_oxyfi_from_announcements(trains)
-    enriched = _enrich_vehicles(vehicle_list) + trains
-    result = {"vehicles": enriched, "timestamp": ts, "count": len(enriched)}
-    _cache_set("vehicles", result)
-    return jsonify(result)
-
-def routes_bus():
-    """Return bus routes only."""
-    with _lock:
-        route_list = list(_data["routes"].values())
-    bus_routes = [r for r in route_list
-                  if r["route_type"] == 3 or 700 <= r["route_type"] <= 799]
-    return jsonify({"routes": bus_routes, "count": len(bus_routes)})
-
-def routes_trains():
-    """Return train routes only (GTFS route_type 2 = rail, or 100–199)."""
-    with _lock:
-        route_list = list(_data["routes"].values())
-    train_routes = [r for r in route_list
-                    if r["route_type"] == 2 or 100 <= r["route_type"] <= 199]
-    return jsonify({"routes": train_routes, "count": len(train_routes)})
-
-def routes_all():
-    """Return all routes regardless of type."""
-    with _lock:
-        route_list = list(_data["routes"].values())
-    return jsonify({"routes": route_list, "count": len(route_list)})
-
-def stops():
-    """Return stops, optionally filtered by route_ids query param."""
-    route_ids_param = request.args.get("route_ids", "")[:500]  # cap length
-    with _lock:
-        stop_list = list(_data["stops"].values())
-        stop_route_map = _data.get("stop_route_map", {})
-
-    if route_ids_param:
-        allowed = set(route_ids_param.split(","))
-        stop_list = [
-            s for s in stop_list
-            if allowed.intersection(stop_route_map.get(s["stop_id"], []))
-        ]
-
-    return jsonify({"stops": stop_list, "count": len(stop_list)})
-
-def nearby_departures():
-    """Return upcoming departures for stops within radius of a lat/lon position."""
-    try:
-        lat = float(request.args.get("lat", 0))
-        lon = float(request.args.get("lon", 0))
-        radius = max(50.0, min(float(request.args.get("radius", config.NEARBY_RADIUS_METERS)), 5000))
-    except ValueError:
-        return jsonify({"error": "Invalid params"}), 400
-
-    with _lock:
-        all_stops = dict(_data["stops"])
-        rt_stop_departures = dict(_data.get("stop_departures", {}))
-        static_stop_departures = dict(_data.get("static_stop_departures", {}))
-        routes = dict(_data["routes"])
-        trips = dict(_data["trips"])
-        trip_headsigns = dict(_data.get("trip_headsigns", {}))
-
-    now = int(time.time())
-    lat_r = math.radians(lat)
-    cos_lat = math.cos(lat_r)
-
-    nearby = []
-    for stop_id, stop in all_stops.items():
-        # Skip station containers and other non-boarding locations
-        if stop.get("location_type", 0) != 0:
-            continue
-        slat = stop.get("stop_lat")
-        slon = stop.get("stop_lon")
-        if not slat or not slon:
-            continue
-        dlat = math.radians(slat - lat)
-        dlon = math.radians(slon - lon)
-        a = math.sin(dlat / 2) ** 2 + cos_lat * math.cos(math.radians(slat)) * math.sin(dlon / 2) ** 2
-        dist = 2 * 6371000 * math.asin(math.sqrt(a))
-        if dist <= radius:
-            nearby.append((dist, stop_id, stop))
-
-    nearby.sort()
-
-    # Group platforms that share the same parent station so "Slottet A" and
-    # "Slottet B" appear as a single entry with merged departures.
-    groups = {}  # group_key -> {dist, stop, stop_ids}
-    for dist, stop_id, stop in nearby:
-        group_key = stop.get("parent_station") or stop_id
-        if group_key not in groups:
-            groups[group_key] = {"dist": dist, "stop": stop, "stop_ids": []}
-        groups[group_key]["stop_ids"].append(stop_id)
-        if dist < groups[group_key]["dist"]:
-            groups[group_key]["dist"] = dist
-            groups[group_key]["stop"] = stop
-
-    sorted_groups = sorted(groups.values(), key=lambda g: g["dist"])[:8]
-
-    result = []
-    for grp in sorted_groups:
-        # Collect and deduplicate departures across all stops in the group (RT + static fallback)
-        all_raw = []
-        for sid in grp["stop_ids"]:
-            all_raw.extend(_merge_rt_static(
-                rt_stop_departures.get(sid, []),
-                static_stop_departures.get(sid, []),
-            ))
-        seen_trips = set()
-        upcoming = []
-        for d in sorted([d for d in all_raw if d["time"] >= now - 60], key=lambda d: d["time"]):
-            if d["trip_id"] not in seen_trips:
-                seen_trips.add(d["trip_id"])
-                upcoming.append(d)
-            if len(upcoming) >= 5:
-                break
-        deps = []
-        for d in upcoming:
-            route_id = d["route_id"] or trips.get(d["trip_id"], {}).get("route_id", "")
-            route = routes.get(route_id, {})
-            headsign = trip_headsigns.get(d["trip_id"], "") or route.get("route_long_name", "")
-            deps.append({
-                "route_short_name": route.get("route_short_name", "?"),
-                "route_color": route.get("route_color", "555555"),
-                "route_text_color": route.get("route_text_color", "ffffff"),
-                "headsign": headsign,
-                "departure_time": d["time"],
-                "minutes": max(0, round((d["time"] - now) / 60)),
-                "is_realtime": d.get("is_realtime", False),
-            })
-        s = grp["stop"]
-        result.append({
-            "stop_id": s["stop_id"],
-            "stop_name": s.get("stop_name", s["stop_id"]),
-            "platform_code": s.get("platform_code", ""),
-            "stop_desc": s.get("stop_desc", ""),
-            "distance_m": round(grp["dist"]),
-            "departures": deps,
-        })
-
-    return jsonify({"stops": result})
 
 @app.route("/api/departures/<stop_id>")
 def departures_for_stop(stop_id):
@@ -833,6 +543,7 @@ def departures_for_stop(stop_id):
         # When TV is matched, only use TV realtime (don't fall back to GTFS-RT —
         # that would show a delay TV doesn't know about)
         rt_time = tv_rt_time if tv_sched_override else (d["time"] if d["is_realtime"] else None)
+        actual_dep = rt_time if rt_time else sched_time
         deps.append({
             "route_short_name": rsn,
             "trip_short_name": trip_short_name,
@@ -841,8 +552,9 @@ def departures_for_stop(stop_id):
             "operator": tv_operator,
             "product": tv_product,
             "headsign": headsign,
-            "departure_time": rt_time if rt_time else sched_time,
+            "departure_time": actual_dep,
             "scheduled_time": sched_time,
+            "delay_minutes": round((actual_dep - sched_time) / 60) if rt_time else 0,
             "is_realtime": bool(rt_time),
             "trip_id": trip_id,
             "platform": platform,
@@ -885,6 +597,7 @@ def departures_for_stop(stop_id):
             sched_t = tv_dep["scheduled_time"]
             rt_t = tv_dep.get("realtime_time")
             track_chg = any("spår" in t.lower() for t in tv_dep.get("deviation", []))
+            tv_actual_dep = rt_t if rt_t else sched_t
             deps.append({
                 "route_short_name": tv_rsn,
                 "trip_short_name": tv_dep["train_number"],
@@ -893,8 +606,9 @@ def departures_for_stop(stop_id):
                 "operator": tv_dep.get("operator", ""),
                 "product": tv_dep.get("product", ""),
                 "headsign": dest_name,
-                "departure_time": rt_t if rt_t else sched_t,
+                "departure_time": tv_actual_dep,
                 "scheduled_time": sched_t,
+                "delay_minutes": round((tv_actual_dep - sched_t) / 60) if rt_t else 0,
                 "is_realtime": bool(rt_t),
                 "trip_id": "",
                 "platform": tv_dep.get("track", ""),
@@ -1224,279 +938,6 @@ def arrivals_for_stop(stop_id):
 
     return jsonify({"stop_id": stop_id, "arrivals": arrs, "count": len(arrs)})
 
-def stations():
-    """Return only parent stations (location_type=1)."""
-    with _lock:
-        stop_list = list(_data["stops"].values())
-    result = [s for s in stop_list if s["location_type"] == 1]
-    return jsonify({"stops": result, "count": len(result)})
-
-def train_shapes():
-    """Return one representative rail shape per (route_id, direction_id).
-
-    Picks the shape with the most points for each direction so we get
-    the most-detailed geometry without drawing hundreds of near-identical
-    trip shapes or degenerate 2-point straight-line shapes.
-    Max shapes returned = 2 × number of train routes.
-    """
-    with _lock:
-        trips      = _data["trips"]
-        routes     = _data["routes"]
-        all_shapes = _data["shapes"]
-
-    train_route_ids = {rid for rid, r in routes.items()
-                       if r["route_type"] == 2 or 100 <= r["route_type"] <= 199}
-
-    # best[(route_id, direction_id)] = (shape_id, point_count)
-    best: dict = {}
-    for trip in trips.values():
-        rid = trip.get("route_id", "")
-        if rid not in train_route_ids:
-            continue
-        sid = trip.get("shape_id", "")
-        if not sid or sid not in all_shapes:
-            continue
-        pts = len(all_shapes[sid])
-        key = (rid, trip.get("direction_id", 0))
-        if key not in best or pts > best[key][1]:
-            best[key] = (sid, pts)
-
-    # Deduplicate by shape_id (two directions may share the same shape)
-    seen: set = set()
-    shapes_out: dict = {}
-    for sid, _ in best.values():
-        if sid not in seen:
-            seen.add(sid)
-            shapes_out[sid] = all_shapes[sid]
-
-    return jsonify({"shapes": shapes_out, "count": len(shapes_out)})
-
-def shapes():
-    """Return all shapes (route geometries)."""
-    with _lock:
-        all_shapes = _data["shapes"]
-    return jsonify({"shapes": all_shapes, "count": len(all_shapes)})
-
-def shapes_bulk():
-    """Return shapes for multiple routes in one request (avoids burst of parallel HTTP calls)."""
-    route_ids_param = request.args.get("route_ids", "")[:2000]
-    if not route_ids_param:
-        return jsonify({"routes": {}, "count": 0})
-
-    requested = {r.strip() for r in route_ids_param.split(",") if r.strip()}
-
-    with _lock:
-        trips = _data["trips"]
-        all_shapes = _data["shapes"]
-
-    # Build route_id → shape coords list in one pass over trips
-    route_shape_ids: dict[str, set] = {}
-    for trip in trips.values():
-        rid = trip["route_id"]
-        sid = trip.get("shape_id", "")
-        if rid in requested and sid:
-            route_shape_ids.setdefault(rid, set()).add(sid)
-
-    result = {}
-    for route_id in requested:
-        coords_list = [all_shapes[sid] for sid in route_shape_ids.get(route_id, set()) if sid in all_shapes]
-        if coords_list:
-            result[route_id] = coords_list
-
-    return jsonify({"routes": result, "count": len(result)})
-
-def shapes_for_route(route_id):
-    """Return shapes for a specific route."""
-    with _lock:
-        trips = _data["trips"]
-        all_shapes = _data["shapes"]
-
-    shape_ids = set()
-    for trip in trips.values():
-        if trip["route_id"] == route_id and trip["shape_id"]:
-            shape_ids.add(trip["shape_id"])
-
-    route_shapes = {sid: all_shapes[sid] for sid in shape_ids if sid in all_shapes}
-    return jsonify({"shapes": route_shapes, "route_id": route_id})
-
-def debug_agencies():
-    """Debug: list all agencies in the GTFS data with their agency_id."""
-    with _lock:
-        agencies = _data.get("agencies", {})
-        routes = _data["routes"]
-
-    agency_route_counts = {}
-    for r in routes.values():
-        aid = r.get("agency_id", "")
-        agency_route_counts[aid] = agency_route_counts.get(aid, 0) + 1
-
-    result = []
-    for aid, ag in agencies.items():
-        result.append({
-            "agency_id": aid,
-            "agency_name": ag.get("agency_name", ""),
-            "route_count": agency_route_counts.get(aid, 0),
-        })
-    result.sort(key=lambda x: x["agency_name"])
-    return jsonify({"agencies": result, "tib_agency_id_configured": config.TIB_AGENCY_ID})
-
-def debug_stops_fields():
-    """Debug: show coverage of platform_code / stop_desc / parent_station in GTFS stops.
-
-    ?local=1  restricts sample to stops within Örebro county bounding box.
-    """
-    with _lock:
-        stops = list(_data["stops"].values())
-
-    # Örebro county bounding box (approx)
-    LAT_MIN, LAT_MAX = 58.7, 59.9
-    LON_MIN, LON_MAX = 14.2, 15.8
-
-    local_only = request.args.get("local", "1") not in ("0", "false")
-    if local_only:
-        local_stops = [
-            s for s in stops
-            if LAT_MIN <= s.get("stop_lat", 0) <= LAT_MAX
-            and LON_MIN <= s.get("stop_lon", 0) <= LON_MAX
-        ]
-    else:
-        local_stops = stops
-
-    total = len(stops)
-    local_total = len(local_stops)
-
-    has_platform = [s for s in local_stops if s.get("platform_code")]
-    has_desc = [s for s in local_stops if s.get("stop_desc")]
-    has_parent = [s for s in local_stops if s.get("parent_station")]
-
-    # Unique platform_code values present
-    platform_values = sorted(set(s["platform_code"] for s in has_platform))
-
-    # Sample up to 20 stops that have platform_code
-    sample = sorted(has_platform, key=lambda s: s["stop_id"])[:20]
-
-    return jsonify({
-        "note": "Filtered to Örebro county (local=1). Pass ?local=0 to see all Sweden.",
-        "total_stops_in_feed": total,
-        "local_stops": local_total,
-        "with_platform_code": len(has_platform),
-        "with_stop_desc": len(has_desc),
-        "with_parent_station": len(has_parent),
-        "platform_code_values": platform_values,
-        "platform_code_sample": [
-            {
-                "stop_id": s["stop_id"],
-                "stop_name": s.get("stop_name", ""),
-                "platform_code": s.get("platform_code", ""),
-                "stop_desc": s.get("stop_desc", ""),
-                "parent_station": s.get("parent_station", ""),
-                "location_type": s.get("location_type", 0),
-                "lat": s.get("stop_lat"),
-                "lon": s.get("stop_lon"),
-            }
-            for s in sample
-        ],
-    })
-
-def debug_routes():
-    """Debug: show all unique route_short_names in loaded GTFS data."""
-    with _lock:
-        route_list = list(_data["routes"].values())
-
-    by_name = {}
-    for r in route_list:
-        name = r.get("route_short_name", "")
-        by_name.setdefault(name, []).append({
-            "route_id": r["route_id"],
-            "route_long_name": r.get("route_long_name", ""),
-            "route_type": r.get("route_type"),
-        })
-
-    return jsonify({
-        "total_routes": len(route_list),
-        "unique_short_names": sorted(by_name.keys()),
-        "by_short_name": by_name,
-    })
-
-def debug_trip_names():
-    """Debug: inspect trip_short_name values for train routes (sample of 10 per route)."""
-    with _lock:
-        all_routes = _data["routes"]
-        trips = _data["trips"]
-
-    train_route_ids = {
-        rid for rid, r in all_routes.items()
-        if r.get("route_type") == 2 or 100 <= (r.get("route_type") or 0) <= 199
-    }
-
-    by_route: dict = {}
-    for trip in trips.values():
-        rid = trip.get("route_id", "")
-        if rid not in train_route_ids:
-            continue
-        rsn = all_routes.get(rid, {}).get("route_short_name", rid)
-        entry = {
-            "trip_id": trip["trip_id"],
-            "trip_short_name": trip.get("trip_short_name", ""),
-        }
-        by_route.setdefault(rsn, [])
-        if len(by_route[rsn]) < 5:
-            by_route[rsn].append(entry)
-
-    has_names = {rsn: any(e["trip_short_name"] for e in entries)
-                 for rsn, entries in by_route.items()}
-    with _lock:
-        rt_names = _data.get("rt_trip_short_names", {})
-    rt_sample = dict(list(rt_names.items())[:10])
-    return jsonify({
-        "by_route": by_route,
-        "has_trip_short_name": has_names,
-        "rt_trip_short_names_count": len(rt_names),
-        "rt_sample": rt_sample,
-    })
-
-def debug_rt_feed():
-    """Return cached RT feed stats (no extra Trafiklab request)."""
-    with _lock:
-        vehicles = list(_data["vehicles"])
-        vehicle_trips = _data.get("vehicle_trips", {})
-        last_poll = _data["last_rt_poll"]
-        last_count = _data["last_rt_poll_count"]
-        last_error = _data["last_rt_error"]
-
-    sample = []
-    for v in vehicles[:5]:
-        sample.append({
-            "id": v.get("id", ""),
-            "vehicle_id": v.get("vehicle_id", ""),
-            "lat": v.get("lat"),
-            "lon": v.get("lon"),
-            "trip_id": v.get("trip_id", ""),
-            "route_id": v.get("route_id", ""),
-        })
-
-    return jsonify({
-        "url_prefix": config.VEHICLE_POSITIONS_URL.split("?")[0],
-        "last_poll": last_poll,
-        "last_poll_count": last_count,
-        "last_error": last_error,
-        "cached_vehicles": len(vehicles),
-        "sample_vehicles": sample,
-        "trip_update_mappings": len(vehicle_trips),
-    })
-
-def debug_tv_stations():
-    """Show cached Trafikverket station lookup table."""
-    with _lock:
-        stations = dict(_data["tv_stations"])
-        config_mapping = config.TRAFIKVERKET_STATIONS
-    sample = dict(list(stations.items())[:20])
-    return jsonify({
-        "total_stations": len(stations),
-        "sample": sample,
-        "configured_mapping": config_mapping,
-        "api_key_set": bool(config.TRAFIKVERKET_API_KEY),
-    })
 
 @app.route("/api/station-messages/<stop_id>")
 def station_messages(stop_id):
@@ -1947,75 +1388,6 @@ def line_departures(route_id):
         "route_text_color": route_info.get("route_text_color", "FFFFFF"),
         "directions": directions_out,
     })
-
-    route_info = routes.get(route_id, {})
-    return jsonify({
-        "route_id": route_id,
-        "route_short_name": route_info.get("route_short_name", ""),
-        "route_long_name": route_info.get("route_long_name", ""),
-        "route_color": route_info.get("route_color", "0074D9"),
-        "route_text_color": route_info.get("route_text_color", "FFFFFF"),
-        "directions": directions_out,
-    })
-
-def stops_next_departure():
-    """Return the soonest upcoming departure per stop (used for map badges).
-
-    Uses GTFS static timetable as base so all stops with scheduled service
-    get a badge, then overrides with real-time data where available.
-    """
-    cached = _cache_get("next_dep")
-    if cached:
-        return jsonify(cached)
-
-    with _lock:
-        rt_departures = dict(_data.get("stop_departures", {}))
-        static_departures = dict(_data.get("static_stop_departures", {}))
-        routes = _data["routes"]
-        trips = _data["trips"]
-        trip_headsigns = _data.get("trip_headsigns", {})
-        now = int(time.time())
-    horizon = now + 3 * 3600
-
-    # Merge: RT overrides static per trip_id, but keeps static for trips without RT
-    merged = {}
-    all_stops = set(static_departures) | set(rt_departures)
-    for stop_id in all_stops:
-        rt_deps = rt_departures.get(stop_id, [])
-        merged[stop_id] = _merge_rt_static(rt_deps, static_departures.get(stop_id, []))
-
-    def _best_dep(deps):
-        best = None
-        for dep in deps:
-            t = dep.get("time", 0)
-            if t < now or t > horizon:
-                continue
-            if best is None or t < best["time"]:
-                trip_id = dep.get("trip_id", "")
-                dep_route_id = dep.get("route_id", "")
-                ri = routes.get(dep_route_id, {})
-                if not ri:
-                    static_route_id = trips.get(trip_id, {}).get("route_id", "")
-                    ri = routes.get(static_route_id, {})
-                headsign = trip_headsigns.get(trip_id, "")
-                best = {
-                    "time": t,
-                    "minutes": max(0, round((t - now) / 60)),
-                    "route_short_name": ri.get("route_short_name", ""),
-                    "route_color": ri.get("route_color", "0074D9"),
-                    "route_text_color": ri.get("route_text_color", "FFFFFF"),
-                    "headsign": headsign,
-                }
-        return best
-
-    result = {}
-    for stop_id, deps in merged.items():
-        best = _best_dep(deps)
-        if best:
-            result[stop_id] = best
-
-    _cache_set("next_dep", result)
-    return jsonify(result)
 
 # --- Startup ---
 

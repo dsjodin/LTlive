@@ -37,6 +37,8 @@
                 </label>
                 <button id="type-btn-bus" class="type-btn" title="Visa/dölj bussar">Bussar</button>
                 <button id="type-btn-train" class="type-btn" title="Visa/dölj tåg">Tåg</button>
+                <button id="fav-panel-btn" class="type-btn" title="Favorithållplatser">★ Favoriter</button>
+                <button id="dashboard-btn" class="type-btn" title="Dashboard">Dashboard</button>
             </div>
 
             <div class="topbar-stats">
@@ -99,6 +101,48 @@
             <button id="nearby-panel-close" aria-label="Stäng">&#x2715;</button>
         </div>
         <div id="nearby-panel-body"></div>
+    </div>
+
+    <!-- ===== Dashboard panel ===== -->
+    <div id="dashboard-panel">
+        <div id="dashboard-panel-header">
+            <div id="dashboard-panel-title">Dashboard</div>
+            <button id="dashboard-panel-close" aria-label="Stäng">&#x2715;</button>
+        </div>
+        <div id="dashboard-panel-body">
+            <div class="dash-grid">
+                <div class="dash-card">
+                    <span class="dash-value" id="dash-buses">—</span>
+                    <span class="dash-label">Bussar</span>
+                </div>
+                <div class="dash-card">
+                    <span class="dash-value" id="dash-trains">—</span>
+                    <span class="dash-label">Tåg</span>
+                </div>
+                <div class="dash-card">
+                    <span class="dash-value" id="dash-routes">—</span>
+                    <span class="dash-label">Linjer</span>
+                </div>
+                <div class="dash-card" id="dash-alerts-card">
+                    <span class="dash-value" id="dash-alerts">—</span>
+                    <span class="dash-label">Störningar</span>
+                </div>
+            </div>
+            <div id="dash-alerts-list"></div>
+            <div id="dash-favorites-section">
+                <div class="dash-section-title">★ Favorithållplatser</div>
+                <div id="dash-favorites-body"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===== Favorites panel ===== -->
+    <div id="favorites-panel">
+        <div id="favorites-panel-header">
+            <div id="favorites-panel-title">★ Favorithållplatser</div>
+            <button id="favorites-panel-close" aria-label="Stäng">&#x2715;</button>
+        </div>
+        <div id="favorites-panel-body"></div>
     </div>
 
     <!-- ===== Bottom ticker ===== -->

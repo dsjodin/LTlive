@@ -48,8 +48,11 @@ export async function fetchNextDepartures() {
     return r.json();
 }
 
-export async function fetchDepartures(stopId) {
-    const r = await fetch(`${API_BASE}/departures/${encodeURIComponent(stopId)}`);
+export async function fetchDepartures(stopId, limit) {
+    const url = limit
+        ? `${API_BASE}/departures/${encodeURIComponent(stopId)}?limit=${limit}`
+        : `${API_BASE}/departures/${encodeURIComponent(stopId)}`;
+    const r = await fetch(url);
     return r.json();
 }
 
