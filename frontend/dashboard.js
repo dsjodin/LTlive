@@ -91,20 +91,20 @@ function updateVehicles(vehicles) {
 
 // --- Alerts ---
 let lastAlertTs = 0;
+const _noAlert = document.getElementById("no-alerts");  // cache once; never deleted
 
 function updateAlerts(alerts) {
     lastAlertTs = Date.now();
-    const list    = document.getElementById("alerts-list");
-    const noAlert = document.getElementById("no-alerts");
-    list.innerHTML = "";
+    const list = document.getElementById("alerts-list");
+    // Remove all children except the permanent #no-alerts element
+    [...list.children].forEach(c => { if (c !== _noAlert) c.remove(); });
 
     if (!alerts || alerts.length === 0) {
-        noAlert.style.display = "flex";
-        list.appendChild(noAlert);
+        _noAlert.classList.remove("hidden");
         return;
     }
 
-    noAlert.style.display = "none";
+    _noAlert.classList.add("hidden");
     alerts.forEach(a => {
         const item = document.createElement("div");
         item.className = "alert-item";
