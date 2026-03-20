@@ -169,11 +169,14 @@ def _do_build_segments():
     t0 = time.time()
     shape_list = list(shapes.items())
     n_shapes   = len(shape_list)
+    _t_cumul = _t_bucket = _t_zone = _t_dict = 0.0
 
     for shape_num, (shape_id, coords) in enumerate(shape_list):
         if shape_num % 100 == 0 and shape_num > 0:
             print(f"Traffic: building segments {shape_num}/{n_shapes} "
-                  f"({len(segments)} segs, {time.time()-t0:.1f}s)")
+                  f"({len(segments)} segs, {time.time()-t0:.1f}s) "
+                  f"cumul={_t_cumul:.2f}s bucket={_t_bucket:.2f}s "
+                  f"zone={_t_zone:.2f}s dict={_t_dict:.2f}s")
 
         if len(coords) < 2:
             continue
@@ -181,12 +184,14 @@ def _do_build_segments():
         shape_coords_copy[shape_id] = coords
 
         # Build cumulative distances in one pass
+        _tc = time.time()
         cumul = [0.0]
         for i in range(1, len(coords)):
             d = _haversine(coords[i-1][0], coords[i-1][1],
                            coords[i][0],   coords[i][1])
             cumul.append(cumul[-1] + d)
         shape_cumul[shape_id] = cumul
+        _t_cumul += time.time() - _tc
 
         total_length = cumul[-1]
         if total_length < seg_len * 0.5:
@@ -196,10 +201,12 @@ def _do_build_segments():
         rids   = list(shape_routes.get(shape_id, []))
 
         # Single pass: bucket each shape point into its segment
+        _tb = time.time()
         seg_buckets = [[] for _ in range(n_segs)]
         for i, pt in enumerate(coords):
             bucket = min(int(cumul[i] / seg_len), n_segs - 1)
             seg_buckets[bucket].append(pt)
+        _t_bucket += time.time() - _tb
 
         for seg_idx in range(n_segs):
             seg_coords = seg_buckets[seg_idx]
@@ -207,10 +214,13 @@ def _do_build_segments():
                 continue
 
             # Midpoint-only zone check via fine grid — ~0 haversine calls/segment
+            _tz = time.time()
             mlat, mlon = _midpoint(seg_coords)
             is_stop_zone = _in_zone_fast(mlat, mlon, stop_fine_grid, stop_radius, _CELL)
             is_terminal  = _in_zone_fast(mlat, mlon, term_fine_grid, 60, _CELL)
+            _t_zone += time.time() - _tz
 
+            _td = time.time()
             seg_id = f"{shape_id}_seg_{seg_idx}"
             segments[seg_id] = {
                 "shape_id":      shape_id,
@@ -222,6 +232,7 @@ def _do_build_segments():
                 "start_m":       seg_idx * seg_len,
                 "end_m":         min((seg_idx + 1) * seg_len, total_length),
             }
+            _t_dict += time.time() - _td
 
     with traffic_store.lock:
         traffic_store.segments        = segments
