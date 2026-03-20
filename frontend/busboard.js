@@ -1,4 +1,6 @@
-const API = "/api";
+import { fetchAlerts, fetchStops, fetchNextDepartures, fetchDepartures, connectSSE } from "./modules/api.js";
+import { updateClock } from "./modules/utils.js";
+
 let currentStopId = null;
 let currentStopName = "";
 let refreshTimer = null;
@@ -29,12 +31,9 @@ function toggleFullscreen() {
 document.getElementById("fs-btn").addEventListener("click", toggleFullscreen);
 
 // --- Clock ---
-function updateClock() {
-    document.getElementById("clock").textContent =
-        new Date().toLocaleTimeString("sv-SE");
-}
-setInterval(updateClock, 1000);
-updateClock();
+const clockEl = document.getElementById("clock");
+setInterval(() => updateClock(clockEl), 1000);
+updateClock(clockEl);
 
 // --- Board height ---
 function resizeBoard() {
@@ -106,8 +105,8 @@ let stopHeadsigns = {};
 async function loadStops() {
     try {
         const [stopsData, nextDep] = await Promise.all([
-            fetch(`${API}/stops`).then(r => r.json()),
-            fetch(`${API}/stops/next-departure`).then(r => r.json()),
+            fetchStops(),
+            fetchNextDepartures(),
         ]);
         allStops = stopsData.stops || [];
         for (const [sid, info] of Object.entries(nextDep)) {
@@ -188,41 +187,32 @@ function setSseStatus(status) {
 function initSSE() {
     if (sseSource) { sseSource.close(); sseSource = null; }
 
-    sseSource = new EventSource(`${API}/stream`);
-
-    sseSource.addEventListener("alerts", e => {
-        try { updateAlerts(JSON.parse(e.data).alerts); } catch {}
-    });
-
-    // When we receive a vehicles event for the active stop, refresh departures immediately.
-    sseSource.addEventListener("vehicles_delta", e => {
-        // Light-weight check: if any updated vehicle has next stop matching our stop, refresh
-        if (!currentStopId) return;
-        try {
-            const d = JSON.parse(e.data);
-            const relevant = (d.updated || []).some(
+    sseSource = connectSSE(
+        () => {},                                       // onVehicles – not needed here
+        (data) => updateAlerts(data.alerts),            // onAlerts
+        () => {                                         // onError
+            setSseStatus("error");
+            if (!sseFallback) {
+                setSseStatus("polling");
+                sseFallback = setInterval(() => { loadDepartures(); }, 20000);
+            }
+        },
+        () => {                                         // onOpen
+            setSseStatus("live");
+            if (sseFallback) { clearInterval(sseFallback); sseFallback = null; }
+        },
+        (data) => {                                     // onVehiclesDelta
+            if (!currentStopId) return;
+            const relevant = (data.updated || []).some(
                 v => v.next_stop_id === currentStopId || v.next_stop_name === currentStopName
             );
             if (relevant) loadDepartures();
-        } catch {}
-    });
-
-    sseSource.onopen = () => {
-        setSseStatus("live");
-        if (sseFallback) { clearInterval(sseFallback); sseFallback = null; }
-    };
-
-    sseSource.onerror = () => {
-        setSseStatus("error");
-        if (!sseFallback) {
-            setSseStatus("polling");
-            sseFallback = setInterval(() => { loadDepartures(); }, 20000);
-        }
-    };
+        },
+    );
 }
 
 // Fetch initial alerts
-fetch(`${API}/alerts`).then(r => r.json()).then(d => updateAlerts(d.alerts)).catch(() => {});
+fetchAlerts().then(d => updateAlerts(d.alerts)).catch(() => {});
 initSSE();
 
 // --- Load departures ---
@@ -234,7 +224,7 @@ async function loadDepartures() {
     }
 
     try {
-        const data = await fetch(`${API}/departures/${encodeURIComponent(currentStopId)}?limit=20`).then(r => r.json());
+        const data = await fetchDepartures(currentStopId, 20);
         renderBoard(data.departures || []);
     } catch {
         board.innerHTML = `<div class="board-msg">Kunde inte hämta avgångar</div>`;
