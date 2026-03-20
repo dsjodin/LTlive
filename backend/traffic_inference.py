@@ -77,47 +77,85 @@ def _latlon_to_local(lat, lon, ref_lat, ref_lon, cos_ref_lat):
 # ---------------------------------------------------------------------------
 
 def build_segments():
+    """Kick off segment building in a background thread (non-blocking)."""
+    import threading
+    threading.Thread(target=_build_segments_worker, daemon=True,
+                     name="traffic-build").start()
+
+
+def _build_segments_worker():
     """Split every GTFS shape into ~100 m corridor segments.
 
-    Also marks stop zones, signal zones, and terminal zones.
-    Writes results into traffic_store.
+    Runs in a background thread so it never blocks GTFS loading.
+    Uses a grid spatial index to avoid O(n_stops × n_segments) haversine calls.
     """
+    try:
+        _do_build_segments()
+    except Exception as exc:
+        import traceback
+        print(f"Traffic: build_segments failed: {exc}")
+        traceback.print_exc()
+
+
+def _make_grid(positions, cell_deg=0.01):
+    """Build a dict mapping (lat_cell, lon_cell) → list of (lat, lon)."""
+    grid = defaultdict(list)
+    for lat, lon in positions:
+        grid[(int(lat / cell_deg), int(lon / cell_deg))].append((lat, lon))
+    return grid
+
+
+def _check_zone_grid(seg_coords, grid, radius_m, cell_deg=0.01):
+    """Fast zone check using pre-built spatial grid.
+
+    Only queries grid cells within 1 cell-width of each segment coordinate,
+    reducing haversine calls from O(n_all_stops) to O(n_nearby_stops).
+    """
+    # Extra cells to search: 1 deg ≈ 111 km, so radius_m / 111320 in degrees
+    extra_cells = max(1, int(radius_m / (cell_deg * 111_320)) + 1)
+    for clat, clon in seg_coords:
+        ci = int(clat / cell_deg)
+        cj = int(clon / cell_deg)
+        for di in range(-extra_cells, extra_cells + 1):
+            for dj in range(-extra_cells, extra_cells + 1):
+                for slat, slon in grid.get((ci + di, cj + dj), []):
+                    if _haversine(slat, slon, clat, clon) <= radius_m:
+                        return True
+    return False
+
+
+def _do_build_segments():
     with gtfs_store.lock:
         shapes = dict(gtfs_store.shapes)
-        stops = dict(gtfs_store.stops)
-        trips = dict(gtfs_store.trips)
+        stops  = dict(gtfs_store.stops)
+        trips  = dict(gtfs_store.trips)
 
-    seg_len = config.TRAFFIC_SEGMENT_LENGTH_M
+    seg_len     = config.TRAFFIC_SEGMENT_LENGTH_M
     stop_radius = config.TRAFFIC_STOP_ZONE_RADIUS_M
 
-    # Collect stop positions for stop-zone tagging
-    stop_positions = []
-    for s in stops.values():
-        lt = s.get("location_type", 0)
-        if lt == 1:
-            continue
-        stop_positions.append((s["stop_lat"], s["stop_lon"]))
+    # Collect stop positions and build spatial grid
+    stop_positions = [
+        (s["stop_lat"], s["stop_lon"])
+        for s in stops.values()
+        if s.get("location_type", 0) != 1
+    ]
+    stop_grid = _make_grid(stop_positions)
 
-    # Build terminal positions (first & last stop of each trip)
+    # Terminal positions + grid
     terminal_positions = set()
     _identify_terminals(trips, stops, terminal_positions)
+    terminal_grid = _make_grid(list(terminal_positions))
 
-    # Build route_id -> set of shape_ids
-    route_shapes = defaultdict(set)
+    # shape_id → set of route_ids
+    shape_routes = defaultdict(set)
     for t in trips.values():
         rid = t.get("route_id", "")
         sid = t.get("shape_id", "")
         if rid and sid:
-            route_shapes[rid].add(sid)
-
-    # Inverse: shape_id -> set of route_ids
-    shape_routes = defaultdict(set)
-    for rid, sids in route_shapes.items():
-        for sid in sids:
             shape_routes[sid].add(rid)
 
-    segments = {}
-    shape_cumul = {}
+    segments        = {}
+    shape_cumul     = {}
     shape_coords_copy = {}
 
     for shape_id, coords in shapes.items():
@@ -126,11 +164,10 @@ def build_segments():
 
         shape_coords_copy[shape_id] = coords
 
-        # Build cumulative distance array
         cumul = [0.0]
         for i in range(1, len(coords)):
-            d = _haversine(coords[i - 1][0], coords[i - 1][1],
-                           coords[i][0], coords[i][1])
+            d = _haversine(coords[i-1][0], coords[i-1][1],
+                           coords[i][0],   coords[i][1])
             cumul.append(cumul[-1] + d)
         shape_cumul[shape_id] = cumul
 
@@ -138,46 +175,40 @@ def build_segments():
         if total_length < seg_len * 0.5:
             continue
 
-        n_segments = max(1, int(total_length / seg_len))
-        rids = list(shape_routes.get(shape_id, []))
+        n_segs = max(1, int(total_length / seg_len))
+        rids   = list(shape_routes.get(shape_id, []))
 
-        for seg_idx in range(n_segments):
+        for seg_idx in range(n_segs):
             start_m = seg_idx * seg_len
-            end_m = min((seg_idx + 1) * seg_len, total_length)
+            end_m   = min((seg_idx + 1) * seg_len, total_length)
 
             seg_coords = _extract_segment_coords(coords, cumul, start_m, end_m)
             if len(seg_coords) < 2:
                 continue
 
-            # Check stop zone
-            is_stop_zone = _check_zone(seg_coords, stop_positions, stop_radius)
-
-            # Check terminal zone (within 60m of a terminal stop)
-            is_terminal = _check_zone(seg_coords, terminal_positions, 60)
-
-            # Check signal zone (filled after OSM fetch)
-            is_signal_zone = False
+            is_stop_zone = _check_zone_grid(seg_coords, stop_grid, stop_radius)
+            is_terminal  = _check_zone_grid(seg_coords, terminal_grid, 60)
 
             seg_id = f"{shape_id}_seg_{seg_idx}"
             segments[seg_id] = {
-                "shape_id": shape_id,
-                "route_ids": rids,
-                "geometry": seg_coords,
-                "stop_zone": is_stop_zone,
-                "signal_zone": is_signal_zone,
+                "shape_id":     shape_id,
+                "route_ids":    rids,
+                "geometry":     seg_coords,
+                "stop_zone":    is_stop_zone,
+                "signal_zone":  False,
                 "terminal_zone": is_terminal,
-                "start_m": start_m,
-                "end_m": end_m,
+                "start_m":      start_m,
+                "end_m":        end_m,
             }
 
     with traffic_store.lock:
-        traffic_store.segments = segments
-        traffic_store.shape_cumul = shape_cumul
-        traffic_store.shape_coords = shape_coords_copy
-        traffic_store.segment_count = len(segments)
+        traffic_store.segments        = segments
+        traffic_store.shape_cumul     = shape_cumul
+        traffic_store.shape_coords    = shape_coords_copy
+        traffic_store.segment_count   = len(segments)
         traffic_store.terminal_positions = terminal_positions
-        traffic_store.built = True
-        traffic_store.segment_states = {}
+        traffic_store.built           = True
+        traffic_store.segment_states  = {}
         traffic_store.vehicle_last_pos = {}
         traffic_store.vehicle_last_delay = {}
         traffic_store.delay_onset_events = {}
@@ -188,8 +219,8 @@ def build_segments():
           f"{n_term} terminal zones) from {len(shapes)} shapes")
 
     # Fetch signal zones in background (non-blocking)
-    import threading
-    threading.Thread(target=_fetch_signal_zones, daemon=True, name="osm-signals").start()
+    threading.Thread(target=_fetch_signal_zones, daemon=True,
+                     name="osm-signals").start()
 
 
 def _identify_terminals(trips, stops, terminal_positions):

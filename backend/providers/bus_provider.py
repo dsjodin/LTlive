@@ -103,16 +103,20 @@ def init_gtfs_static() -> None:
             f"{len(static_stop_departures)} stops with static departures today"
         )
 
-        if config.TRAFFIC_ENABLED:
-            from traffic_inference import build_segments, load_baseline
-            build_segments()
-            load_baseline()
-
     except Exception as e:
         error_msg = f"{type(e).__name__}: {e}"
         print(f"Error loading GTFS static data: {error_msg}")
         traceback.print_exc()
         gtfs_store.set_error(error_msg)
+        return
+
+    if config.TRAFFIC_ENABLED:
+        try:
+            from traffic_inference import build_segments, load_baseline
+            build_segments()  # runs in background thread
+            load_baseline()
+        except Exception as e:
+            print(f"Traffic inference init error: {e}")
 
 
 def refresh_gtfs_static() -> None:
