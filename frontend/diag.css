@@ -1,0 +1,270 @@
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: "Segoe UI", system-ui, sans-serif;
+  background: #0f1117;
+  color: #e0e0e0;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+a { color: #7eb8f7; text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+/* ── API explorer link ────────────────────────────────── */
+.api-link { color: #7eb8f7; font-size: 0.85em; text-decoration: none; }
+.api-link:hover { text-decoration: underline; }
+
+/* ── Top bar ─────────────────────────────────────────── */
+#topbar {
+  background: #1a1d27;
+  border-bottom: 1px solid #2a2d3d;
+  padding: 10px 18px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+#topbar h1 { font-size: 16px; font-weight: 700; color: #fff; }
+#topbar h1 span { color: #7eb8f7; }
+#topbar .sep { flex: 1; }
+#clock { color: #aaa; font-size: 12px; }
+#refresh-btn {
+  background: #2a3050;
+  border: 1px solid #3a4060;
+  color: #ccc;
+  padding: 4px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+}
+#refresh-btn:hover { background: #3a4060; }
+#auto-badge {
+  background: #1b4d2e;
+  color: #5de895;
+  border: 1px solid #2a7a46;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+}
+#main-link {
+  background: #1c2a40;
+  border: 1px solid #2a3a50;
+  color: #7eb8f7;
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+/* ── Layout ──────────────────────────────────────────── */
+#page { max-width: 1400px; margin: 0 auto; padding: 16px; display: flex; flex-direction: column; gap: 16px; }
+
+/* ── Section card ────────────────────────────────────── */
+.card {
+  background: #1a1d27;
+  border: 1px solid #2a2d3d;
+  border-radius: 8px;
+  overflow: hidden;
+}
+.card-header {
+  background: #20243a;
+  padding: 8px 14px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border-bottom: 1px solid #2a2d3d;
+}
+.card-header h2 { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: #aab; }
+.card-header .meta { font-size: 11px; color: #778; margin-left: auto; }
+.card-body { padding: 12px 14px; }
+
+/* ── System status pills ─────────────────────────────── */
+#sysstatus { display: flex; flex-wrap: wrap; gap: 10px; }
+.spill {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: #22263a;
+  border: 1px solid #2e3250;
+  border-radius: 6px;
+  padding: 6px 12px;
+}
+.spill .label { color: #778; font-size: 11px; }
+.spill .val { font-weight: 600; color: #e0e0e0; }
+.spill.ok .dot { width: 7px; height: 7px; border-radius: 50%; background: #5de895; }
+.spill.warn .dot { width: 7px; height: 7px; border-radius: 50%; background: #f0a030; }
+.spill.err .dot { width: 7px; height: 7px; border-radius: 50%; background: #f05050; }
+
+/* ── SSE status badge ────────────────────────────────── */
+.sse-badge { font-size: 12px; margin-bottom: 8px; display: flex; align-items: center; gap: 6px; }
+.sse-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
+
+/* ── Line table ──────────────────────────────────────── */
+#lines-summary {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+.sum-pill {
+  background: #22263a;
+  border: 1px solid #2e3250;
+  border-radius: 6px;
+  padding: 5px 12px;
+  font-size: 12px;
+  color: #bbc;
+}
+.sum-pill strong { color: #fff; }
+.sum-pill-active { border-color: #2a7a46; background: #1b3a28; color: #5de895; }
+.sum-pill-inactive { border-color: #7a4a20; background: #3a2a10; color: #f0a030; }
+
+.lines-table { width: 100%; border-collapse: collapse; }
+.lines-table th {
+  text-align: left;
+  font-size: 11px;
+  font-weight: 600;
+  color: #778;
+  padding: 5px 8px;
+  border-bottom: 1px solid #2a2d3d;
+  white-space: nowrap;
+}
+.lines-table td { padding: 5px 8px; vertical-align: top; border-bottom: 1px solid #1e2130; }
+.lines-table tr:last-child td { border-bottom: none; }
+.lines-table tr:hover td { background: #1e2236; }
+
+/* line badge */
+.line-badge {
+  display: inline-block;
+  padding: 2px 7px;
+  border-radius: 4px;
+  font-weight: 700;
+  font-size: 12px;
+  min-width: 32px;
+  text-align: center;
+  white-space: nowrap;
+}
+
+/* vehicle chips */
+.vehicles-cell { display: flex; flex-direction: column; gap: 3px; }
+.veh-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  background: #1e2236;
+  border-radius: 4px;
+  padding: 4px 8px;
+}
+.veh-id { color: #778; font-size: 11px; font-family: monospace; }
+.veh-tv-num { color: #f0a030; font-size: 11px; font-family: monospace; }
+.veh-tv-num::before { content: "TV:"; color: #556; margin-right: 2px; }
+.veh-dest { color: #dde; font-weight: 600; }
+.veh-dest::before { content: "→ "; color: #556; }
+.veh-status { color: #aab; font-size: 11px; }
+.veh-speed { color: #5de895; font-size: 11px; white-space: nowrap; }
+.veh-age { color: #667; font-size: 11px; white-space: nowrap; }
+.veh-age.stale { color: #f05050; }
+
+.no-vehicles { color: #445; font-style: italic; font-size: 12px; }
+
+.category-header td {
+  background: #20243a !important;
+  color: #7eb8f7;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  padding: 6px 8px;
+  border-bottom: 1px solid #2a2d3d;
+}
+
+/* ── TV trains table ─────────────────────────────────── */
+.tv-trains-table { width: 100%; border-collapse: collapse; }
+.tv-trains-table th {
+  text-align: left; font-size: 11px; font-weight: 600; color: #778;
+  padding: 5px 8px; border-bottom: 1px solid #2a2d3d; white-space: nowrap;
+}
+.tv-trains-table td { padding: 5px 8px; border-bottom: 1px solid #1e2130; font-size: 12px; vertical-align: middle; }
+.tv-trains-table tr:last-child td { border-bottom: none; }
+.tv-trains-table tr:hover td { background: #1e2236; }
+
+.op-badge {
+  display: inline-block; padding: 2px 7px; border-radius: 4px;
+  font-weight: 700; font-size: 11px; white-space: nowrap;
+}
+.tv-op-pills { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+.tv-op-pill {
+  background: #22263a; border: 1px solid #2e3250; border-radius: 6px;
+  padding: 5px 12px; font-size: 12px; color: #bbc;
+}
+.tv-op-pill strong { color: #fff; }
+
+/* ── Unconfigured section ────────────────────────────── */
+.uncfg-table { width: 100%; border-collapse: collapse; }
+.uncfg-table th { text-align: left; font-size: 11px; color: #778; padding: 5px 8px; border-bottom: 1px solid #2a2d3d; font-weight: 600; }
+.uncfg-table td { padding: 5px 8px; border-bottom: 1px solid #1e2130; font-size: 12px; }
+.uncfg-table tr:last-child td { border-bottom: none; }
+.uncfg-table tr:hover td { background: #1e2236; }
+
+/* ── Matching / debug section ────────────────────────── */
+.stats-grid { display: flex; flex-wrap: wrap; gap: 10px; }
+.stat-box {
+  background: #22263a;
+  border: 1px solid #2e3250;
+  border-radius: 6px;
+  padding: 10px 14px;
+  min-width: 130px;
+}
+.stat-box .sval { font-size: 22px; font-weight: 700; color: #fff; }
+.stat-box .slabel { font-size: 11px; color: #778; margin-top: 2px; }
+.stat-box.good .sval { color: #5de895; }
+.stat-box.warn .sval { color: #f0a030; }
+.stat-box.bad  .sval { color: #f05050; }
+
+.sample-list { list-style: none; margin-top: 8px; display: flex; flex-direction: column; gap: 4px; }
+.sample-list li {
+  background: #1e2236;
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-size: 11px;
+  font-family: monospace;
+  color: #aab;
+}
+
+/* ── Loading state ───────────────────────────────────── */
+#loading {
+  padding: 40px;
+  text-align: center;
+  color: #556;
+}
+.spin {
+  display: inline-block;
+  animation: spin 1s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── Utility text colors ─────────────────────────────── */
+.txt-error   { color: #f05050; }
+.txt-warn    { color: #f0a030; }
+.txt-info    { color: #7eb8f7; }
+.txt-success { color: #5de895; }
+.txt-dim     { color: #556; }
+.txt-muted   { color: #778; }
+.txt-muted-sm { color: #778; font-size: 12px; }
+.txt-muted-aab { color: #aab; }
+.txt-white   { color: #fff; font-weight: 700; }
+
+/* ── Table cell utility classes ──────────────────────── */
+.td-mono  { font-family: monospace; color: #aab; }
+.td-green { color: #5de895; }
+.td-muted { color: #aab; }
+.age-cell { color: #667; }
+.age-cell.stale { color: #f05050; }
+
+/* ── Count badges ────────────────────────────────────── */
+.count-active { color: #5de895; font-weight: 600; }
+.count-zero   { color: #445; }
+.pct-small    { font-size: 14px; }
