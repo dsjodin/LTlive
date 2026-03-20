@@ -100,6 +100,13 @@ try {
 } catch (_) {}
 let favoritesTimer = null;
 
+// Saved trips (line + stop combos)
+let savedTrips = new Map(); // "${route_id}::${stop_id}" -> {route_id, route_short_name, route_color, route_text_color, stop_id, stop_name}
+try {
+    const saved = JSON.parse(localStorage.getItem("savedTrips") || "[]");
+    saved.forEach(t => savedTrips.set(`${t.route_id}::${t.stop_id}`, t));
+} catch (_) {}
+
 const TILES = {
     dark: "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
     light: "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png",
@@ -610,7 +617,101 @@ function updateVehicles(vehicles) {
 }
 
 // --- Stop departure board ---
+function buildStopDepartureRows(stop, data) {
+    if (!data || !data.departures || data.departures.length === 0) return null;
+    const now = Date.now() / 1000;
+    return data.departures.map((d) => {
+        const secs = Math.round(d.departure_time - now);
+        const mins = Math.floor(secs / 60);
+        const remSecs = secs % 60;
+        const timeStr = secs <= 0 ? "Nu"
+            : mins > 0 ? `${mins} min ${String(remSecs).padStart(2,"0")} s`
+            : `${secs} s`;
+        const clock = new Date(d.departure_time * 1000)
+            .toLocaleTimeString("sv-SE", { hour: "2-digit", minute: "2-digit" });
+        const custom = getLineStyle(d.route_short_name);
+        const bg = custom ? `#${custom.bg}` : `#${d.route_color}`;
+        const fg = custom ? `#${custom.text}` : `#${d.route_text_color}`;
+        const rt = d.is_realtime
+            ? '<span class="dep-rt" title="Realtid">RT</span>'
+            : "";
+        const delay = d.delay_minutes || 0;
+        const delayHtml = d.is_realtime
+            ? (delay > 0
+                ? `<span class="dep-delay late" title="Försenad">+${delay}</span>`
+                : delay < 0
+                    ? `<span class="dep-delay early" title="Tidig">${delay}</span>`
+                    : `<span class="dep-delay ontime" title="I tid">✓</span>`)
+            : "";
+        const tripKey = `${d.route_id}::${stop.stop_id}`;
+        const isSaved = savedTrips.has(tripKey);
+        const pinBtn = `<button class="save-trip-btn${isSaved ? " active" : ""}"
+            data-route-id="${d.route_id}"
+            data-route-short="${d.route_short_name}"
+            data-route-color="${d.route_color || ''}"
+            data-route-text-color="${d.route_text_color || ''}"
+            data-stop-id="${stop.stop_id}"
+            data-stop-name="${stop.stop_name}"
+            title="${isSaved ? "Ta bort sparad resa" : "Spara resa"}">📌</button>`;
+        return `
+            <tr>
+                <td><span class="dep-badge" data-bg="${bg}" data-fg="${fg}">${d.route_short_name}</span></td>
+                <td class="dep-headsign">${d.headsign}</td>
+                <td class="dep-time"><span class="dep-countdown" data-ts="${d.departure_time}">${timeStr}</span>${rt}${delayHtml}</td>
+                <td class="dep-clock">${clock}</td>
+                <td class="dep-pin">${pinBtn}</td>
+            </tr>`;
+    }).join("");
+}
+
+function bindStopDepartureEvents(el, stop) {
+    applyBadgeColors(el);
+    el.querySelectorAll(".fav-btn").forEach(btn => {
+        btn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            toggleFavorite(stop);
+            btn.classList.toggle("active", favoriteStops.has(stop.stop_id));
+            btn.title = favoriteStops.has(stop.stop_id) ? "Ta bort favorit" : "Spara som favorit";
+        });
+    });
+    el.querySelectorAll(".share-btn").forEach(btn => bindShareBtn(btn, stop));
+    el.querySelectorAll(".save-trip-btn").forEach(btn => {
+        btn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            toggleSavedTrip(
+                btn.dataset.routeId, btn.dataset.routeShort,
+                btn.dataset.routeColor, btn.dataset.routeTextColor,
+                btn.dataset.stopId, btn.dataset.stopName
+            );
+            const key = `${btn.dataset.routeId}::${btn.dataset.stopId}`;
+            btn.classList.toggle("active", savedTrips.has(key));
+            btn.title = savedTrips.has(key) ? "Ta bort sparad resa" : "Spara resa";
+        });
+    });
+}
+
+function bindShareBtn(btn, stop) {
+    btn.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        const url = `${location.origin}/busboard.html?stop_id=${encodeURIComponent(stop.stop_id)}&stop_name=${encodeURIComponent(stop.stop_name)}`;
+        try {
+            await navigator.clipboard.writeText(url);
+            btn.textContent = "✓";
+            setTimeout(() => { btn.textContent = "🔗"; }, 1500);
+        } catch {}
+    });
+}
+
 function showStopDepartures(stop, marker) {
+    // On mobile: use bottom sheet panel instead of Leaflet popup
+    if (window.innerWidth <= 600) {
+        openStopPanel(stop);
+        fetchDepartures(stop.stop_id)
+            .then(data => populateStopPanel(stop, data))
+            .catch(() => populateStopPanel(stop, null));
+        return;
+    }
+
     const loadingHtml = `
         <div class="popup-stop">
             <div class="popup-stop-name">${stop.stop_name}</div>
@@ -621,54 +722,24 @@ function showStopDepartures(stop, marker) {
     fetchDepartures(stop.stop_id)
         .then((data) => {
             let html;
-            if (!data.departures || data.departures.length === 0) {
+            const rows = buildStopDepartureRows(stop, data);
+            if (!rows) {
                 html = `
                     <div class="popup-stop">
                         <div class="popup-stop-name">${stop.stop_name}</div>
                         <div class="dep-empty">Inga kommande avgångar</div>
                     </div>`;
             } else {
-                const now = Date.now() / 1000;
-                const rows = data.departures.map((d) => {
-                    const secs = Math.round(d.departure_time - now);
-                    const mins = Math.floor(secs / 60);
-                    const remSecs = secs % 60;
-                    const timeStr = secs <= 0 ? "Nu"
-                        : mins > 0 ? `${mins} min ${String(remSecs).padStart(2,"0")} s`
-                        : `${secs} s`;
-                    const clock = new Date(d.departure_time * 1000)
-                        .toLocaleTimeString("sv-SE", { hour: "2-digit", minute: "2-digit" });
-                    const custom = getLineStyle(d.route_short_name);
-                    const bg = custom ? `#${custom.bg}` : `#${d.route_color}`;
-                    const fg = custom ? `#${custom.text}` : `#${d.route_text_color}`;
-                    const rt = d.is_realtime
-                        ? '<span class="dep-rt" title="Realtid">RT</span>'
-                        : "";
-                    const delay = d.delay_minutes || 0;
-                    const delayHtml = d.is_realtime
-                        ? (delay > 0
-                            ? `<span class="dep-delay late" title="Försenad">+${delay}</span>`
-                            : delay < 0
-                                ? `<span class="dep-delay early" title="Tidig">${delay}</span>`
-                                : `<span class="dep-delay ontime" title="I tid">✓</span>`)
-                        : "";
-                    return `
-                        <tr>
-                            <td><span class="dep-badge" data-bg="${bg}" data-fg="${fg}">${d.route_short_name}</span></td>
-                            <td class="dep-headsign">${d.headsign}</td>
-                            <td class="dep-time"><span class="dep-countdown" data-ts="${d.departure_time}">${timeStr}</span>${rt}${delayHtml}</td>
-                            <td class="dep-clock">${clock}</td>
-                        </tr>`;
-                }).join("");
                 const platformChip = stop.platform_code
                     ? `<span class="popup-platform">Läge ${stop.platform_code}</span>`
                     : "";
                 const isFav = favoriteStops.has(stop.stop_id);
                 const favBtn = `<button class="fav-btn${isFav ? " active" : ""}" data-stop-id="${stop.stop_id}" title="${isFav ? "Ta bort favorit" : "Spara som favorit"}">★</button>`;
+                const shareBtn = `<button class="share-btn" title="Kopiera länk">🔗</button>`;
                 html = `
                     <div class="popup-stop">
                         <div class="popup-stop-name">${stop.stop_name}${platformChip}
-                            ${favBtn}
+                            ${favBtn}${shareBtn}
                             <a class="board-link" href="/busboard.html?stop_id=${encodeURIComponent(stop.stop_id)}&stop_name=${encodeURIComponent(stop.stop_name)}" target="_blank" title="Öppna avgångstavla">&#128507;</a>
                         </div>
                         <table class="dep-table"><tbody>${rows}</tbody></table>
@@ -676,21 +747,10 @@ function showStopDepartures(stop, marker) {
             }
             if (marker.isPopupOpen()) {
                 marker.setPopupContent(html);
-                // Apply dynamic badge colors after DOM is updated
                 const popup = marker.getPopup();
                 if (popup) {
                     const el = popup.getElement();
-                    if (el) {
-                        applyBadgeColors(el);
-                        el.querySelectorAll(".fav-btn").forEach(btn => {
-                            btn.addEventListener("click", (e) => {
-                                e.stopPropagation();
-                                toggleFavorite(stop);
-                                btn.classList.toggle("active", favoriteStops.has(stop.stop_id));
-                                btn.title = favoriteStops.has(stop.stop_id) ? "Ta bort favorit" : "Spara som favorit";
-                            });
-                        });
-                    }
+                    if (el) bindStopDepartureEvents(el, stop);
                 }
             }
         })
@@ -703,6 +763,54 @@ function showStopDepartures(stop, marker) {
                     </div>`);
             }
         });
+}
+
+function openStopPanel(stop) {
+    const panel = document.getElementById("stop-panel");
+    const title = document.getElementById("stop-panel-title");
+    const actions = document.getElementById("stop-panel-actions");
+    const body = document.getElementById("stop-panel-body");
+    const platformChip = stop.platform_code
+        ? ` <span class="popup-platform">Läge ${stop.platform_code}</span>`
+        : "";
+    title.innerHTML = `${stop.stop_name}${platformChip}`;
+    const isFav = favoriteStops.has(stop.stop_id);
+    actions.innerHTML = `
+        <button class="fav-btn${isFav ? " active" : ""}" data-stop-id="${stop.stop_id}" title="${isFav ? "Ta bort favorit" : "Spara som favorit"}">★</button>
+        <button class="share-btn" title="Kopiera länk">🔗</button>
+        <a class="board-link" href="/busboard.html?stop_id=${encodeURIComponent(stop.stop_id)}&stop_name=${encodeURIComponent(stop.stop_name)}" target="_blank" title="Öppna avgångstavla">&#128507;</a>`;
+    body.innerHTML = `<div class="dep-loading" style="padding:14px">Hämtar avgångar…</div>`;
+    // bind fav + share in header
+    actions.querySelectorAll(".fav-btn").forEach(btn => {
+        btn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            toggleFavorite(stop);
+            btn.classList.toggle("active", favoriteStops.has(stop.stop_id));
+            btn.title = favoriteStops.has(stop.stop_id) ? "Ta bort favorit" : "Spara som favorit";
+        });
+    });
+    actions.querySelectorAll(".share-btn").forEach(btn => bindShareBtn(btn, stop));
+    panel.classList.add("open");
+    document.body.classList.add("stop-open");
+    setTimeout(() => map.invalidateSize(), 310);
+}
+
+function closeStopPanel() {
+    document.getElementById("stop-panel").classList.remove("open");
+    document.body.classList.remove("stop-open");
+    setTimeout(() => map.invalidateSize(), 310);
+}
+
+function populateStopPanel(stop, data) {
+    const body = document.getElementById("stop-panel-body");
+    if (!document.getElementById("stop-panel").classList.contains("open")) return;
+    const rows = buildStopDepartureRows(stop, data);
+    if (!rows) {
+        body.innerHTML = `<div class="dep-empty" style="padding:14px">Inga kommande avgångar</div>`;
+        return;
+    }
+    body.innerHTML = `<table class="dep-table" style="width:100%;padding:0 14px;box-sizing:border-box"><tbody>${rows}</tbody></table>`;
+    bindStopDepartureEvents(body, stop);
 }
 
 function startEtaCountdown() {
@@ -725,6 +833,22 @@ function saveFavorites() {
     localStorage.setItem("favoriteStops", JSON.stringify([...favoriteStops.values()]));
 }
 
+// --- Saved trips ---
+function saveSavedTrips() {
+    localStorage.setItem("savedTrips", JSON.stringify([...savedTrips.values()]));
+}
+
+function toggleSavedTrip(route_id, route_short_name, route_color, route_text_color, stop_id, stop_name) {
+    const key = `${route_id}::${stop_id}`;
+    if (savedTrips.has(key)) {
+        savedTrips.delete(key);
+    } else {
+        savedTrips.set(key, { route_id, route_short_name, route_color, route_text_color, stop_id, stop_name });
+    }
+    saveSavedTrips();
+    renderFavoritesPanel();
+}
+
 function toggleFavorite(stop) {
     if (favoriteStops.has(stop.stop_id)) {
         favoriteStops.delete(stop.stop_id);
@@ -739,18 +863,63 @@ function renderFavoritesPanel() {
     const panel = document.getElementById("favorites-panel");
     const body = document.getElementById("favorites-panel-body");
     if (!panel || !body) return;
+
+    let html = "";
+
+    // --- Stops section ---
+    html += `<div class="fav-section">`;
+    html += `<div class="fav-section-title">★ Hållplatser</div>`;
     if (favoriteStops.size === 0) {
-        body.innerHTML = `<div class="fav-empty">Inga favorithållplatser ännu.<br>Klicka på ★ i en hållplats-popup för att spara.</div>`;
-        return;
+        html += `<div class="fav-empty">Inga favorithållplatser ännu.<br>Klicka på ★ i en hållplats-popup för att spara.</div>`;
+    } else {
+        html += [...favoriteStops.values()].map(s => `
+            <div class="fav-stop" data-stop-id="${s.stop_id}">
+                <span class="fav-stop-name">${s.stop_name}</span>
+                <div class="fav-stop-deps" id="fav-deps-${s.stop_id}">
+                    <span class="fav-loading">Hämtar…</span>
+                </div>
+            </div>`).join("");
     }
-    body.innerHTML = [...favoriteStops.values()].map(s => `
-        <div class="fav-stop" data-stop-id="${s.stop_id}">
-            <span class="fav-stop-name">${s.stop_name}</span>
-            <div class="fav-stop-deps" id="fav-deps-${s.stop_id}">
-                <span class="fav-loading">Hämtar…</span>
-            </div>
-        </div>`).join("");
+    html += `</div>`;
+
+    // --- Saved trips section ---
+    html += `<div class="fav-section">`;
+    html += `<div class="fav-section-title">📌 Mina resor</div>`;
+    if (savedTrips.size === 0) {
+        html += `<div class="fav-empty">Inga sparade resor ännu.<br>Klicka på 📌 vid en avgång för att spara.</div>`;
+    } else {
+        html += [...savedTrips.entries()].map(([key, t]) => {
+            const custom = getLineStyle(t.route_short_name);
+            const bg = custom ? `#${custom.bg}` : (t.route_color ? `#${t.route_color}` : "#555");
+            const fg = custom ? `#${custom.text}` : (t.route_text_color ? `#${t.route_text_color}` : "#fff");
+            const safeKey = key.replace(/::/g, "-");
+            return `
+            <div class="saved-trip-card" data-key="${key}">
+                <span class="fav-dep-badge" style="background:${bg};color:${fg};flex-shrink:0">${t.route_short_name}</span>
+                <div class="saved-trip-info">
+                    <div class="saved-trip-label">från ${t.stop_name}</div>
+                    <div class="fav-stop-deps" id="trip-deps-${safeKey}"><span class="fav-loading">Hämtar…</span></div>
+                </div>
+                <button class="saved-trip-remove" data-key="${key}" title="Ta bort">✕</button>
+            </div>`;
+        }).join("");
+    }
+    html += `</div>`;
+
+    body.innerHTML = html;
+
+    // Bind remove-trip buttons
+    body.querySelectorAll(".saved-trip-remove").forEach(btn => {
+        btn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            savedTrips.delete(btn.dataset.key);
+            saveSavedTrips();
+            renderFavoritesPanel();
+        });
+    });
+
     fetchFavoriteDepartures();
+    fetchSavedTripDepartures();
 }
 
 function fetchFavoriteDepartures() {
@@ -782,11 +951,38 @@ function fetchFavoriteDepartures() {
     });
 }
 
+function fetchSavedTripDepartures() {
+    savedTrips.forEach((trip, key) => {
+        const safeKey = key.replace(/::/g, "-");
+        fetchDepartures(trip.stop_id, 8).then(data => {
+            const el = document.getElementById(`trip-deps-${safeKey}`);
+            if (!el) return;
+            const filtered = (data.departures || []).filter(d => d.route_id === trip.route_id);
+            if (filtered.length === 0) {
+                el.innerHTML = `<span class="fav-empty-deps">Inga avgångar</span>`;
+                return;
+            }
+            const now = Date.now() / 1000;
+            el.innerHTML = filtered.slice(0, 3).map(d => {
+                const mins = Math.max(0, Math.round((d.departure_time - now) / 60));
+                const timeStr = mins === 0 ? "Nu" : `${mins} min`;
+                return `<span class="fav-dep">
+                    <span class="fav-dep-headsign">${d.headsign}</span>
+                    <span class="fav-dep-time">${timeStr}</span>
+                </span>`;
+            }).join("");
+        }).catch(() => {
+            const el = document.getElementById(`trip-deps-${safeKey}`);
+            if (el) el.innerHTML = `<span class="fav-empty-deps">Fel</span>`;
+        });
+    });
+}
+
 function openFavoritesPanel() {
     renderFavoritesPanel();
     document.getElementById("favorites-panel").classList.add("open");
     clearInterval(favoritesTimer);
-    favoritesTimer = setInterval(fetchFavoriteDepartures, 15000);
+    favoritesTimer = setInterval(() => { fetchFavoriteDepartures(); fetchSavedTripDepartures(); }, 15000);
 }
 
 function closeFavoritesPanel() {
@@ -849,27 +1045,45 @@ function showVehiclePopup(vehicle, marker) {
         }
     }
 
+    const custom = getLineStyle(lineName);
+    const badgeBg = custom ? `#${custom.bg}` : (vehicle.route_color ? `#${vehicle.route_color}` : color);
+    const badgeFg = custom ? `#${custom.text}` : (vehicle.route_text_color ? `#${vehicle.route_text_color}` : "#fff");
+    const vehicleIdStr = vehicle.vehicle_id
+        ? `Fordon #${String(vehicle.vehicle_id).split(":").pop()}<br/>`
+        : "";
+    const hasRoute = vehicle.route_id && routeData[vehicle.route_id];
+
     const html = `
         <div class="popup-vehicle">
-            <div class="popup-title" data-color="${color}">
-                ${title}
+            <div style="margin-bottom:4px">
+                <span class="popup-veh-badge" style="background:${badgeBg};color:${badgeFg}">${lineName}</span>
             </div>
+            <div class="popup-title" data-color="${color}">${title}</div>
             <div class="popup-details">
                 ${delayHtml}
-                ${nextStop ? `${nextStopLabel}: ${nextStop}${platformChip}<br/>` : ""}
+                ${nextStop ? `${nextStopLabel}: <strong>${nextStop}</strong>${platformChip}<br/>` : ""}
                 ${speed ? `Hastighet: ${speed}<br/>` : ""}
+                ${vehicleIdStr}
                 Uppdaterad: ${updatedAt}
             </div>
+            ${hasRoute ? `<button class="popup-open-line-btn" data-route-id="${vehicle.route_id}">Visa linje →</button>` : ""}
         </div>
     `;
-    const popup = L.popup({ maxWidth: 250 })
+    const popup = L.popup({ maxWidth: 260 })
         .setLatLng(marker.getLatLng())
         .setContent(html)
         .openOn(map);
-    // Apply dynamic color after popup is in DOM
     requestAnimationFrame(() => {
         const el = popup.getElement();
-        if (el) el.querySelectorAll("[data-color]").forEach(e => { e.style.color = e.dataset.color; });
+        if (!el) return;
+        el.querySelectorAll("[data-color]").forEach(e => { e.style.color = e.dataset.color; });
+        el.querySelectorAll(".popup-open-line-btn").forEach(btn => {
+            btn.addEventListener("click", () => {
+                map.closePopup();
+                const route = routeData[btn.dataset.routeId];
+                if (route) openLinePanel(route);
+            });
+        });
     });
 }
 
@@ -1796,6 +2010,9 @@ document.getElementById("toggle-darkmode").addEventListener("change", (e) => {
 
     // Line panel close
     document.getElementById("line-panel-close").addEventListener("click", closeLinePanel);
+
+    // Stop panel close (mobile)
+    document.getElementById("stop-panel-close").addEventListener("click", closeStopPanel);
 
     // Hamburger (mobile: toggles controls dropdown)
     document.getElementById("hamburger-btn").addEventListener("click", () => {
