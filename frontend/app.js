@@ -1681,7 +1681,7 @@ function renderZoneLayer(data) {
 
     for (const t of (data.terminal || [])) {
         L.circle([t.lat, t.lon], {
-            radius: 60,
+            radius: 40,
             color: "#a855f7",
             fillColor: "#a855f7",
             fillOpacity: 0.15,

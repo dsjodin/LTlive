@@ -203,7 +203,7 @@ def _do_build_segments():
             # Midpoint-only zone check via fine grid
             mlat, mlon = _midpoint(seg_coords)
             is_stop_zone = _in_zone_fast(mlat, mlon, stop_fine_grid, stop_radius, _CELL)
-            is_terminal  = _in_zone_fast(mlat, mlon, term_fine_grid, 60, _CELL)
+            is_terminal  = _in_zone_fast(mlat, mlon, term_fine_grid, 40, _CELL)
 
             seg_id = f"{shape_id}_seg_{seg_idx}"
             segments[seg_id] = {
