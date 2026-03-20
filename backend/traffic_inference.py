@@ -644,9 +644,12 @@ def _recalculate_segment(seg_id, observations, segment_info, delay_onsets, state
     is_signal = segment_info and segment_info.get("signal_zone", False)
     is_terminal = segment_info and segment_info.get("terminal_zone", False)
 
-    # Terminal zones: strong penalty, likely layover/turnaround
+    # Terminal zones: strong penalty, likely layover/turnaround.
+    # Also override severity to "none" — a bus waiting at an end stop
+    # is never a traffic disturbance regardless of speed.
     if is_terminal:
         confidence *= 0.15
+        severity = "none"
 
     # Stop zones: penalty (boarding/alighting, not traffic)
     if is_stop:
