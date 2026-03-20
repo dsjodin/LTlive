@@ -207,6 +207,17 @@ function setTileLayer(isDark) {
 
 // --- Bus markers ---
 
+// Returns a border colour for the vehicle marker based on schedule deviation.
+// white  = on time / unknown (delay_seconds null or ≤60 s)
+// yellow = slightly late (1–5 min)
+// red    = significantly late (>5 min)
+function getDelayBorderColor(vehicle) {
+    const d = vehicle.delay_seconds;
+    if (d == null || d <= 60) return "white";
+    if (d <= 300) return "#FFD600";
+    return "#F44336";
+}
+
 // Icon size varies with zoom level so buses don't dominate zoomed-out views.
 function getIconR() {
     const zoom = map ? map.getZoom() : 14;
@@ -238,7 +249,7 @@ function createBusIcon(vehicle) {
         dot.style.height       = `${d}px`;
         dot.style.borderRadius = "50%";
         dot.style.background   = color;
-        dot.style.border       = "2px solid white";
+        dot.style.border       = `2px solid ${getDelayBorderColor(vehicle)}`;
         dot.style.boxShadow    = "0 1px 4px rgba(0,0,0,.5)";
         return L.divIcon({
             className: "bus-icon-wrapper",
@@ -254,16 +265,17 @@ function createBusIcon(vehicle) {
     const CX = W / 2, CY = W / 2;
     const fs = Math.round(R * (label.length >= 3 ? 0.72 : label.length >= 2 ? 0.9 : 1.1));
 
+    const borderColor = getDelayBorderColor(vehicle);
     const tipPath = hasBearing
         ? `<path d="M ${CX},${CY-R-TIP} L ${CX+Math.round(TIP*0.65)},${CY-R+Math.round(TIP*0.45)} L ${CX-Math.round(TIP*0.65)},${CY-R+Math.round(TIP*0.45)} Z"
-                  fill="${color}" stroke="white" stroke-width="2" stroke-linejoin="round"/>`
+                  fill="${color}" stroke="${borderColor}" stroke-width="2" stroke-linejoin="round"/>`
         : "";
 
     const svg = `
     <svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${W}" class="vehicle-svg">
       <g transform="rotate(${hasBearing ? bearing : 0},${CX},${CY})">
         ${tipPath}
-        <circle cx="${CX}" cy="${CY}" r="${R}" fill="${color}" stroke="white" stroke-width="2.5"/>
+        <circle cx="${CX}" cy="${CY}" r="${R}" fill="${color}" stroke="${borderColor}" stroke-width="2.5"/>
       </g>
       <text x="${CX}" y="${CY}" text-anchor="middle" dominant-baseline="central"
             font-size="${fs}" font-weight="800" fill="${textColor}"

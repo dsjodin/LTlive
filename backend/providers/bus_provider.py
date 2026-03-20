@@ -273,6 +273,9 @@ def poll_realtime(push_alerts_callback=None) -> None:
         vid = v.get("vehicle_id", "")
         ns  = vehicle_next_stop.get(vid, "") or v.get("current_stop_id", "")
         v["current_stop_id"] = ns
+        delay_sec = vehicle_trips.get(vid, {}).get("delay_seconds")
+        if delay_sec is not None:
+            v["delay_seconds"] = delay_sec
 
     with vehicle_store.lock:
         vehicle_store.vehicles             = vehicles

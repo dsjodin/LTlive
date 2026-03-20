@@ -95,15 +95,10 @@ def fetch_trip_updates():
             rt_trip_short_names[trip_id] = rt_trip_short_name
 
         if vehicle_id:
-            vehicle_trips[vehicle_id] = {
-                "trip_id": trip_id,
-                "route_id": route_id,
-                "direction_id": direction_id,
-                "start_date": start_date,
-            }
             # Find the first stop_time_update that hasn't been passed yet.
             # The feed may include already-departed stops, so filter by time >= now.
             now = int(time.time())
+            delay_seconds = None
             for stu in tu.stop_time_update:
                 if not stu.stop_id:
                     continue
@@ -112,7 +107,19 @@ def fetch_trip_updates():
                 t = dep or arr
                 if t and t >= now:
                     vehicle_next_stop[vehicle_id] = stu.stop_id
+                    # Extract schedule deviation in seconds (positive = late, negative = early)
+                    if stu.HasField("departure"):
+                        delay_seconds = stu.departure.delay
+                    elif stu.HasField("arrival"):
+                        delay_seconds = stu.arrival.delay
                     break
+            vehicle_trips[vehicle_id] = {
+                "trip_id": trip_id,
+                "route_id": route_id,
+                "direction_id": direction_id,
+                "start_date": start_date,
+                "delay_seconds": delay_seconds,
+            }
 
         # Extract per-stop departure times for the departure board
         for stu in tu.stop_time_update:
