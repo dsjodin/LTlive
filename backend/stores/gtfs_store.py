@@ -35,6 +35,7 @@ class GtfsStore:
         self.static_stop_arrivals: dict = {}    # stop_id -> [arrival dicts]
         self.trip_origin_map: dict = {}         # trip_id -> origin stop_id
         self.rt_trip_short_names: dict = {}     # rt trip_id -> short name
+        self.agencies: dict = {}                # agency_id -> agency dict
 
         # Status
         self.loaded: bool = False

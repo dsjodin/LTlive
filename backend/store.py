@@ -64,6 +64,7 @@ class _DataView:
         "static_stop_arrivals":    (gtfs_store,    "static_stop_arrivals"),
         "trip_origin_map":         (gtfs_store,    "trip_origin_map"),
         "rt_trip_short_names":     (gtfs_store,    "rt_trip_short_names"),
+        "agencies":                (gtfs_store,    "agencies"),
         "gtfs_loaded":             (gtfs_store,    "loaded"),
         "gtfs_error":              (gtfs_store,    "error"),
         # Vehicle store

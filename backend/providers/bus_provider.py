@@ -88,10 +88,8 @@ def init_gtfs_static() -> None:
             "static_stop_arrivals":   static_stop_arrivals,
             "trip_origin_map":        trip_origin_map,
         })
-        # agencies is not on GtfsStore yet; keep in _data for debug_bp compat
-        from store import _data, _lock
-        with _lock:
-            _data["agencies"] = agencies
+        with gtfs_store.lock:
+            gtfs_store.agencies = agencies
 
         active_services = gtfs_loader.active_service_ids_today()
         active_trip_count = sum(
@@ -137,9 +135,8 @@ def refresh_gtfs_static() -> None:
             "static_stop_arrivals":   static_stop_arrivals,
             "trip_origin_map":        trip_origin_map,
         })
-        from store import _data, _lock
-        with _lock:
-            _data["agencies"] = agencies
+        with gtfs_store.lock:
+            gtfs_store.agencies = agencies
 
         api_cache.clear()
         print("GTFS static data refreshed.")
