@@ -121,6 +121,12 @@ export async function fetchStationMessages(stopId) {
     return r.json();
 }
 
+export async function fetchWeather() {
+    const r = await fetch(`${API_BASE}/weather`);
+    if (!r.ok) throw new Error('Weather fetch failed');
+    return r.json();
+}
+
 /**
  * Open an SSE connection to /api/stream.
  *

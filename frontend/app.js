@@ -11,7 +11,28 @@ import {
     fetchLineDepartures as apiFetchLineDepartures,
     fetchNearbyDepartures as apiFetchNearbyDepartures,
     connectSSE,
+    fetchWeather,
 } from "./modules/api.js";
+
+const SMHI_ICONS = {
+    1:'☀️', 2:'🌤️', 3:'⛅', 4:'🌥️', 5:'🌫️', 6:'🌫️',
+    7:'🌦️', 8:'🌧️', 9:'🌧️', 10:'⛈️', 11:'⛈️', 12:'⛈️', 13:'⛈️',
+    14:'🌨️', 15:'❄️', 16:'❄️', 17:'❄️', 18:'🌨️', 19:'🌨️',
+    20:'❄️', 21:'❄️', 22:'❄️', 23:'❄️', 24:'🌨️', 25:'🌨️',
+    26:'❄️', 27:'❄️',
+};
+
+async function updateWeather() {
+    try {
+        const w = await fetchWeather();
+        document.getElementById('weather-temp').textContent =
+            w.temp != null ? `${Math.round(w.temp)}°` : '--°';
+        document.getElementById('weather-icon').textContent =
+            SMHI_ICONS[w.symbol] ?? '🌡️';
+    } catch (e) {
+        console.warn('Weather update failed:', e);
+    }
+}
 
 let POLL_INTERVAL = 5000;        // default, overridden by backend config via /api/status
 let MAP_CENTER = [59.2753, 15.2134]; // default, overridden by backend config via /api/status
@@ -1869,6 +1890,9 @@ async function init() {
     initSSE();
     setInterval(pollAlerts, 30000);
     setInterval(pollStopDepartures, 60000);
+
+    updateWeather();
+    setInterval(updateWeather, 10 * 60 * 1000);
 
     // ?line=<route_short_name> — pre-open line filter (e.g. from busboard.html "Se på karta" link)
     const preOpenLine = urlParams.get("line");
