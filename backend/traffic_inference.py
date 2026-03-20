@@ -139,12 +139,9 @@ def _do_build_segments():
         for s in stops.values()
         if s.get("location_type", 0) != 1
     ]
-    stop_grid = _make_grid(stop_positions)
-
-    # Terminal positions + grid
+    # Terminal positions
     terminal_positions = set()
     _identify_terminals(trips, stops, terminal_positions)
-    terminal_grid = _make_grid(list(terminal_positions))
 
     # shape_id → set of route_ids
     shape_routes = defaultdict(set)
@@ -158,12 +155,21 @@ def _do_build_segments():
     shape_cumul     = {}
     shape_coords_copy = {}
 
-    for shape_id, coords in shapes.items():
+    t0 = time.time()
+    shape_list = list(shapes.items())
+    n_shapes   = len(shape_list)
+
+    for shape_num, (shape_id, coords) in enumerate(shape_list):
+        if shape_num % 100 == 0 and shape_num > 0:
+            print(f"Traffic: building segments {shape_num}/{n_shapes} "
+                  f"({len(segments)} segs, {time.time()-t0:.1f}s)")
+
         if len(coords) < 2:
             continue
 
         shape_coords_copy[shape_id] = coords
 
+        # Build cumulative distances in one pass
         cumul = [0.0]
         for i in range(1, len(coords)):
             d = _haversine(coords[i-1][0], coords[i-1][1],
@@ -178,27 +184,50 @@ def _do_build_segments():
         n_segs = max(1, int(total_length / seg_len))
         rids   = list(shape_routes.get(shape_id, []))
 
-        for seg_idx in range(n_segs):
-            start_m = seg_idx * seg_len
-            end_m   = min((seg_idx + 1) * seg_len, total_length)
+        # Pre-filter stops/terminals to this shape's bounding box + buffer
+        # Avoids checking all 3494 stops for every segment of every shape
+        buf_deg = (max(stop_radius, 60) + 50) / 111_320.0
+        lats = [c[0] for c in coords]
+        lons = [c[1] for c in coords]
+        min_lat = min(lats) - buf_deg
+        max_lat = max(lats) + buf_deg
+        min_lon = min(lons) - buf_deg
+        max_lon = max(lons) + buf_deg
+        local_stops = [
+            p for p in stop_positions
+            if min_lat <= p[0] <= max_lat and min_lon <= p[1] <= max_lon
+        ]
+        local_terms = [
+            p for p in terminal_positions
+            if min_lat <= p[0] <= max_lat and min_lon <= p[1] <= max_lon
+        ]
 
-            seg_coords = _extract_segment_coords(coords, cumul, start_m, end_m)
+        # Build all segment coord-lists in a single pass through shape points
+        # Each point belongs to exactly one segment bucket
+        seg_buckets = [[] for _ in range(n_segs)]
+        for i, pt in enumerate(coords):
+            d = cumul[i]
+            bucket = min(int(d / seg_len), n_segs - 1)
+            seg_buckets[bucket].append(pt)
+
+        for seg_idx in range(n_segs):
+            seg_coords = seg_buckets[seg_idx]
             if len(seg_coords) < 2:
                 continue
 
-            is_stop_zone = _check_zone_grid(seg_coords, stop_grid, stop_radius)
-            is_terminal  = _check_zone_grid(seg_coords, terminal_grid, 60)
+            is_stop_zone = _check_zone(seg_coords, local_stops, stop_radius)
+            is_terminal  = _check_zone(seg_coords, local_terms, 60)
 
             seg_id = f"{shape_id}_seg_{seg_idx}"
             segments[seg_id] = {
-                "shape_id":     shape_id,
-                "route_ids":    rids,
-                "geometry":     seg_coords,
-                "stop_zone":    is_stop_zone,
-                "signal_zone":  False,
+                "shape_id":      shape_id,
+                "route_ids":     rids,
+                "geometry":      seg_coords,
+                "stop_zone":     is_stop_zone,
+                "signal_zone":   False,
                 "terminal_zone": is_terminal,
-                "start_m":      start_m,
-                "end_m":        end_m,
+                "start_m":       seg_idx * seg_len,
+                "end_m":         min((seg_idx + 1) * seg_len, total_length),
             }
 
     with traffic_store.lock:
