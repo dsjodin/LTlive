@@ -1,4 +1,6 @@
-const API = '/api';
+import { fetchStatus, fetchVehicles } from "./modules/api.js";
+import { updateClock } from "./modules/utils.js";
+
 let _refreshTimer = null;
 
 // ── Helpers ────────────────────────────────────────────────────────
@@ -53,17 +55,18 @@ function applyDynColors(container) {
 // ── Fetch all data ─────────────────────────────────────────────────
 
 async function fetchAll() {
-  const [status, vehicles, matching, tvPositions] = await Promise.all([
-    fetch(`${API}/status`).then(r => r.json()).catch(() => null),
-    fetch(`${API}/vehicles`).then(r => r.json()).then(d => d.vehicles ?? d).catch(() => []),
-    fetch(`${API}/debug/matching`).then(r => r.json()).catch(() => null),
-    fetch(`${API}/debug/tv-positions`).then(r => r.json()).catch(() => null),
+  const [status, vehiclesData, matching, tvPositions] = await Promise.all([
+    fetchStatus().catch(() => null),
+    fetchVehicles().catch(() => ({ vehicles: [] })),
+    fetch('/api/debug/matching').then(r => r.json()).catch(() => null),
+    fetch('/api/debug/tv-positions').then(r => r.json()).catch(() => null),
   ]);
+  const vehicles = vehiclesData?.vehicles ?? vehiclesData ?? [];
   return { status, vehicles, matching, tvPositions };
 }
 
 async function fetchRtFeed() {
-  return fetch(`${API}/debug/rt-feed`).then(r => r.json()).catch(e => ({ error: String(e) }));
+  return fetch('/api/debug/rt-feed').then(r => r.json()).catch(e => ({ error: String(e) }));
 }
 
 // ── Render ─────────────────────────────────────────────────────────
@@ -644,11 +647,6 @@ function makeCard(title) {
   return card;
 }
 
-function updateClock() {
-  document.getElementById('clock').textContent =
-    new Date().toLocaleTimeString('sv-SE');
-}
-
 // ── Main loop ──────────────────────────────────────────────────────
 
 async function refresh() {
@@ -663,8 +661,9 @@ async function refresh() {
 
 document.getElementById('refresh-btn').addEventListener('click', refresh);
 
-setInterval(updateClock, 1000);
-updateClock();
+const clockEl = document.getElementById('clock');
+setInterval(() => updateClock(clockEl), 1000);
+updateClock(clockEl);
 
 refresh();
 _refreshTimer = setInterval(refresh, 10000);

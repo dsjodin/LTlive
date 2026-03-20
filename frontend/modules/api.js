@@ -12,6 +12,11 @@ export async function fetchStatus() {
     return r.json();
 }
 
+export async function fetchStats() {
+    const r = await fetch(`${API_BASE}/stats`);
+    return r.json();
+}
+
 export async function fetchVehicles() {
     const r = await fetch(`${API_BASE}/vehicles`);
     return r.json();
