@@ -19,6 +19,7 @@ import datetime
 import json
 import math
 import os
+import threading
 import time
 import zoneinfo
 from collections import defaultdict, deque
@@ -78,7 +79,6 @@ def _latlon_to_local(lat, lon, ref_lat, ref_lon, cos_ref_lat):
 
 def build_segments():
     """Kick off segment building in a background thread (non-blocking)."""
-    import threading
     threading.Thread(target=_build_segments_worker, daemon=True,
                      name="traffic-build").start()
 
