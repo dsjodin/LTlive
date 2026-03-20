@@ -240,31 +240,39 @@ def _do_build_segments():
 
 
 def _identify_terminals(trips, stops, terminal_positions):
-    """Find first and last stop of each trip from stop_times.txt."""
+    """Find true terminus stops: stops that are first/last in the majority of
+    trips that visit them (filters out regular stops used as short-turn origins)."""
     try:
         from gtfs_loader import _read_csv
-        trip_first = {}  # trip_id -> (min_seq, stop_id)
-        trip_last = {}   # trip_id -> (max_seq, stop_id)
+        trip_first = {}   # trip_id -> (min_seq, stop_id)
+        trip_last  = {}   # trip_id -> (max_seq, stop_id)
+        stop_trips = defaultdict(int)  # stop_id -> total trips visiting it
 
         for row in _read_csv("stop_times.txt"):
             tid = row["trip_id"]
             seq = int(row.get("stop_sequence", 0))
             sid = row["stop_id"]
 
+            stop_trips[sid] += 1
+
             if tid not in trip_first or seq < trip_first[tid][0]:
                 trip_first[tid] = (seq, sid)
             if tid not in trip_last or seq > trip_last[tid][0]:
                 trip_last[tid] = (seq, sid)
 
-        seen_stop_ids = set()
+        # Count how often each stop is a trip endpoint
+        terminal_count = defaultdict(int)
         for mapping in (trip_first, trip_last):
             for _, (_, stop_id) in mapping.items():
-                seen_stop_ids.add(stop_id)
+                terminal_count[stop_id] += 1
 
-        for sid in seen_stop_ids:
-            s = stops.get(sid)
-            if s:
-                terminal_positions.add((s["stop_lat"], s["stop_lon"]))
+        # Only keep stops where >= 80% of visits are as an endpoint
+        for sid, t_count in terminal_count.items():
+            total = stop_trips.get(sid, t_count)
+            if total > 0 and t_count / total >= 0.8:
+                s = stops.get(sid)
+                if s:
+                    terminal_positions.add((s["stop_lat"], s["stop_lon"]))
 
         print(f"Traffic: identified {len(terminal_positions)} terminal positions")
     except Exception as e:
