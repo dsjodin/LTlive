@@ -7,6 +7,12 @@ Pipeline:
   1. build_segments()  — called once after GTFS static loads
   2. process_vehicle_positions()  — called after each RT poll
   3. Results read via traffic_store.segment_states → /api/traffic
+
+Phase 2 additions:
+  - Delay onset detection (from TripUpdates delay growth between stops)
+  - Signal zone filtering (from OSM traffic_signals)
+  - Terminal zone filtering (first/last stop of trips)
+  - Combined evidence scoring
 """
 
 import datetime
@@ -42,13 +48,9 @@ def _haversine(lat1, lon1, lat2, lon2):
 
 
 def _point_to_line_segment(px, py, ax, ay, bx, by):
-    """Project point P onto line segment AB.
-
-    All coordinates are treated as flat (local metres) — the caller must
-    pre-convert lat/lon to a local metric frame.
+    """Project point P onto line segment AB (flat coordinates).
 
     Returns (distance_to_line, fraction_along_AB).
-    fraction 0..1 is within the segment, <0 or >1 is clamped.
     """
     dx, dy = bx - ax, by - ay
     seg_len_sq = dx * dx + dy * dy
@@ -77,8 +79,8 @@ def _latlon_to_local(lat, lon, ref_lat, ref_lon, cos_ref_lat):
 def build_segments():
     """Split every GTFS shape into ~100 m corridor segments.
 
-    Writes results into traffic_store.  Safe to call multiple times
-    (e.g. after a GTFS refresh).
+    Also marks stop zones, signal zones, and terminal zones.
+    Writes results into traffic_store.
     """
     with gtfs_store.lock:
         shapes = dict(gtfs_store.shapes)
@@ -93,8 +95,12 @@ def build_segments():
     for s in stops.values():
         lt = s.get("location_type", 0)
         if lt == 1:
-            continue  # skip parent stations
+            continue
         stop_positions.append((s["stop_lat"], s["stop_lon"]))
+
+    # Build terminal positions (first & last stop of each trip)
+    terminal_positions = set()
+    _identify_terminals(trips, stops, terminal_positions)
 
     # Build route_id -> set of shape_ids
     route_shapes = defaultdict(set)
@@ -130,7 +136,7 @@ def build_segments():
 
         total_length = cumul[-1]
         if total_length < seg_len * 0.5:
-            continue  # shape too short
+            continue
 
         n_segments = max(1, int(total_length / seg_len))
         rids = list(shape_routes.get(shape_id, []))
@@ -139,27 +145,27 @@ def build_segments():
             start_m = seg_idx * seg_len
             end_m = min((seg_idx + 1) * seg_len, total_length)
 
-            # Extract geometry points within this segment range
             seg_coords = _extract_segment_coords(coords, cumul, start_m, end_m)
             if len(seg_coords) < 2:
                 continue
 
             # Check stop zone
-            is_stop_zone = False
-            for slat, slon in stop_positions:
-                for clat, clon in seg_coords:
-                    if _haversine(slat, slon, clat, clon) <= stop_radius:
-                        is_stop_zone = True
-                        break
-                if is_stop_zone:
-                    break
+            is_stop_zone = _check_zone(seg_coords, stop_positions, stop_radius)
+
+            # Check terminal zone (within 60m of a terminal stop)
+            is_terminal = _check_zone(seg_coords, terminal_positions, 60)
+
+            # Check signal zone (filled after OSM fetch)
+            is_signal_zone = False
 
             seg_id = f"{shape_id}_seg_{seg_idx}"
             segments[seg_id] = {
                 "shape_id": shape_id,
                 "route_ids": rids,
-                "geometry": seg_coords,  # [[lat, lon], ...]
+                "geometry": seg_coords,
                 "stop_zone": is_stop_zone,
+                "signal_zone": is_signal_zone,
+                "terminal_zone": is_terminal,
                 "start_m": start_m,
                 "end_m": end_m,
             }
@@ -169,12 +175,62 @@ def build_segments():
         traffic_store.shape_cumul = shape_cumul
         traffic_store.shape_coords = shape_coords_copy
         traffic_store.segment_count = len(segments)
+        traffic_store.terminal_positions = terminal_positions
         traffic_store.built = True
-        # Reset states for new segments
         traffic_store.segment_states = {}
         traffic_store.vehicle_last_pos = {}
+        traffic_store.vehicle_last_delay = {}
+        traffic_store.delay_onset_events = {}
 
-    print(f"Traffic: built {len(segments)} corridor segments from {len(shapes)} shapes")
+    n_stop = sum(1 for s in segments.values() if s["stop_zone"])
+    n_term = sum(1 for s in segments.values() if s["terminal_zone"])
+    print(f"Traffic: built {len(segments)} segments ({n_stop} stop zones, "
+          f"{n_term} terminal zones) from {len(shapes)} shapes")
+
+    # Fetch signal zones in background (non-blocking)
+    import threading
+    threading.Thread(target=_fetch_signal_zones, daemon=True, name="osm-signals").start()
+
+
+def _identify_terminals(trips, stops, terminal_positions):
+    """Find first and last stop of each trip from stop_times.txt."""
+    try:
+        from gtfs_loader import _read_csv
+        trip_first = {}  # trip_id -> (min_seq, stop_id)
+        trip_last = {}   # trip_id -> (max_seq, stop_id)
+
+        for row in _read_csv("stop_times.txt"):
+            tid = row["trip_id"]
+            seq = int(row.get("stop_sequence", 0))
+            sid = row["stop_id"]
+
+            if tid not in trip_first or seq < trip_first[tid][0]:
+                trip_first[tid] = (seq, sid)
+            if tid not in trip_last or seq > trip_last[tid][0]:
+                trip_last[tid] = (seq, sid)
+
+        seen_stop_ids = set()
+        for mapping in (trip_first, trip_last):
+            for _, (_, stop_id) in mapping.items():
+                seen_stop_ids.add(stop_id)
+
+        for sid in seen_stop_ids:
+            s = stops.get(sid)
+            if s:
+                terminal_positions.add((s["stop_lat"], s["stop_lon"]))
+
+        print(f"Traffic: identified {len(terminal_positions)} terminal positions")
+    except Exception as e:
+        print(f"Traffic: could not identify terminals: {e}")
+
+
+def _check_zone(seg_coords, positions, radius_m):
+    """Check if any segment coordinate is within radius of any position."""
+    for slat, slon in positions:
+        for clat, clon in seg_coords:
+            if _haversine(slat, slon, clat, clon) <= radius_m:
+                return True
+    return False
 
 
 def _extract_segment_coords(coords, cumul, start_m, end_m):
@@ -187,9 +243,7 @@ def _extract_segment_coords(coords, cumul, start_m, end_m):
         elif cumul[i] > end_m:
             break
 
-    # Ensure at least start and end interpolated points
     if not result:
-        # Find the segment spanning start_m
         for i in range(1, len(cumul)):
             if cumul[i] >= start_m:
                 frac = (start_m - cumul[i - 1]) / max(cumul[i] - cumul[i - 1], 1e-9)
@@ -209,13 +263,68 @@ def _extract_segment_coords(coords, cumul, start_m, end_m):
 
 
 # ---------------------------------------------------------------------------
+# OSM signal zone fetching
+# ---------------------------------------------------------------------------
+
+_SIGNAL_ZONE_RADIUS_M = 30
+
+
+def _fetch_signal_zones():
+    """Fetch traffic signal positions from OSM Overpass API."""
+    try:
+        import requests
+
+        # Bounding box for Örebro area (with generous margin)
+        lat_c = config.MAP_CENTER_LAT
+        lon_c = config.MAP_CENTER_LON
+        margin = 0.15  # ~15 km
+        bbox = f"{lat_c - margin},{lon_c - margin},{lat_c + margin},{lon_c + margin}"
+
+        query = f'[out:json][timeout:15];node["highway"="traffic_signals"]({bbox});out;'
+        resp = requests.post(
+            "https://overpass-api.de/api/interpreter",
+            data={"data": query},
+            timeout=20,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+
+        signal_zones = []
+        for element in data.get("elements", []):
+            if element.get("type") == "node":
+                signal_zones.append({
+                    "lat": element["lat"],
+                    "lon": element["lon"],
+                    "radius_m": _SIGNAL_ZONE_RADIUS_M,
+                    "source": "osm",
+                })
+
+        # Mark segments that overlap signal zones
+        with traffic_store.lock:
+            traffic_store.signal_zones = signal_zones
+            traffic_store.signal_zone_count = len(signal_zones)
+
+            signal_positions = [(s["lat"], s["lon"]) for s in signal_zones]
+            for seg_id, seg in traffic_store.segments.items():
+                if _check_zone(seg["geometry"], signal_positions, _SIGNAL_ZONE_RADIUS_M):
+                    seg["signal_zone"] = True
+
+        n_signal_segs = sum(1 for s in traffic_store.segments.values() if s.get("signal_zone"))
+        print(f"Traffic: loaded {len(signal_zones)} signal zones from OSM, "
+              f"{n_signal_segs} segments marked")
+
+    except Exception as e:
+        print(f"Traffic: could not fetch OSM signal zones: {e}")
+
+
+# ---------------------------------------------------------------------------
 # GPS → shape projection
 # ---------------------------------------------------------------------------
 
 def _project_to_shape(lat, lon, shape_id, hint_seg_idx=None):
     """Project a GPS point onto a shape.
 
-    Returns (distance_along_shape, segment_index_in_shape) or None.
+    Returns distance_along_shape or None.
     hint_seg_idx narrows the search window for performance.
     """
     coords = traffic_store.shape_coords.get(shape_id)
@@ -231,7 +340,6 @@ def _project_to_shape(lat, lon, shape_id, hint_seg_idx=None):
     best_dist = float("inf")
     best_along = 0.0
 
-    # Determine search range
     if hint_seg_idx is not None:
         lo = max(0, hint_seg_idx - 5)
         hi = min(len(coords) - 1, hint_seg_idx + 6)
@@ -247,7 +355,6 @@ def _project_to_shape(lat, lon, shape_id, hint_seg_idx=None):
             best_dist = dist
             best_along = cumul[i] + frac * (cumul[i + 1] - cumul[i])
 
-    # Reject if too far from shape (> 100m likely means wrong shape)
     if best_dist > 100:
         return None
 
@@ -265,7 +372,7 @@ def _distance_to_segment_id(shape_id, distance_along):
 
 
 # ---------------------------------------------------------------------------
-# Vehicle position processing
+# Vehicle position processing (main pipeline)
 # ---------------------------------------------------------------------------
 
 def process_vehicle_positions(vehicles, vehicle_trips):
@@ -284,10 +391,13 @@ def process_vehicle_positions(vehicles, vehicle_trips):
 
     with traffic_store.lock:
         last_pos = traffic_store.vehicle_last_pos
+        last_delay = traffic_store.vehicle_last_delay
         states = traffic_store.segment_states
         segments = traffic_store.segments
+        delay_events = traffic_store.delay_onset_events
 
     new_observations = []  # (segment_id, vehicle_id, route_id, speed_kmh, timestamp)
+    new_delay_onsets = []  # (segment_id, vehicle_id, delta_delay, timestamp)
 
     for v in vehicles:
         vid = v.get("vehicle_id", "")
@@ -296,11 +406,11 @@ def process_vehicle_positions(vehicles, vehicle_trips):
         lat = v.get("lat")
         lon = v.get("lon")
         ts = v.get("timestamp", 0)
+        delay_sec = v.get("delay_seconds")
 
         if not vid or not trip_id or not lat or not lon or not ts:
             continue
 
-        # Look up shape_id from trip
         trip = trips.get(trip_id)
         if not trip:
             continue
@@ -312,7 +422,6 @@ def process_vehicle_positions(vehicles, vehicle_trips):
         prev = last_pos.get(vid)
         hint = None
         if prev and prev.get("shape_id") == shape_id:
-            # Estimate segment index from previous distance
             hint = int(prev.get("distance_along", 0) / max(config.TRAFFIC_SEGMENT_LENGTH_M, 1))
 
         result = _project_to_shape(lat, lon, shape_id, hint_seg_idx=hint)
@@ -322,17 +431,25 @@ def process_vehicle_positions(vehicles, vehicle_trips):
         distance_along = result
         seg_id = _distance_to_segment_id(shape_id, distance_along)
 
-        # Calculate speed from previous position
+        # Speed from consecutive positions
         if prev and prev.get("shape_id") == shape_id and prev.get("timestamp", 0) > 0:
             dt = ts - prev["timestamp"]
-            if 1 <= dt <= 300:  # 1s to 5min — reasonable interval
+            if 1 <= dt <= 300:
                 dd = abs(distance_along - prev["distance_along"])
                 speed_ms = dd / dt
                 speed_kmh = speed_ms * 3.6
 
-                # Sanity check: ignore unreasonable speeds (> 120 km/h for a bus)
                 if 0 <= speed_kmh <= 120 and seg_id:
                     new_observations.append((seg_id, vid, route_id, speed_kmh, ts))
+
+        # Delay onset detection
+        if delay_sec is not None and seg_id:
+            prev_delay = last_delay.get(vid)
+            if prev_delay is not None:
+                delta = delay_sec - prev_delay
+                if delta >= 60:  # 60s delay growth → delay onset
+                    new_delay_onsets.append((seg_id, vid, delta, ts))
+            last_delay[vid] = delay_sec
 
         # Update last position
         last_pos[vid] = {
@@ -347,8 +464,9 @@ def process_vehicle_positions(vehicles, vehicle_trips):
     # Apply observations and recalculate states
     with traffic_store.lock:
         traffic_store.vehicle_last_pos = last_pos
+        traffic_store.vehicle_last_delay = last_delay
 
-        # Add new observations
+        # Add speed observations
         for seg_id, vid, rid, speed, ts in new_observations:
             if seg_id not in states:
                 states[seg_id] = {"observations": deque(maxlen=200)}
@@ -358,32 +476,53 @@ def process_vehicle_positions(vehicles, vehicle_trips):
                 "speed_kmh": speed,
                 "timestamp": ts,
             })
-
-            # Update baseline
             _update_baseline(seg_id, speed, ts)
 
-        # Recalculate segment states
+        # Add delay onset events
+        for seg_id, vid, delta, ts in new_delay_onsets:
+            if seg_id not in delay_events:
+                delay_events[seg_id] = deque(maxlen=50)
+            delay_events[seg_id].append({
+                "vehicle_id": vid,
+                "delta_delay": delta,
+                "timestamp": ts,
+            })
+
+        # Recalculate all segment states
         cutoff = now - window
         for seg_id in list(states.keys()):
             obs_deque = states[seg_id].get("observations")
             if not obs_deque:
                 continue
 
-            # Purge old observations
             while obs_deque and obs_deque[0]["timestamp"] < cutoff:
                 obs_deque.popleft()
+
+            # Also purge old delay events
+            d_events = delay_events.get(seg_id)
+            if d_events:
+                while d_events and d_events[0]["timestamp"] < cutoff:
+                    d_events.popleft()
 
             if not obs_deque:
                 states[seg_id] = {"observations": obs_deque}
                 continue
 
-            _recalculate_segment(seg_id, obs_deque, segments.get(seg_id), states)
+            _recalculate_segment(seg_id, obs_deque,
+                                 segments.get(seg_id),
+                                 delay_events.get(seg_id),
+                                 states)
 
         traffic_store.segment_states = states
+        traffic_store.delay_onset_events = delay_events
 
 
-def _recalculate_segment(seg_id, observations, segment_info, states):
-    """Recalculate severity/confidence for one segment from its observations."""
+# ---------------------------------------------------------------------------
+# Segment state calculation with combined evidence
+# ---------------------------------------------------------------------------
+
+def _recalculate_segment(seg_id, observations, segment_info, delay_onsets, states):
+    """Recalculate severity/confidence for one segment using combined evidence."""
     speeds = [o["speed_kmh"] for o in observations]
     vehicle_ids = {o["vehicle_id"] for o in observations}
     route_ids = {o["route_id"] for o in observations if o.get("route_id")}
@@ -392,17 +531,20 @@ def _recalculate_segment(seg_id, observations, segment_info, states):
     n_vehicles = len(vehicle_ids)
     n_routes = len(route_ids)
 
+    # Count delay onset events
+    delay_onset_count = 0
+    if delay_onsets:
+        delay_onset_count = len(delay_onsets)
+
     # Get baseline
     expected = _get_baseline_speed(seg_id)
     if expected and expected > 0:
         ratio = med_speed / expected
     else:
-        # No baseline: use absolute thresholds
-        # Normal urban bus speed ~20-35 km/h
         expected = 30.0
         ratio = med_speed / expected
 
-    # Classify severity
+    # --- Severity classification ---
     if ratio >= 0.85:
         severity = "none"
     elif ratio >= 0.65:
@@ -412,7 +554,8 @@ def _recalculate_segment(seg_id, observations, segment_info, states):
     else:
         severity = "high"
 
-    # Confidence based on evidence strength
+    # --- Combined confidence scoring ---
+    # Base confidence from vehicle/route count
     min_v = config.TRAFFIC_MIN_VEHICLES
     min_r = config.TRAFFIC_MIN_ROUTES
 
@@ -423,9 +566,36 @@ def _recalculate_segment(seg_id, observations, segment_info, states):
     else:
         confidence = 0.1
 
-    # Stop-zone penalty
-    if segment_info and segment_info.get("stop_zone"):
+    # Boost from delay onset evidence
+    if delay_onset_count >= 2:
+        confidence = min(1.0, confidence + 0.2)
+    elif delay_onset_count >= 1:
+        confidence = min(1.0, confidence + 0.1)
+
+    # Boost from low speed ratio (stronger slowdown = more likely real)
+    if ratio < 0.3 and n_vehicles >= 2:
+        confidence = min(1.0, confidence + 0.1)
+
+    # --- False positive penalties ---
+    is_stop = segment_info and segment_info.get("stop_zone", False)
+    is_signal = segment_info and segment_info.get("signal_zone", False)
+    is_terminal = segment_info and segment_info.get("terminal_zone", False)
+
+    # Terminal zones: strong penalty, likely layover/turnaround
+    if is_terminal:
+        confidence *= 0.15
+
+    # Stop zones: penalty (boarding/alighting, not traffic)
+    if is_stop:
         confidence *= 0.3
+
+    # Signal zones: moderate penalty (short stops expected)
+    if is_signal and not is_stop:
+        confidence *= 0.4
+
+    # Single vehicle: cap severity at "low" regardless
+    if n_vehicles < 2 and severity in ("medium", "high"):
+        severity = "low"
 
     states[seg_id] = {
         "observations": observations,
@@ -436,6 +606,7 @@ def _recalculate_segment(seg_id, observations, segment_info, states):
         "speed_ratio": round(ratio, 2),
         "affected_vehicles": n_vehicles,
         "unique_routes": n_routes,
+        "delay_onset_count": delay_onset_count,
     }
 
 

@@ -1349,3 +1349,39 @@ body.stop-open #map { bottom: calc(52vh + var(--ticker-h)); }
     transition: color 0.15s;
 }
 .saved-trip-remove:hover { color: #f44336; }
+
+/* ===== Traffic inference legend ===== */
+#traffic-legend {
+    display: none;
+    position: absolute;
+    bottom: 28px;
+    right: 10px;
+    z-index: 1000;
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px 12px;
+    font-size: 0.75em;
+    color: var(--fg);
+    pointer-events: none;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+}
+#traffic-legend.visible { display: block; }
+#traffic-legend .tl-title {
+    font-weight: 700;
+    margin-bottom: 6px;
+    font-size: 0.85em;
+    opacity: 0.8;
+}
+#traffic-legend .tl-row {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    margin-bottom: 3px;
+}
+#traffic-legend .tl-swatch {
+    width: 22px;
+    height: 5px;
+    border-radius: 3px;
+    flex-shrink: 0;
+}

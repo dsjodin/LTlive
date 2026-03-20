@@ -310,7 +310,9 @@ def poll_realtime(push_alerts_callback=None) -> None:
     if config.TRAFFIC_ENABLED:
         try:
             from traffic_inference import process_vehicle_positions
+            from tasks.sse_tasks import push_traffic_update
             process_vehicle_positions(vehicles, vehicle_trips)
+            push_traffic_update()
         except Exception as e:
             print(f"Traffic inference error: {e}")
 

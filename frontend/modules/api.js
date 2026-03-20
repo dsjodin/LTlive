@@ -135,9 +135,10 @@ export async function fetchWeather() {
  * @param {() => void}                  onError          Connection dropped.
  * @param {() => void}                  onOpen           Connection (re)opened.
  * @param {(data: object) => void}      [onVehiclesDelta] Incremental update event.
+ * @param {(data: object) => void}      [onTraffic]      Traffic inference GeoJSON event.
  * @returns {EventSource}
  */
-export function connectSSE(onVehicles, onAlerts, onError, onOpen, onVehiclesDelta) {
+export function connectSSE(onVehicles, onAlerts, onError, onOpen, onVehiclesDelta, onTraffic) {
     const source = new EventSource(`${API_BASE}/stream`);
     source.addEventListener("vehicles", (e) => {
         try { onVehicles(JSON.parse(e.data)); }
@@ -151,6 +152,12 @@ export function connectSSE(onVehicles, onAlerts, onError, onOpen, onVehiclesDelt
         source.addEventListener("vehicles_delta", (e) => {
             try { onVehiclesDelta(JSON.parse(e.data)); }
             catch (err) { console.error("SSE vehicles_delta parse error:", err); }
+        });
+    }
+    if (onTraffic) {
+        source.addEventListener("traffic", (e) => {
+            try { onTraffic(JSON.parse(e.data)); }
+            catch (err) { console.error("SSE traffic parse error:", err); }
         });
     }
     if (onError) source.onerror = onError;

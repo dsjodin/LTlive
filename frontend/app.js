@@ -1669,6 +1669,7 @@ function initTrafficLayer() {
     document.getElementById("traffic-btn").addEventListener("click", () => {
         showTraffic = !showTraffic;
         document.getElementById("traffic-btn").classList.toggle("active", showTraffic);
+        document.getElementById("traffic-legend").classList.toggle("visible", showTraffic);
         if (showTraffic) {
             pollTraffic();
             _trafficTimer = setInterval(pollTraffic, 30000);
@@ -2130,6 +2131,10 @@ function initSSE() {
             (data.updated || []).forEach(v => { if (v.vehicle_id) _vehicleState.set(v.vehicle_id, v); });
             (data.removed || []).forEach(id => _vehicleState.delete(id));
             updateVehicles(Array.from(_vehicleState.values()));
+        },
+        // onTraffic — traffic inference GeoJSON pushed from backend after each RT poll
+        (data) => {
+            if (showTraffic) renderTrafficLayer(data);
         },
     );
 }

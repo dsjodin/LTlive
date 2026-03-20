@@ -36,7 +36,6 @@ def get_traffic():
             if state.get("confidence", 0) < min_confidence:
                 continue
 
-            # Build GeoJSON coordinates [lng, lat]
             coords = [[pt[1], pt[0]] for pt in seg["geometry"]]
             if len(coords) < 2:
                 continue
@@ -56,7 +55,10 @@ def get_traffic():
                     "speed_ratio": state.get("speed_ratio"),
                     "affected_vehicles": state.get("affected_vehicles", 0),
                     "unique_routes": state.get("unique_routes", 0),
+                    "delay_onset_count": state.get("delay_onset_count", 0),
                     "stop_zone": seg.get("stop_zone", False),
+                    "signal_zone": seg.get("signal_zone", False),
+                    "terminal_zone": seg.get("terminal_zone", False),
                 },
             })
 
@@ -65,6 +67,24 @@ def get_traffic():
         "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "features": features,
         "count": len(features),
+    })
+
+
+@bp.route("/api/traffic/summary")
+def get_traffic_summary():
+    """Return summary statistics for the traffic layer."""
+    with traffic_store.lock:
+        severity_counts = {"none": 0, "low": 0, "medium": 0, "high": 0}
+        for s in traffic_store.segment_states.values():
+            sev = s.get("severity", "none")
+            if sev in severity_counts:
+                severity_counts[sev] += 1
+
+    return jsonify({
+        "total_segments": traffic_store.segment_count,
+        "signal_zones": traffic_store.signal_zone_count,
+        "severity": severity_counts,
+        "active": severity_counts["low"] + severity_counts["medium"] + severity_counts["high"],
     })
 
 
@@ -82,11 +102,19 @@ def get_traffic_debug():
         )
         n_vehicles_tracked = len(traffic_store.vehicle_last_pos)
         n_baseline = len(traffic_store.baseline_speeds)
+        n_signals = traffic_store.signal_zone_count
+        n_terminals = len(traffic_store.terminal_positions)
 
         severity_counts = {"none": 0, "low": 0, "medium": 0, "high": 0}
+        total_delay_onsets = 0
         for s in traffic_store.segment_states.values():
             sev = s.get("severity", "none")
             severity_counts[sev] = severity_counts.get(sev, 0) + 1
+            total_delay_onsets += s.get("delay_onset_count", 0)
+
+        n_stop_zones = sum(1 for s in traffic_store.segments.values() if s.get("stop_zone"))
+        n_signal_zones = sum(1 for s in traffic_store.segments.values() if s.get("signal_zone"))
+        n_terminal_zones = sum(1 for s in traffic_store.segments.values() if s.get("terminal_zone"))
 
     return jsonify({
         "built": traffic_store.built,
@@ -96,4 +124,12 @@ def get_traffic_debug():
         "vehicles_tracked": n_vehicles_tracked,
         "baseline_entries": n_baseline,
         "severity_distribution": severity_counts,
+        "zones": {
+            "stop_zone_segments": n_stop_zones,
+            "signal_zone_segments": n_signal_zones,
+            "terminal_zone_segments": n_terminal_zones,
+            "osm_signal_points": n_signals,
+            "terminal_stops": n_terminals,
+        },
+        "delay_onsets_in_window": total_delay_onsets,
     })
