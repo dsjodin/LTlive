@@ -22,16 +22,43 @@ const SMHI_ICONS = {
     26:'❄️', 27:'❄️',
 };
 
+let _lastWeather = null;
+
 async function updateWeather() {
     try {
         const w = await fetchWeather();
+        _lastWeather = w;
         document.getElementById('weather-temp').textContent =
             w.temp != null ? `${Math.round(w.temp)}°` : '--°';
         document.getElementById('weather-icon').textContent =
             SMHI_ICONS[w.symbol] ?? '🌡️';
+        // Update expanded details
+        const wpTemp = document.getElementById('wp-temp');
+        const wpWind = document.getElementById('wp-wind');
+        const wpTime = document.getElementById('wp-time');
+        if (wpTemp) wpTemp.textContent = w.temp != null ? `${w.temp}°C` : '--';
+        if (wpWind) wpWind.textContent = w.wind != null ? `${w.wind} m/s` : '--';
+        if (wpTime && w.valid_time) {
+            wpTime.textContent = new Date(w.valid_time).toLocaleTimeString("sv-SE", {hour:"2-digit", minute:"2-digit"});
+        }
     } catch (e) {
         console.warn('Weather update failed:', e);
     }
+}
+
+function initWeatherWidget() {
+    const widget = document.getElementById("weather-widget");
+    if (!widget) return;
+    widget.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const popup = document.getElementById("weather-popup");
+        if (popup) popup.classList.toggle("visible");
+    });
+    // Close popup when clicking elsewhere
+    document.addEventListener("click", () => {
+        const popup = document.getElementById("weather-popup");
+        if (popup) popup.classList.remove("visible");
+    });
 }
 
 let POLL_INTERVAL = 5000;        // default, overridden by backend config via /api/status
@@ -765,7 +792,19 @@ function showStopDepartures(stop, marker) {
         });
 }
 
+// --- Panel stack management ---
+// Close all side panels except the one being opened, preventing overlap.
+function closeAllPanels(except) {
+    if (except !== "stop")      closeStopPanel();
+    if (except !== "line")      closeLinePanel();
+    if (except !== "nearby")    closeNearbyPanel();
+    if (except !== "dashboard") closeDashboardPanel();
+    if (except !== "favorites") closeFavoritesPanel();
+    if (except !== "delays")    closeDelaysPanel();
+}
+
 function openStopPanel(stop) {
+    closeAllPanels("stop");
     const panel = document.getElementById("stop-panel");
     const title = document.getElementById("stop-panel-title");
     const actions = document.getElementById("stop-panel-actions");
@@ -979,6 +1018,7 @@ function fetchSavedTripDepartures() {
 }
 
 function openFavoritesPanel() {
+    closeAllPanels("favorites");
     renderFavoritesPanel();
     document.getElementById("favorites-panel").classList.add("open");
     clearInterval(favoritesTimer);
@@ -1352,6 +1392,8 @@ function buildLineButtons(routes) {
                 );
             }
 
+            renderFilterChips();
+
             if (showRoutes) {
                 Object.values(routeLayers).forEach((l) => map.removeLayer(l));
                 toggleRouteShapes(true);
@@ -1365,6 +1407,56 @@ function buildLineButtons(routes) {
         });
 
         container.appendChild(btn);
+    });
+}
+
+// --- Active filter chips (visual indicator above the map) ---
+function renderFilterChips() {
+    const container = document.getElementById("filter-chips");
+    if (!container) return;
+    if (activeFilters.size === 0) {
+        container.innerHTML = "";
+        container.classList.remove("visible");
+        return;
+    }
+    let html = "";
+    activeFilters.forEach(routeId => {
+        const route = routeData[routeId];
+        if (!route) return;
+        const color = getRouteColor(route);
+        const textColor = getRouteTextColor(route);
+        const name = route.route_short_name || routeId;
+        html += `<button class="filter-chip" data-route-id="${routeId}" data-bg="${color}" data-fg="${textColor}">${name} ✕</button>`;
+    });
+    html += `<button class="filter-chip filter-chip-clear">Rensa alla</button>`;
+    container.innerHTML = html;
+    applyBadgeColors(container);
+    container.classList.add("visible");
+
+    container.querySelectorAll(".filter-chip[data-route-id]").forEach(btn => {
+        btn.addEventListener("click", () => {
+            activeFilters.delete(btn.dataset.routeId);
+            document.querySelectorAll(".line-btn").forEach(b => {
+                if (activeFilters.size === 0) b.classList.remove("inactive");
+            });
+            renderFilterChips();
+            if (showRoutes) {
+                Object.values(routeLayers).forEach(l => map.removeLayer(l));
+                toggleRouteShapes(true);
+            }
+        });
+    });
+    container.querySelector(".filter-chip-clear")?.addEventListener("click", () => {
+        activeFilters.clear();
+        document.querySelectorAll(".line-btn").forEach(b => {
+            b.classList.remove("inactive");
+            b.classList.remove("panel-active");
+        });
+        renderFilterChips();
+        if (showRoutes) {
+            Object.values(routeLayers).forEach(l => map.removeLayer(l));
+            toggleRouteShapes(true);
+        }
     });
 }
 
@@ -1396,6 +1488,7 @@ function initTypeFilterButtons() {
 
 // --- Line departure panel ---
 function openLinePanel(route) {
+    closeAllPanels("line");
     activePanelRouteId = route.route_id;
 
     const color = getRouteColor(route);
@@ -1430,6 +1523,7 @@ function openLinePanel(route) {
 function closeLinePanel() {
     activePanelRouteId = null;
     activeFilters.clear();
+    renderFilterChips();
     document.getElementById("line-panel").classList.remove("open");
     document.body.classList.remove("panel-open");
     document.querySelectorAll(".line-btn").forEach(b => {
@@ -1605,6 +1699,7 @@ function buildDelaysTable() {
 }
 
 function openDelaysPanel() {
+    closeAllPanels("delays");
     buildDelaysTable();
     document.getElementById("delays-overlay").classList.add("open");
 }
@@ -1736,6 +1831,7 @@ function initTrafficLayer() {
 }
 
 function openDashboardPanel() {
+    closeAllPanels("dashboard");
     updateDashboardAlerts(_dashAlerts);
     renderDashboardFavorites();
     document.getElementById("dashboard-panel").classList.add("open");
@@ -1994,6 +2090,7 @@ function onPosition(pos) {
 }
 
 function openNearbyPanel() {
+    closeAllPanels("nearby");
     nearbyPanelOpen = true;
     document.getElementById("nearby-panel").classList.add("open");
     document.body.classList.add("nearby-open");
@@ -2141,6 +2238,24 @@ document.getElementById("toggle-darkmode").addEventListener("change", (e) => {
 
 }
 
+// --- SSE connection status indicator ---
+function setSseStatus(state) {
+    const el = document.getElementById("sse-status");
+    if (!el) return;
+    const dot = el.querySelector(".sse-dot");
+    const text = el.querySelector(".sse-text");
+    el.className = "sse-status sse-" + state;
+    if (state === "live") {
+        text.textContent = "Live";
+    } else if (state === "polling") {
+        text.textContent = `Polling ${Math.round(POLL_INTERVAL / 1000)}s`;
+    } else if (state === "error") {
+        text.textContent = "Offline";
+    } else {
+        text.textContent = "Ansluter";
+    }
+}
+
 // Delta-SSE state: accumulated vehicle map, used to merge incremental updates.
 let _vehicleState = new Map();    // vehicle_id -> vehicle object
 let _deltaReady   = false;         // true after first full vehicles sync
@@ -2156,10 +2271,13 @@ function initSSE() {
         if (sseFallbackTimer) { clearInterval(sseFallbackTimer); sseFallbackTimer = null; }
     }
 
+    setSseStatus("connecting");
+
     sseSource = connectSSE(
         // onVehicles — full list; used for initial sync and reconnect resets
         (data) => {
             cancelFallback();
+            setSseStatus("live");
             _vehicleState.clear();
             (data.vehicles || []).forEach(v => { if (v.vehicle_id) _vehicleState.set(v.vehicle_id, v); });
             updateVehicles(data.vehicles);
@@ -2171,12 +2289,14 @@ function initSSE() {
         () => {
             if (!sseFallbackTimer) {
                 console.warn("SSE unavailable, falling back to polling");
+                setSseStatus("polling");
                 sseFallbackTimer = setInterval(pollVehicles, POLL_INTERVAL);
             }
         },
         // onOpen — (re)connected; reset delta so next vehicles event re-syncs
         () => {
             cancelFallback();
+            setSseStatus("live");
             _deltaReady = false;
         },
         // onVehiclesDelta — incremental update (fires only when something changed)
@@ -2237,6 +2357,7 @@ async function init() {
     setInterval(pollAlerts, 30000);
     setInterval(pollStopDepartures, 60000);
 
+    initWeatherWidget();
     updateWeather();
     setInterval(updateWeather, 10 * 60 * 1000);
 

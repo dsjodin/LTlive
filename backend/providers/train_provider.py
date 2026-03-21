@@ -139,7 +139,7 @@ def poll_trafikverket() -> None:
         messages = tv_api.fetch_station_messages(loc_sigs)
         with train_store.lock:
             if announcements:
-                train_store.announcements = announcements
+                train_store.update_announcements(announcements)
             train_store.messages   = messages
             train_store.last_error = None
         # Announcement updates affect departure boards only.
