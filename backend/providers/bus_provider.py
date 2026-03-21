@@ -311,6 +311,15 @@ def poll_realtime(push_alerts_callback=None) -> None:
     api_cache.invalidate("next_dep")
     api_cache.invalidate_prefix("dep")
 
+    # Record delay observations for analytics
+    try:
+        import analytics
+        with gtfs_store.lock:
+            routes_snapshot = dict(gtfs_store.routes)
+        analytics.record_delay_snapshot(vehicles, routes_snapshot)
+    except Exception as e:
+        print(f"Analytics recording error: {e}")
+
     if config.TRAFFIC_ENABLED:
         try:
             from traffic_inference import process_vehicle_positions

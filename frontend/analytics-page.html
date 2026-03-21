@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Trafikanalys – LTlive</title>
+    <link rel="stylesheet" href="analytics-page.css" />
+</head>
+<body>
+
+<div id="topbar">
+    <div>
+        <span class="topbar-brand">LTlive<span>Trafikanalys</span></span>
+    </div>
+    <nav class="topbar-nav">
+        <a href="/" class="nav-link">Karta</a>
+        <a href="/dashboard.html" class="nav-link">Dashboard</a>
+        <a href="/analytics-page.html" class="nav-link active">Analys</a>
+        <a href="/stats.html" class="nav-link">Besök</a>
+    </nav>
+    <div id="period-selector">
+        <button class="period-btn active" data-days="1">24h</button>
+        <button class="period-btn" data-days="3">3d</button>
+        <button class="period-btn" data-days="7">7d</button>
+        <button class="period-btn" data-days="14">14d</button>
+        <button class="period-btn" data-days="30">30d</button>
+    </div>
+</div>
+
+<div id="grid">
+
+    <!-- Punctuality section -->
+    <div class="card card-full">
+        <div class="card-title">Punktlighet per linje <span class="card-sub" id="punct-period">senaste 7 dagar</span></div>
+        <div class="card-desc">Andel avgångar inom 1 minut av tidtabell. Baserat på GTFS-RT delay-data.</div>
+        <div id="punctuality-grid" class="punct-grid">
+            <div class="loading">Samlar in data...</div>
+        </div>
+    </div>
+
+    <!-- Delay trends chart -->
+    <div class="card card-full">
+        <div class="card-title">Förseningstrender <span class="card-sub" id="trend-period">senaste 7 dagar</span></div>
+        <div class="card-desc">Genomsnittlig försening per timme, per linje.</div>
+        <div id="trend-filters" class="trend-filters"></div>
+        <div id="trend-chart" class="trend-chart">
+            <div class="loading">Samlar in data...</div>
+        </div>
+        <div id="trend-legend" class="trend-legend"></div>
+    </div>
+
+    <!-- Peak hours heatmap -->
+    <div class="card card-full">
+        <div class="card-title">Rusningstider <span class="card-sub" id="peak-period">senaste 7 dagar</span></div>
+        <div class="card-desc">Genomsnittligt antal aktiva fordon per timme och veckodag.</div>
+        <div id="heatmap" class="heatmap-container">
+            <div class="loading">Samlar in data...</div>
+        </div>
+        <div id="heatmap-legend" class="heatmap-legend"></div>
+    </div>
+
+</div>
+
+<script type="module" src="analytics-page.js"></script>
+<script src="analytics.js"></script>
+</body>
+</html>
