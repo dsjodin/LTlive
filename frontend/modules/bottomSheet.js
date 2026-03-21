@@ -45,8 +45,13 @@ export default class BottomSheet {
 
         // Observe panel open/close via MutationObserver
         this._observer = new MutationObserver(() => {
-            if (this.panel.classList.contains("open") && this._mql.matches) {
+            if (!this._mql.matches) return;
+            if (this.panel.classList.contains("open")) {
                 this._snapTo(this.initialSnap, false);
+            } else {
+                // Panel was closed externally (e.g. close button) — clear inline transform
+                this.panel.style.transform = "";
+                document.documentElement.style.setProperty("--panel-visible-h", "0vh");
             }
         });
         this._observer.observe(this.panel, { attributes: true, attributeFilter: ["class"] });
