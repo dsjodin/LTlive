@@ -64,12 +64,15 @@ Datakällor: Trafiklab GTFS-RT | Trafikverket API | Oxyfi WebSocket
 
 ### Prioritet 3 — Medellång sikt
 
-- [ ] **Bryt ner `traffic_inference.py`** (27K rader → moduler: corridors, segments, osm_parser, baseline)
+- [ ] **Refaktorera `departures.py`** (596 rader med duplicerad TV-matchningslogik)
 - [ ] **API-versioning** (`/api/v1/` prefix)
+- [ ] **Ersätt `window._` callbacks** i `app.js` med event bus-modul
 - [ ] **State management**: Pub/sub i `state.js` istället för direkt mutation
 - [ ] **Tillgänglighet (a11y)**: ARIA-labels, keyboard-navigering, kontrastförbättringar
 - [ ] **CSS-uppdelning**: `style.css` (1886 rader) → komponent-specifika filer
-- [ ] **Strukturerad loggning**: `structlog` + Prometheus metrics
+- [ ] **Strukturerad loggning**: Ersätt ~30 `print()` med `logging`-modul
+- [ ] **Frontend felhantering**: `api.js` kollar inte `response.ok` före `.json()`
+- [ ] **Förbättra `/api/health`**: Inkludera RT poll-ålder, Oxyfi-status, GTFS-ålder
 
 ### Prioritet 4 — Feature-möjligheter
 
@@ -97,7 +100,7 @@ Datakällor: Trafiklab GTFS-RT | Trafikverket API | Oxyfi WebSocket
 |---|--------|--------|--------|
 | 1 | Rensa `store.py` legacy | Låg-Med | Medium |
 | 2 | CI/CD pipeline | Medium | Hög |
-| 3 | Bryt ner `traffic_inference.py` | Hög | Hög |
+| 3 | Refaktorera `departures.py` | Medium | Medium |
 | 4 | Frontend ESLint | Låg | Medium |
 | 5 | Lokal Leaflet-fallback | Låg | Medium |
 | 6 | a11y-förbättringar | Medium | Medium |
