@@ -1073,6 +1073,8 @@ body.panel-open #map {
 }
 .dash-no-fav { font-size: 0.82em; color: var(--muted); }
 .light-mode #dashboard-panel { background: rgba(242, 242, 247, 0.97); }
+.light-mode #stop-panel { background: rgba(242, 242, 247, 0.97); }
+.light-mode #stop-panel-body { scrollbar-color: rgba(0,0,0,0.15) transparent; }
 
 /* ===== Delays overlay ===== */
 #delays-overlay {
