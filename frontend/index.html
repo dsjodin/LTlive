@@ -2,7 +2,7 @@
 <html lang="sv">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>LTlive - Bussar och tåg i Örebro</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
           integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
@@ -19,28 +19,53 @@
             </div>
 
             <div class="topbar-controls" id="topbar-controls">
-                <label class="ctrl-pill" for="toggle-stops" title="Visa hållplatser">
-                    <input type="checkbox" id="toggle-stops" checked />
-                    <span>Hållplatser</span>
-                </label>
-                <label class="ctrl-pill" for="toggle-routes" title="Visa linjesträckningar">
-                    <input type="checkbox" id="toggle-routes" checked />
-                    <span>Linjer</span>
-                </label>
-                <label class="ctrl-pill" for="toggle-labels" title="Visa linjenummer">
-                    <input type="checkbox" id="toggle-labels" checked />
-                    <span>Nummer</span>
-                </label>
-<label class="ctrl-pill" for="toggle-darkmode" title="Mörkt tema">
-                    <input type="checkbox" id="toggle-darkmode" />
-                    <span>Mörkt</span>
-                </label>
-                <button id="type-btn-bus" class="type-btn" title="Visa/dölj bussar">Bussar</button>
-                <button id="type-btn-train" class="type-btn" title="Visa/dölj tåg">Tåg</button>
-                <button id="fav-panel-btn" class="type-btn" title="Favorithållplatser">★ Favoriter</button>
-                <button id="traffic-btn" class="type-btn" title="Visa infererad trafikpåverkan">Trafik</button>
-                <button id="delays-btn" class="type-btn" title="Visa mest försenade bussar">Förseningar</button>
-                <button id="dashboard-btn" class="type-btn" title="Dashboard">Dashboard</button>
+                <div class="menu-section">
+                    <div class="menu-section-label">Kartlager</div>
+                    <div class="menu-section-items">
+                        <label class="ctrl-pill" for="toggle-stops" title="Visa hållplatser">
+                            <input type="checkbox" id="toggle-stops" checked />
+                            <span>Hållplatser</span>
+                        </label>
+                        <label class="ctrl-pill" for="toggle-routes" title="Visa linjesträckningar">
+                            <input type="checkbox" id="toggle-routes" checked />
+                            <span>Linjer</span>
+                        </label>
+                        <label class="ctrl-pill" for="toggle-labels" title="Visa linjenummer">
+                            <input type="checkbox" id="toggle-labels" checked />
+                            <span>Nummer</span>
+                        </label>
+                    </div>
+                </div>
+                <div class="menu-section">
+                    <div class="menu-section-label">Filter</div>
+                    <div class="menu-section-items">
+                        <button id="type-btn-bus" class="type-btn" title="Visa/dölj bussar">Bussar</button>
+                        <button id="type-btn-train" class="type-btn" title="Visa/dölj tåg">Tåg</button>
+                    </div>
+                </div>
+                <div class="menu-section">
+                    <div class="menu-section-label">Paneler</div>
+                    <div class="menu-section-items">
+                        <button id="fav-panel-btn" class="type-btn" title="Favorithållplatser">★ Favoriter</button>
+                        <button id="traffic-btn" class="type-btn" title="Visa infererad trafikpåverkan">Trafik</button>
+                        <button id="delays-btn" class="type-btn" title="Visa mest försenade bussar">Förseningar</button>
+                        <button id="dashboard-btn" class="type-btn" title="Dashboard">Dashboard</button>
+                    </div>
+                </div>
+                <div class="menu-section">
+                    <div class="menu-section-label">Utseende</div>
+                    <div class="menu-section-items">
+                        <label class="ctrl-pill" for="toggle-darkmode" title="Mörkt tema">
+                            <input type="checkbox" id="toggle-darkmode" />
+                            <span>Mörkt</span>
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            <div class="mobile-search" id="mobile-search">
+                <input type="text" id="mobile-search-input" placeholder="Sök hållplats..." autocomplete="off" />
+                <div id="mobile-search-results" class="search-results"></div>
             </div>
 
             <div class="topbar-stats">
@@ -117,6 +142,7 @@
 
     <!-- ===== Line departure panel ===== -->
     <div id="line-panel">
+        <div class="drag-handle"></div>
         <div id="line-panel-header">
             <div id="line-panel-title"></div>
             <button id="line-panel-close" aria-label="Stäng">&#x2715;</button>
@@ -128,6 +154,7 @@
 
     <!-- ===== Nearby stops panel ===== -->
     <div id="nearby-panel">
+        <div class="drag-handle"></div>
         <div id="nearby-panel-header">
             <div id="nearby-panel-title">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>
@@ -140,6 +167,7 @@
 
     <!-- ===== Dashboard panel ===== -->
     <div id="dashboard-panel">
+        <div class="drag-handle"></div>
         <div id="dashboard-panel-header">
             <div id="dashboard-panel-title">Dashboard</div>
             <button id="dashboard-panel-close" aria-label="Stäng">&#x2715;</button>
@@ -197,6 +225,7 @@
 
     <!-- ===== Favorites panel ===== -->
     <div id="favorites-panel">
+        <div class="drag-handle"></div>
         <div id="favorites-panel-header">
             <div id="favorites-panel-title">★ Mina platser</div>
             <button id="favorites-panel-close" aria-label="Stäng">&#x2715;</button>
@@ -206,6 +235,7 @@
 
     <!-- ===== Stop departure panel (mobile bottom sheet) ===== -->
     <div id="stop-panel">
+        <div class="drag-handle"></div>
         <div id="stop-panel-header">
             <div id="stop-panel-title"></div>
             <div id="stop-panel-actions"></div>

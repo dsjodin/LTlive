@@ -7,9 +7,14 @@
 :root {
     --topbar-h1: 48px;
     --topbar-h2: 36px;
-    --topbar-h: calc(var(--topbar-h1) + var(--topbar-h2));
+    --safe-top: env(safe-area-inset-top, 0px);
+    --safe-bottom: env(safe-area-inset-bottom, 0px);
+    --safe-left: env(safe-area-inset-left, 0px);
+    --safe-right: env(safe-area-inset-right, 0px);
+    --topbar-h: calc(var(--topbar-h1) + var(--topbar-h2) + var(--safe-top));
     --ticker-h: 0px;
     --panel-w: 290px;
+    --panel-visible-h: 50vh;
     --bg: #1c1c1e;
     --bg2: rgba(255,255,255,0.08);
     --text: #f0f0f0;
@@ -34,6 +39,7 @@ body {
     backdrop-filter: blur(14px);
     -webkit-backdrop-filter: blur(14px);
     border-bottom: 1px solid var(--border);
+    padding-top: var(--safe-top);
 }
 
 #topbar-main {
@@ -237,7 +243,7 @@ body {
 /* ===== GPS button ===== */
 #gps-btn {
     position: fixed;
-    bottom: calc(var(--ticker-h) + 14px);
+    bottom: calc(var(--ticker-h) + 14px + var(--safe-bottom));
     right: 14px;
     z-index: 900;
     width: 42px;
@@ -251,7 +257,7 @@ body {
     align-items: center;
     justify-content: center;
     backdrop-filter: blur(10px);
-    transition: color 0.2s, background 0.2s, border-color 0.2s;
+    transition: color 0.2s, background 0.2s, border-color 0.2s, bottom 0.28s ease;
 }
 #gps-btn:hover { color: var(--text); }
 #gps-btn.locating { color: var(--accent); animation: gps-spin 1.2s linear infinite; }
@@ -300,6 +306,7 @@ body {
     transform: translateY(100%);
     transition: transform 0.28s ease;
     will-change: transform;
+    padding-bottom: var(--safe-bottom);
 }
 #nearby-panel.open { transform: translateY(0); }
 body.nearby-open #map { bottom: calc(44vh + var(--ticker-h)); }
@@ -822,45 +829,6 @@ body.panel-open #map {
     #topbar-lines { height: 44px; }
     :root { --topbar-h2: 44px; }
 
-    /* Line panel: bottom sheet on mobile */
-    #line-panel {
-        top: auto;
-        left: 0;
-        right: 0;
-        bottom: var(--ticker-h);
-        width: 100%;
-        height: 55vh;
-        max-height: none;
-        border-left: none;
-        border-top: 1px solid var(--border);
-        transform: translateY(100%);
-    }
-    #line-panel.open {
-        transform: translateY(0);
-    }
-    body.panel-open #map {
-        right: 0;
-        bottom: calc(55vh + var(--ticker-h));
-    }
-
-    /* Nearby panel: taller on mobile */
-    #nearby-panel { height: 55vh; max-height: none; }
-    body.nearby-open #map { bottom: calc(55vh + var(--ticker-h)); }
-
-    /* Dashboard panel: full-width bottom sheet on mobile */
-    #dashboard-panel {
-        left: 0;
-        right: 0;
-        top: auto;
-        bottom: var(--ticker-h);
-        width: 100%;
-        height: 70vh;
-        border-left: none;
-        border-top: 1px solid var(--border);
-        transform: translateY(100%);
-    }
-    #dashboard-panel.open { transform: translateY(0); }
-
     /* GPS button on left side on mobile */
     #gps-btn { right: auto; left: 14px; }
 }
@@ -920,6 +888,7 @@ body.panel-open #map {
     transform: translateY(100%);
     transition: transform 0.28s ease;
     will-change: transform;
+    padding-bottom: var(--safe-bottom);
 }
 #favorites-panel.open { transform: translateY(0); }
 
@@ -1104,6 +1073,8 @@ body.panel-open #map {
 }
 .dash-no-fav { font-size: 0.82em; color: var(--muted); }
 .light-mode #dashboard-panel { background: rgba(242, 242, 247, 0.97); }
+.light-mode #stop-panel { background: rgba(242, 242, 247, 0.97); }
+.light-mode #stop-panel-body { scrollbar-color: rgba(0,0,0,0.15) transparent; }
 
 /* ===== Delays overlay ===== */
 #delays-overlay {
@@ -1232,6 +1203,7 @@ body.panel-open #map {
     transform: translateY(100%);
     transition: transform 0.28s ease;
     will-change: transform;
+    padding-bottom: var(--safe-bottom);
 }
 #stop-panel.open { transform: translateY(0); }
 body.stop-open #map { bottom: calc(52vh + var(--ticker-h)); }
@@ -1467,7 +1439,7 @@ body.stop-open #map { bottom: calc(52vh + var(--ticker-h)); }
 /* ===== SSE connection status indicator ===== */
 .sse-status {
     position: fixed;
-    bottom: 12px;
+    bottom: calc(12px + var(--safe-bottom));
     right: 12px;
     z-index: 999;
     display: flex;
@@ -1612,5 +1584,303 @@ body.stop-open #map { bottom: calc(52vh + var(--ticker-h)); }
         font-size: 0.85rem;
         padding: 10px 14px;
         gap: 8px;
+    }
+}
+
+/* ===== Touch feedback (all devices) ===== */
+.type-btn:active,
+.line-btn:active,
+.ctrl-pill span:active,
+#gps-btn:active,
+.popup-open-line-btn:active {
+    transform: scale(0.93);
+    opacity: 0.7;
+}
+.fav-btn:active,
+.share-btn:active,
+.save-trip-btn:active {
+    transform: scale(0.9);
+    opacity: 0.7;
+}
+
+/* ===== Drag handle for bottom sheets ===== */
+.drag-handle {
+    width: 36px;
+    height: 4px;
+    border-radius: 2px;
+    background: rgba(255,255,255,0.3);
+    margin: 8px auto 0;
+    flex-shrink: 0;
+    display: none;
+    touch-action: none;
+}
+.light-mode .drag-handle { background: rgba(0,0,0,0.2); }
+.panel-dragging { transition: none !important; }
+
+/* ===== Loading spinner ===== */
+.dep-loading, .lp-loading, .nearby-loading, .fav-loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+}
+.dep-loading::before, .lp-loading::before, .nearby-loading::before, .fav-loading::before {
+    content: '';
+    width: 16px;
+    height: 16px;
+    border: 2px solid var(--muted);
+    border-top-color: transparent;
+    border-radius: 50%;
+    animation: spinner 0.8s linear infinite;
+    flex-shrink: 0;
+}
+@keyframes spinner {
+    to { transform: rotate(360deg); }
+}
+
+/* ===== Mobile search ===== */
+.mobile-search {
+    display: none;
+    position: relative;
+    flex: 1;
+    max-width: 180px;
+    min-width: 100px;
+}
+.mobile-search input {
+    width: 100%;
+    padding: 6px 10px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--bg2);
+    color: var(--text);
+    font-size: 0.82em;
+    font-family: inherit;
+    outline: none;
+}
+.mobile-search input::placeholder { color: var(--muted); }
+.mobile-search input:focus { border-color: var(--accent); }
+.search-results {
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0; right: 0;
+    background: rgba(24, 24, 26, 0.98);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    max-height: 300px;
+    overflow-y: auto;
+    z-index: 1001;
+    display: none;
+}
+.search-results.visible { display: block; }
+.search-result-item {
+    padding: 10px 12px;
+    font-size: 0.82em;
+    cursor: pointer;
+    border-bottom: 1px solid var(--border);
+    transition: background 0.1s;
+}
+.search-result-item:last-child { border-bottom: none; }
+.search-result-item:active,
+.search-result-item:hover { background: var(--bg2); }
+.search-result-empty {
+    padding: 12px;
+    font-size: 0.78em;
+    color: var(--muted);
+    text-align: center;
+}
+.light-mode .search-results {
+    background: rgba(255,255,255,0.98);
+}
+
+/* ===== Hamburger menu sections (desktop: invisible) ===== */
+@media (min-width: 601px) {
+    .menu-section { display: contents; }
+    .menu-section-label { display: none; }
+    .menu-section-items { display: contents; }
+    .mobile-search { display: none !important; }
+}
+
+/* ===== Mobile enhancements ===== */
+@media (max-width: 600px) {
+    /* --- Drag handles visible --- */
+    .drag-handle { display: block; }
+
+    /* --- Mobile search visible --- */
+    .mobile-search { display: block; }
+
+    /* --- Close buttons: 44x44 touch targets --- */
+    #line-panel-close,
+    #stop-panel-close,
+    #nearby-panel-close,
+    #dashboard-panel-close,
+    #favorites-panel-close,
+    #delays-panel-close {
+        min-width: 44px;
+        min-height: 44px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.3em;
+    }
+
+    /* --- Action buttons: larger touch targets --- */
+    .fav-btn,
+    .share-btn,
+    .save-trip-btn {
+        min-width: 40px;
+        min-height: 40px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.1em;
+    }
+
+    /* --- Hamburger menu sections --- */
+    .menu-section {
+        width: 100%;
+        padding: 4px 0;
+    }
+    .menu-section + .menu-section {
+        border-top: 1px solid var(--border);
+        margin-top: 4px;
+        padding-top: 8px;
+    }
+    .menu-section-label {
+        font-size: 0.68em;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--muted);
+        margin-bottom: 6px;
+    }
+    .menu-section-items {
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+    }
+
+    /* --- Bottom sheets: dynamic height for BottomSheet module --- */
+    #line-panel {
+        top: auto;
+        left: 0;
+        right: 0;
+        bottom: var(--ticker-h);
+        width: 100%;
+        height: 90vh;
+        max-height: none;
+        border-left: none;
+        border-top: 1px solid var(--border);
+        transform: translateY(100%);
+        padding-bottom: var(--safe-bottom);
+    }
+    #line-panel.open {
+        transform: translateY(0);
+    }
+    #nearby-panel {
+        height: 90vh;
+        max-height: none;
+    }
+    #stop-panel {
+        height: 90vh;
+        max-height: none;
+    }
+    #favorites-panel {
+        height: 90vh;
+        max-height: none;
+    }
+    #dashboard-panel {
+        left: 0;
+        right: 0;
+        top: auto;
+        bottom: var(--ticker-h);
+        width: 100%;
+        height: 90vh;
+        border-left: none;
+        border-top: 1px solid var(--border);
+        transform: translateY(100%);
+    }
+    #dashboard-panel.open { transform: translateY(0); }
+
+    /* --- Map adjusts to dynamic panel height --- */
+    body.panel-open #map {
+        right: 0;
+        bottom: calc(var(--panel-visible-h, 50vh) + var(--ticker-h));
+    }
+    body.nearby-open #map {
+        bottom: calc(var(--panel-visible-h, 50vh) + var(--ticker-h));
+    }
+    body.stop-open #map {
+        bottom: calc(var(--panel-visible-h, 50vh) + var(--ticker-h));
+    }
+
+    /* --- GPS button above panels --- */
+    body.stop-open #gps-btn,
+    body.panel-open #gps-btn,
+    body.nearby-open #gps-btn {
+        bottom: calc(var(--panel-visible-h, 50vh) + var(--ticker-h) + 14px + var(--safe-bottom));
+    }
+
+    /* --- Hide Leaflet zoom controls (pinch-to-zoom suffices) --- */
+    .leaflet-control-zoom { display: none; }
+
+    /* --- Leaflet popups: mobile-optimized --- */
+    .leaflet-popup-content-wrapper {
+        border-radius: 16px;
+        max-width: calc(100vw - 40px);
+    }
+    .leaflet-popup-content {
+        font-size: 14px;
+        margin: 12px 16px;
+        min-width: 200px;
+    }
+    .leaflet-popup-close-button {
+        width: 36px !important;
+        height: 36px !important;
+        font-size: 22px !important;
+        line-height: 36px !important;
+        top: 4px !important;
+        right: 4px !important;
+    }
+    .popup-title { font-size: 16px; }
+    .popup-details { font-size: 14px; line-height: 1.6; }
+    .popup-open-line-btn {
+        padding: 10px 14px;
+        font-size: 0.9em;
+        min-height: 44px;
+    }
+
+    /* --- Filter scroll indicator (fade edges) --- */
+    #topbar-lines {
+        -webkit-mask-image: linear-gradient(
+            to right,
+            transparent 0,
+            black 16px,
+            black calc(100% - 16px),
+            transparent 100%
+        );
+        mask-image: linear-gradient(
+            to right,
+            transparent 0,
+            black 16px,
+            black calc(100% - 16px),
+            transparent 100%
+        );
+    }
+    #line-buttons { padding: 4px 16px; }
+
+    /* --- Weather popup as centered overlay --- */
+    .weather-popup {
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        right: auto;
+        bottom: auto;
+        transform: translate(-50%, -50%);
+        min-width: 220px;
+        z-index: 1100;
+        border-radius: 14px;
+        padding: 16px 20px;
     }
 }
