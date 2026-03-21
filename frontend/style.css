@@ -1540,3 +1540,77 @@ body.stop-open #map { bottom: calc(52vh + var(--ticker-h)); }
     border-color: rgba(0,0,0,0.1);
     box-shadow: 0 4px 16px rgba(0,0,0,0.1);
 }
+
+/* ─── Train announce banner ─────────────────────────── */
+.train-announce-banner {
+    position: fixed;
+    top: var(--topbar-h);
+    left: 0;
+    right: 0;
+    z-index: 1100;
+    pointer-events: none;
+    transform: translateY(-100%);
+    opacity: 0;
+    transition: transform 0.5s cubic-bezier(0.22, 1, 0.36, 1),
+                opacity 0.5s ease;
+}
+.train-announce-banner.visible {
+    transform: translateY(0);
+    opacity: 1;
+    pointer-events: auto;
+}
+.ta-inner {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 20px;
+    font-size: 0.95rem;
+    font-weight: 500;
+    color: #fff;
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border-bottom: 1px solid rgba(255,255,255,0.08);
+    animation: ta-glow 2s ease-in-out infinite alternate;
+}
+.ta-departure {
+    background: linear-gradient(135deg, rgba(30,100,200,0.92), rgba(20,70,160,0.88));
+    border-bottom-color: rgba(80,160,255,0.2);
+}
+.ta-arrival {
+    background: linear-gradient(135deg, rgba(20,140,90,0.92), rgba(15,100,70,0.88));
+    border-bottom-color: rgba(60,200,130,0.2);
+}
+.ta-icon {
+    font-size: 1.4em;
+    flex-shrink: 0;
+    animation: ta-bounce 1.5s ease-in-out infinite;
+}
+.ta-text {
+    flex: 1;
+    line-height: 1.35;
+}
+.ta-text strong {
+    color: #fff;
+    font-weight: 700;
+}
+@keyframes ta-glow {
+    0%   { box-shadow: 0 2px 12px rgba(0,0,0,0.3); }
+    100% { box-shadow: 0 2px 20px rgba(100,180,255,0.25); }
+}
+@keyframes ta-bounce {
+    0%, 100% { transform: translateY(0); }
+    50%      { transform: translateY(-2px); }
+}
+.light-mode .ta-departure {
+    background: linear-gradient(135deg, rgba(30,100,200,0.95), rgba(25,80,180,0.92));
+}
+.light-mode .ta-arrival {
+    background: linear-gradient(135deg, rgba(20,140,90,0.95), rgba(18,110,80,0.92));
+}
+@media (max-width: 600px) {
+    .ta-inner {
+        font-size: 0.85rem;
+        padding: 10px 14px;
+        gap: 8px;
+    }
+}

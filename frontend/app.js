@@ -18,6 +18,7 @@ import { initTrafficLayer } from "./modules/traffic.js";
 import { updateDashboard, updateAlerts, updateDashboardAlerts, renderDashboardFavorites } from "./modules/dashboard.js";
 import { initSSE } from "./modules/sse.js";
 import { updateWeather, initWeatherWidget } from "./modules/weather.js";
+import { initTrainAnnounce } from "./modules/trainAnnounce.js";
 import {
     fetchStatus, fetchVehicles, fetchAlerts,
 } from "./modules/api.js";
@@ -222,6 +223,9 @@ async function init() {
     initWeatherWidget();
     updateWeather();
     setInterval(updateWeather, 10 * 60 * 1000);
+
+    // Train arrival/departure announcements for Örebro C
+    initTrainAnnounce();
 
     // Pre-open line from URL param
     const preOpenLine = urlParams.get("line");
