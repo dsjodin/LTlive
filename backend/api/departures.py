@@ -405,7 +405,7 @@ def arrivals_for_stop(stop_id):
         rsn   = route.get("route_short_name", "?")
         color = config.ROUTE_COLOR_OVERRIDES.get(rsn) or route.get("route_color", "0074D9")
 
-        tv_track = tv_canceled = tv_track_changed = tv_preliminary = False
+        tv_track = tv_canceled = tv_track_changed = tv_arr_track_changed = tv_preliminary = False
         tv_deviation = tv_other_info = []
         tv_traffic_type = tv_arr_operator = tv_arr_product = ""
         tv_rt_arr_time = tv_arr_sched_override = None
