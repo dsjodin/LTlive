@@ -829,36 +829,6 @@ body.panel-open #map {
     #topbar-lines { height: 44px; }
     :root { --topbar-h2: 44px; }
 
-    /* Line panel: bottom sheet on mobile */
-    #line-panel {
-        top: auto;
-        left: 0;
-        right: 0;
-        bottom: var(--ticker-h);
-        width: 100%;
-        max-height: none;
-        border-left: none;
-        border-top: 1px solid var(--border);
-        transform: translateY(100%);
-        padding-bottom: var(--safe-bottom);
-    }
-    #line-panel.open {
-        transform: translateY(0);
-    }
-
-    /* Dashboard panel: full-width bottom sheet on mobile */
-    #dashboard-panel {
-        left: 0;
-        right: 0;
-        top: auto;
-        bottom: var(--ticker-h);
-        width: 100%;
-        border-left: none;
-        border-top: 1px solid var(--border);
-        transform: translateY(100%);
-    }
-    #dashboard-panel.open { transform: translateY(0); }
-
     /* GPS button on left side on mobile */
     #gps-btn { right: auto; left: 14px; }
 }
@@ -1791,7 +1761,20 @@ body.stop-open #map { bottom: calc(52vh + var(--ticker-h)); }
 
     /* --- Bottom sheets: dynamic height for BottomSheet module --- */
     #line-panel {
+        top: auto;
+        left: 0;
+        right: 0;
+        bottom: var(--ticker-h);
+        width: 100%;
         height: 90vh;
+        max-height: none;
+        border-left: none;
+        border-top: 1px solid var(--border);
+        transform: translateY(100%);
+        padding-bottom: var(--safe-bottom);
+    }
+    #line-panel.open {
+        transform: translateY(0);
     }
     #nearby-panel {
         height: 90vh;
@@ -1806,8 +1789,17 @@ body.stop-open #map { bottom: calc(52vh + var(--ticker-h)); }
         max-height: none;
     }
     #dashboard-panel {
+        left: 0;
+        right: 0;
+        top: auto;
+        bottom: var(--ticker-h);
+        width: 100%;
         height: 90vh;
+        border-left: none;
+        border-top: 1px solid var(--border);
+        transform: translateY(100%);
     }
+    #dashboard-panel.open { transform: translateY(0); }
 
     /* --- Map adjusts to dynamic panel height --- */
     body.panel-open #map {
