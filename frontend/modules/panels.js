@@ -321,7 +321,8 @@ export function showVehiclePopup(vehicle, marker) {
             ${hasRoute ? `<button class="popup-open-line-btn" data-route-id="${vehicle.route_id}">Visa linje →</button>` : ""}
         </div>
     `;
-    const popup = L.popup({ maxWidth: 260 })
+    const isMobile = window.innerWidth <= 600;
+    const popup = L.popup({ maxWidth: isMobile ? window.innerWidth - 48 : 260 })
         .setLatLng(marker.getLatLng())
         .setContent(html)
         .openOn(state.map);

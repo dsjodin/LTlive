@@ -9,7 +9,7 @@ import state from "./modules/state.js";
 import { initMap, setTileLayer, addDriftsplatsOverlay } from "./modules/mapCore.js";
 import { createVehicleIcon, updateVehicles } from "./modules/vehicles.js";
 import { loadStops, loadRoutes, loadTrainRoutes, toggleRouteShapes, pollStopDepartures, updateStopBadges } from "./modules/stops.js";
-import { closeAllPanels, showStopDepartures, showVehiclePopup, startEtaCountdown, openLinePanel, closeStopPanel, closeLinePanel } from "./modules/panels.js";
+import { closeAllPanels, showStopDepartures, showVehiclePopup, startEtaCountdown, openLinePanel, closeStopPanel, closeLinePanel, closeDashboardPanel } from "./modules/panels.js";
 import { buildLineButtons, renderFilterChips, initTypeFilterButtons } from "./modules/filters.js";
 import { toggleFavorite, toggleSavedTrip, initFavoritesPanel, closeFavoritesPanel } from "./modules/favorites.js";
 import { initGps, closeNearbyPanel } from "./modules/nearby.js";
@@ -22,6 +22,8 @@ import { initTrainAnnounce } from "./modules/trainAnnounce.js";
 import {
     fetchStatus, fetchVehicles, fetchAlerts,
 } from "./modules/api.js";
+import BottomSheet from "./modules/bottomSheet.js";
+import { initSearch } from "./modules/search.js";
 
 // --- Wire cross-module callbacks via window ---
 // Modules use window._xxx callbacks to avoid circular imports.
@@ -211,6 +213,34 @@ async function init() {
     initFavoritesPanel();
     initDelaysPanel();
     initTrafficLayer();
+    initSearch();
+
+    // Draggable bottom sheets for mobile
+    new BottomSheet(document.getElementById("stop-panel"), {
+        snapPoints: [25, 50, 90],
+        onClose: closeStopPanel,
+        initialSnap: 50,
+    });
+    new BottomSheet(document.getElementById("line-panel"), {
+        snapPoints: [25, 50, 90],
+        onClose: closeLinePanel,
+        initialSnap: 50,
+    });
+    new BottomSheet(document.getElementById("nearby-panel"), {
+        snapPoints: [25, 50, 90],
+        onClose: closeNearbyPanel,
+        initialSnap: 50,
+    });
+    new BottomSheet(document.getElementById("favorites-panel"), {
+        snapPoints: [25, 50, 90],
+        onClose: closeFavoritesPanel,
+        initialSnap: 50,
+    });
+    new BottomSheet(document.getElementById("dashboard-panel"), {
+        snapPoints: [30, 60, 90],
+        onClose: closeDashboardPanel,
+        initialSnap: 60,
+    });
 
     await checkStatus();
     await pollVehicles();
