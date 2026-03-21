@@ -52,9 +52,14 @@
                     <span class="ts-value" id="route-count">0</span>
                     <span class="ts-label">linjer</span>
                 </div>
-                <div class="topbar-stat" id="weather-widget" title="Väder i Örebro">
+                <div class="topbar-stat weather-clickable" id="weather-widget" title="Klicka för väderdetaljer">
                     <span class="ts-value" id="weather-temp">--°</span>
                     <span class="ts-label" id="weather-icon">☁</span>
+                    <div class="weather-popup" id="weather-popup">
+                        <div class="weather-popup-row"><span class="wp-label">Temperatur</span><span class="wp-value" id="wp-temp">--</span></div>
+                        <div class="weather-popup-row"><span class="wp-label">Vind</span><span class="wp-value" id="wp-wind">--</span></div>
+                        <div class="weather-popup-row"><span class="wp-label">Uppdaterad</span><span class="wp-value" id="wp-time">--</span></div>
+                    </div>
                 </div>
                 <div class="topbar-stat wide">
                     <span class="ts-value" id="last-update">--:--:--</span>
@@ -73,6 +78,15 @@
             <div id="line-buttons"></div>
         </div>
     </header>
+
+    <!-- Active filter chips -->
+    <div id="filter-chips" class="filter-chips"></div>
+
+    <!-- SSE connection status indicator -->
+    <div id="sse-status" class="sse-status" title="Anslutningsstatus">
+        <span class="sse-dot"></span>
+        <span class="sse-text">Ansluter</span>
+    </div>
 
     <!-- ===== Map ===== -->
     <div id="map"></div>

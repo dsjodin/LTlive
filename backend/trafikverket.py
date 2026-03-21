@@ -37,20 +37,22 @@ def _post(xml_body: str) -> dict:
 
 
 def _ts_to_unix(ts_str: str) -> int | None:
-    """Parse ISO-8601 timestamp like '2026-03-13T23:30:00.000+01:00' → Unix int."""
+    """Parse ISO-8601 timestamp like '2026-03-13T23:30:00.000+01:00' → Unix int.
+
+    Uses fromisoformat() for fast parsing, with regex cleanup for millisecond
+    and timezone edge cases that older Python versions can't handle.
+    """
     if not ts_str:
         return None
-    # Strip milliseconds and parse
-    ts_str = re.sub(r"\.\d+", "", ts_str)
-    for fmt in ("%Y-%m-%dT%H:%M:%S%z", "%Y-%m-%dT%H:%M:%S"):
-        try:
-            dt = datetime.strptime(ts_str, fmt)
-            if dt.tzinfo is None:
-                dt = dt.replace(tzinfo=timezone(timedelta(hours=1)))
-            return int(dt.timestamp())
-        except ValueError:
-            continue
-    return None
+    try:
+        # Strip milliseconds — fromisoformat handles timezone offset natively
+        cleaned = re.sub(r"\.\d+", "", ts_str)
+        dt = datetime.fromisoformat(cleaned)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone(timedelta(hours=1)))
+        return int(dt.timestamp())
+    except (ValueError, TypeError):
+        return None
 
 
 def fetch_train_stations() -> dict:

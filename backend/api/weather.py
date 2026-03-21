@@ -3,6 +3,8 @@ import requests
 import time
 import threading
 
+import config
+
 weather_bp = Blueprint('weather', __name__)
 
 _cache = {'data': None, 'ts': 0}
@@ -12,7 +14,7 @@ CACHE_TTL = 600  # 10 minutes
 SMHI_URL = (
     "https://opendata-download-metfcst.smhi.se"
     "/api/category/pmp3g/version/2/geotype/point"
-    "/lon/15.21/lat/59.27/data.json"
+    f"/lon/{config.MAP_CENTER_LON}/lat/{config.MAP_CENTER_LAT}/data.json"
 )
 
 

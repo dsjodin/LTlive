@@ -7,7 +7,7 @@ let refreshTimer = null;
 let allStops = [];
 let etaCountdownTimer = null;
 
-// --- Dark mode ---
+// --- Dark mode (synced with main map via localStorage) ---
 let darkMode = localStorage.getItem("darkMode") === "true";
 function applyDarkMode() {
     document.body.classList.toggle("dark", darkMode);
@@ -18,6 +18,13 @@ document.getElementById("dark-btn").addEventListener("click", () => {
     darkMode = !darkMode;
     localStorage.setItem("darkMode", darkMode);
     applyDarkMode();
+});
+// Sync dark mode across tabs/pages
+window.addEventListener("storage", (e) => {
+    if (e.key === "darkMode") {
+        darkMode = e.newValue === "true";
+        applyDarkMode();
+    }
 });
 
 // --- Fullscreen ---

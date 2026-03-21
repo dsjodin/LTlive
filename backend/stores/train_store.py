@@ -28,6 +28,10 @@ class TrainStore:
         # TrainAnnouncement: departure/arrival info per station
         self.announcements: dict = {}  # location_sig -> {departures: [...], arrivals: [...]}
 
+        # Pre-computed index: (location_sig, "departures"|"arrivals") -> sorted list by scheduled_time
+        # Rebuilt automatically when announcements are updated via update_announcements().
+        self.ann_by_time: dict = {}  # (loc_sig, kind) -> [{...}, ...] sorted by scheduled_time
+
         # TrainStation: station metadata
         self.stations: dict = {}       # location_sig -> {name, lat, lon}
 
@@ -41,6 +45,20 @@ class TrainStore:
         self.last_poll: float = 0
         self.last_error: str | None = None
         self.sse_state: str = "disconnected"  # "connected" | "reconnecting" | "disconnected"
+
+    def update_announcements(self, announcements: dict) -> None:
+        """Update announcements and rebuild the time-sorted index.
+
+        Call this instead of assigning train_store.announcements directly
+        so the pre-computed index stays in sync.
+        """
+        self.announcements = announcements
+        idx: dict = {}
+        for loc_sig, bucket in announcements.items():
+            for kind in ("departures", "arrivals"):
+                entries = bucket.get(kind, [])
+                idx[(loc_sig, kind)] = sorted(entries, key=lambda e: e["scheduled_time"])
+        self.ann_by_time = idx
 
 
 # Application-wide singleton

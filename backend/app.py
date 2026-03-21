@@ -8,6 +8,7 @@ load_dotenv()
 from flask import Flask
 from flask_cors import CORS
 
+import analytics as _analytics
 import stats as _stats
 from tasks.scheduler import start_background_tasks
 
@@ -32,6 +33,7 @@ from api.stops import bp as _stops_bp
 from api.vehicles import bp as _vehicles_bp
 from api.weather import weather_bp as _weather_bp
 from api.traffic import bp as _traffic_bp
+from api.analytics_api import bp as _analytics_bp
 
 app.register_blueprint(_debug_bp)
 app.register_blueprint(_departures_bp)
@@ -41,12 +43,14 @@ app.register_blueprint(_stops_bp)
 app.register_blueprint(_vehicles_bp)
 app.register_blueprint(_weather_bp)
 app.register_blueprint(_traffic_bp)
+app.register_blueprint(_analytics_bp)
 
 # ---------------------------------------------------------------------------
 # Startup
 # ---------------------------------------------------------------------------
 
 _stats.init_db()
+_analytics.init_db()
 start_background_tasks()
 
 if __name__ == "__main__":

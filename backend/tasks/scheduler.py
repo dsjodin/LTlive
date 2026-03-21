@@ -55,6 +55,11 @@ def start_background_tasks() -> None:
         scheduler.add_job(save_baseline, "interval",
                           minutes=30, max_instances=1, id="save_traffic_baseline")
 
+    # Analytics data retention — clean up data older than 30 days at 03:00
+    import analytics
+    scheduler.add_job(analytics.cleanup_old_data, "cron",
+                      hour=3, minute=0, max_instances=1, id="analytics_cleanup")
+
     scheduler.start()
 
     # Kick off first RT poll and Oxyfi WebSocket immediately

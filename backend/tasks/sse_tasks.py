@@ -38,9 +38,14 @@ _sse_ip_lock = threading.Lock()
 MAX_SSE_PER_IP = 4
 
 
-def push_sse(event_type: str, data) -> None:
-    """Push a Server-Sent Event to all connected clients."""
-    msg = f"event: {event_type}\ndata: {json.dumps(data, separators=(',', ':'))}\n\n"
+def push_sse(event_type: str, data, _pre_serialized: str | None = None) -> None:
+    """Push a Server-Sent Event to all connected clients.
+
+    Serialises the payload to JSON *once* and sends the same string to every
+    client queue, avoiding redundant json.dumps() calls proportional to
+    the number of connected SSE clients.
+    """
+    msg = _pre_serialized or f"event: {event_type}\ndata: {json.dumps(data, separators=(',', ':'))}\n\n"
     dead = []
     with _sse_clients_lock:
         clients = list(_sse_clients)
