@@ -7,8 +7,17 @@
  *   3. Peak hours heatmap (hour × weekday table)
  */
 
+/* global ALLOWED_LINE_NUMBERS, LINE_COLORS_CUSTOM, LINE_CONFIG */
+
 const API = "/api/analytics";
 let currentDays = 7;
+
+// Only show lines that are displayed on the map
+const _allowed = typeof ALLOWED_LINE_NUMBERS !== "undefined" ? ALLOWED_LINE_NUMBERS : new Set();
+
+function isAllowed(routeShortName) {
+    return _allowed.size === 0 || _allowed.has(routeShortName);
+}
 
 // Shared line colors — consistent with config.js palette
 const ROUTE_COLORS = [
@@ -20,6 +29,21 @@ const ROUTE_COLORS = [
 
 function routeColor(idx) {
     return ROUTE_COLORS[idx % ROUTE_COLORS.length];
+}
+
+// Use config.js custom colors when available
+function getConfigColor(routeShortName) {
+    if (typeof LINE_COLORS_CUSTOM === "undefined") return null;
+    if (LINE_COLORS_CUSTOM[routeShortName]) return `#${LINE_COLORS_CUSTOM[routeShortName].bg}`;
+    if (typeof LINE_CONFIG !== "undefined" && LINE_CONFIG.lansbuss &&
+        LINE_CONFIG.lansbuss.includes(routeShortName) && LINE_COLORS_CUSTOM.lansbuss) {
+        return `#${LINE_COLORS_CUSTOM.lansbuss.bg}`;
+    }
+    return null;
+}
+
+function routeColorFor(routeShortName, idx) {
+    return getConfigColor(routeShortName) || routeColor(idx);
 }
 
 function pctColor(pct) {
@@ -50,15 +74,25 @@ function renderPunctuality(data) {
         return;
     }
 
-    // Sort by on_time_pct descending
-    const sorted = [...data].sort((a, b) => b.on_time_pct - a.on_time_pct);
+    // Filter to allowed lines, then sort by on_time_pct descending
+    const filtered = data.filter(r => isAllowed(r.route_short_name));
+    const sorted = filtered.sort((a, b) => b.on_time_pct - a.on_time_pct);
+
+    if (sorted.length === 0) {
+        container.innerHTML = `
+            <div class="empty-state">
+                <div class="empty-state-icon">📊</div>
+                <div class="empty-state-text">Ingen punktlighetsdata ännu. Data samlas in automatiskt från GTFS-RT.</div>
+            </div>`;
+        return;
+    }
 
     container.innerHTML = sorted.map((r, i) => {
         const color = pctColor(r.on_time_pct);
         return `
         <div class="punct-card">
             <div class="punct-header">
-                <span class="punct-badge" style="background:${routeColor(i)}">${r.route_short_name}</span>
+                <span class="punct-badge" style="background:${routeColorFor(r.route_short_name, i)}">${r.route_short_name}</span>
                 <span class="punct-pct" style="color:${color}">${r.on_time_pct}%</span>
             </div>
             <div class="punct-bar">
@@ -85,7 +119,7 @@ let routeColorMap = {};
 function renderTrendFilters(routes) {
     const container = document.getElementById("trend-filters");
     routeColorMap = {};
-    routes.forEach((rsn, i) => { routeColorMap[rsn] = routeColor(i); });
+    routes.forEach((rsn, i) => { routeColorMap[rsn] = routeColorFor(rsn, i); });
 
     container.innerHTML = routes.map((rsn, i) => {
         const active = activeRoutes.has(rsn);
@@ -298,7 +332,12 @@ async function loadAll() {
     }
 
     if (trends.status === "fulfilled") {
-        trendData = trends.value;
+        // Filter to allowed lines
+        const raw = trends.value;
+        trendData = {};
+        for (const [rsn, points] of Object.entries(raw)) {
+            if (isAllowed(rsn)) trendData[rsn] = points;
+        }
         const routes = Object.keys(trendData).sort();
         if (activeRoutes.size === 0 && routes.length > 0) {
             routes.slice(0, 3).forEach(r => activeRoutes.add(r));
