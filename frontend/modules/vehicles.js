@@ -118,14 +118,13 @@ export function createTrainIcon(vehicle) {
     const c1x = lx - gap - cW, c2x = c1x - gap - cW;
     const cy_c = cy - cH / 2;
     const noseBaseX = lx + lW, noseTipX = noseBaseX + noseLen;
-    const stationary = !!vehicle._stationary;
-    const locoFill = stationary ? "#888888" : color;
-    const carriageFill = stationary ? "#666666" : "#5C3030";
-    const textFill = stationary ? "#FFFFFF" : textColor;
-    const outline = stationary ? "#444444" : outlineColor;
+    const locoFill = color;
+    const carriageFill = "#5C3030";
+    const textFill = textColor;
+    const outline = outlineColor;
     const rotation = hasBearing ? bearing - 90 : 0;
     const fs = label.length >= 4 ? 11 : label.length >= 3 ? 13 : 15;
-    const noseSvg = stationary ? "" : `<path d="M ${noseTipX},${cy} L ${noseBaseX},${cy-noseHH} L ${noseBaseX},${cy+noseHH} Z" fill="${locoFill}" stroke="${outline}" stroke-width="2" stroke-linejoin="round"/>`;
+    const noseSvg = `<path d="M ${noseTipX},${cy} L ${noseBaseX},${cy-noseHH} L ${noseBaseX},${cy+noseHH} Z" fill="${locoFill}" stroke="${outline}" stroke-width="2" stroke-linejoin="round"/>`;
     const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${W}" class="vehicle-svg">
   <g transform="rotate(${rotation},${cx},${cy})">
     <rect x="${c2x}" y="${cy_c}" width="${cW}" height="${cH}" rx="${rx}" ry="${rx}" fill="${carriageFill}" stroke="${outline}" stroke-width="2"/>
@@ -261,15 +260,17 @@ export function updateVehicles(vehicles, { onDashboardUpdate } = {}) {
         }
         v._localTime = now;
 
-        // Train stationary state
+        // Train activity & bearing state
         if (v.vehicle_type === "train") {
+            const hasSpeedData = v.speed != null || v._calculatedSpeed != null;
             const speed = v.speed ?? v._calculatedSpeed ?? 0;
             const moving = speed > 0.5 && v.bearing != null;
+
+            v._inactive = !hasSpeedData;
+
             if (moving) {
                 state.vehicleLastBearing[id] = v.bearing;
-                v._stationary = false;
             } else {
-                v._stationary = true;
                 if (state.trainShapeCoords.length > 0) {
                     v.bearing = snapBearingToTrack(v.lat, v.lon);
                 } else {
