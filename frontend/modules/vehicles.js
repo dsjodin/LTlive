@@ -268,6 +268,12 @@ export function updateVehicles(vehicles, { onDashboardUpdate } = {}) {
 
             v._inactive = !hasSpeedData;
 
+            // Hide inactive trains (no speed data) from the map
+            if (!hasSpeedData) {
+                if (state.vehicleMarkers[id]) { map.removeLayer(state.vehicleMarkers[id]); delete state.vehicleMarkers[id]; }
+                return;
+            }
+
             if (moving) {
                 state.vehicleLastBearing[id] = v.bearing;
             } else {
