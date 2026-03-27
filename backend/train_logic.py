@@ -228,10 +228,29 @@ def _annotate_oxyfi_from_announcements(trains: list) -> list:
             assigned[idx] = tn
             used_keys.add(ann_key)
 
-    return [
-        ({**v, "tv_service_number": assigned[i]} if i in assigned else v)
-        for i, v in enumerate(trains)
-    ]
+    # Resolve destination info for assigned trains from operator cache
+    with _lock:
+        tv_stations = dict(_data.get("tv_stations", {}))
+
+    enriched = []
+    for i, v in enumerate(trains):
+        if i in assigned:
+            tn = assigned[i]
+            extra: dict = {"tv_service_number": tn}
+            cached = train_store.operator_cache.get(tn, {})
+            if cached.get("product"):
+                extra["product"] = cached["product"]
+            dest_sig = cached.get("dest_sig", "")
+            origin_sig = cached.get("origin_sig", "")
+            if dest_sig:
+                dest_name = tv_stations.get(dest_sig, {}).get("name", "")
+                origin_name = tv_stations.get(origin_sig, {}).get("name", "") if origin_sig else ""
+                if dest_name:
+                    extra["trip_headsign"] = f"{origin_name} \u2013 {dest_name}" if origin_name else dest_name
+            enriched.append({**v, **extra})
+        else:
+            enriched.append(v)
+    return enriched
 
 
 def _merge_trains(oxyfi_trains: list, tv_trains: list) -> list:
@@ -244,6 +263,16 @@ def _merge_trains(oxyfi_trains: list, tv_trains: list) -> list:
     as the same physical train: keep Oxyfi's GPS position, add TV's service number as
     `tv_service_number` so the diag can display both IDs, and suppress the TV duplicate.
     """
+    # Fields to copy from TV train when the Oxyfi train is missing them
+    _enrich_keys = ("trip_headsign", "product", "route_long_name", "route_color", "route_text_color")
+
+    def _merge(oxyfi, tv):
+        merged = {**oxyfi, "tv_service_number": tv["label"]}
+        for k in _enrich_keys:
+            if tv.get(k) and not oxyfi.get(k):
+                merged[k] = tv[k]
+        return merged
+
     matched_tv_ids: set = set()
     result: list = []
 
@@ -253,7 +282,7 @@ def _merge_trains(oxyfi_trains: list, tv_trains: list) -> list:
         tv_exact = next((t for t in tv_trains if t.get("label", "") == o_label), None)
         if tv_exact:
             matched_tv_ids.add(tv_exact["vehicle_id"])
-            result.append({**oxyfi_train, "tv_service_number": tv_exact["label"]})
+            result.append(_merge(oxyfi_train, tv_exact))
             continue
 
         # Pass 2: position + bearing proximity.
@@ -287,7 +316,7 @@ def _merge_trains(oxyfi_trains: list, tv_trains: list) -> list:
 
         if best_tv:
             matched_tv_ids.add(best_tv["vehicle_id"])
-            result.append({**oxyfi_train, "tv_service_number": best_tv["label"]})
+            result.append(_merge(oxyfi_train, best_tv))
         else:
             result.append(oxyfi_train)
 
