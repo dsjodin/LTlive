@@ -11,6 +11,7 @@ import time
 
 import config
 from store import _data, _lock
+from stores.train_store import train_store
 
 
 def _tv_operator_style(op: str, prod: str) -> tuple[str, str]:
@@ -55,6 +56,11 @@ def _tv_trains_from_positions() -> list:
                     "product": entry.get("product", ""),
                 }
 
+    # Persist operator info so it survives announcement expiry
+    for tn, info in ann_info.items():
+        if info["operator"] or info["product"]:
+            train_store.operator_cache[tn] = info
+
     center_lat = config.TV_POSITION_CENTER_LAT
     center_lon = config.TV_POSITION_CENTER_LON
     radius_m = config.TV_POSITION_RADIUS_KM * 1000
@@ -87,10 +93,13 @@ def _tv_trains_from_positions() -> list:
         if dist_m > radius_m:
             continue
 
-        # Resolve operator: announcement data first, then InformationOwner from position
+        # Resolve operator: announcement data first, then cache, then fallback
         if tn in ann_info:
             op = ann_info[tn]["operator"]
             prod = ann_info[tn]["product"]
+        elif tn in train_store.operator_cache:
+            op = train_store.operator_cache[tn]["operator"]
+            prod = train_store.operator_cache[tn]["product"]
         else:
             op = pos.get("operator", "")
             prod = ""
