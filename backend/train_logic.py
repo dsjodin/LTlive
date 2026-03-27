@@ -44,16 +44,29 @@ def _tv_trains_from_positions() -> list:
     with _lock:
         tv_positions = list(_data.get("tv_positions", []))
         tv_announcements = dict(_data.get("tv_announcements", {}))
+        tv_stations = dict(_data.get("tv_stations", {}))
 
-    # Build train_number → {operator, product} from announcement data (preferred source)
+    # Build train_number → {operator, product, dest_sig, origin_sig} from announcements.
+    # Prefer departures (forward destination) over arrivals.
     ann_info: dict[str, dict] = {}
     for bucket in tv_announcements.values():
-        for entry in bucket.get("departures", []) + bucket.get("arrivals", []):
+        for entry in bucket.get("departures", []):
             tn = entry.get("train_number", "")
             if tn and tn not in ann_info:
                 ann_info[tn] = {
                     "operator": entry.get("operator", ""),
                     "product": entry.get("product", ""),
+                    "dest_sig": entry.get("dest_sig", ""),
+                    "origin_sig": entry.get("origin_sig", ""),
+                }
+        for entry in bucket.get("arrivals", []):
+            tn = entry.get("train_number", "")
+            if tn and tn not in ann_info:
+                ann_info[tn] = {
+                    "operator": entry.get("operator", ""),
+                    "product": entry.get("product", ""),
+                    "dest_sig": entry.get("dest_sig", ""),
+                    "origin_sig": entry.get("origin_sig", ""),
                 }
 
     # Persist operator info so it survives announcement expiry
@@ -93,18 +106,18 @@ def _tv_trains_from_positions() -> list:
         if dist_m > radius_m:
             continue
 
-        # Resolve operator: announcement data first, then cache, then fallback
-        if tn in ann_info:
-            op = ann_info[tn]["operator"]
-            prod = ann_info[tn]["product"]
-        elif tn in train_store.operator_cache:
-            op = train_store.operator_cache[tn]["operator"]
-            prod = train_store.operator_cache[tn]["product"]
-        else:
-            op = pos.get("operator", "")
-            prod = ""
+        # Resolve operator & route info: announcement data first, then cache, then fallback
+        info = ann_info.get(tn) or train_store.operator_cache.get(tn) or {}
+        op = info.get("operator", pos.get("operator", ""))
+        prod = info.get("product", "")
+        dest_sig = info.get("dest_sig", "")
+        origin_sig = info.get("origin_sig", "")
 
         color, long_name = _tv_operator_style(op, prod)
+
+        dest_name = tv_stations.get(dest_sig, {}).get("name", "") if dest_sig else ""
+        origin_name = tv_stations.get(origin_sig, {}).get("name", "") if origin_sig else ""
+        headsign = f"{origin_name} \u2013 {dest_name}" if origin_name and dest_name else dest_name
 
         result.append({
             "id": f"tv_{tn}",
@@ -126,7 +139,8 @@ def _tv_trains_from_positions() -> list:
             "route_long_name": long_name,
             "route_color": color,
             "route_text_color": "FFFFFF",
-            "trip_headsign": "",
+            "trip_headsign": headsign,
+            "product": prod,
             "next_stop_name": "",
             "next_stop_platform": "",
         })
