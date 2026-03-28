@@ -41,6 +41,9 @@ class TrainStore:
         # TrainStationMessage: platform announcements
         self.messages: dict = {}       # location_sig -> [{header, body, start, end}]
 
+        # Cached operator info per train number (survives announcement expiry)
+        self.operator_cache: dict = {}  # train_number -> {operator, product}
+
         # Polling / stream metadata
         self.last_poll: float = 0
         self.last_error: str | None = None

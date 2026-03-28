@@ -256,15 +256,19 @@ export function showVehiclePopup(vehicle, marker) {
     let headsign = vehicle.trip_headsign || "";
     const isTrain = vehicle.vehicle_type === "train";
     const typeLabel = isTrain ? "Tåg" : "Buss";
-    const isRouteName = headsign.includes(" - ");
+    const isRouteName = headsign.includes(" - ") || headsign.includes(" \u2013 ");
     let title;
     if (headsign && !isRouteName) {
         title = `${typeLabel} ${lineName} mot ${headsign}`;
     } else if (headsign && isRouteName) {
-        title = `${typeLabel} ${lineName} ${headsign}`;
+        title = `${typeLabel} ${lineName}<br/><span class="popup-route">${headsign}</span>`;
     } else {
         title = `${typeLabel} ${lineName}`;
     }
+
+    const operatorLabel = isTrain && (vehicle.product || (vehicle.route_long_name && vehicle.route_long_name !== "Tåg"))
+        ? (vehicle.product || vehicle.route_long_name)
+        : "";
 
     const speedMs = vehicle.speed != null ? vehicle.speed : vehicle._calculatedSpeed;
     const speed = speedMs != null
@@ -300,7 +304,7 @@ export function showVehiclePopup(vehicle, marker) {
     const custom = getLineStyle(lineName);
     const badgeBg = custom ? `#${custom.bg}` : (vehicle.route_color ? `#${vehicle.route_color}` : color);
     const badgeFg = custom ? `#${custom.text}` : (vehicle.route_text_color ? `#${vehicle.route_text_color}` : "#fff");
-    const vehicleIdStr = vehicle.vehicle_id
+    const vehicleIdStr = (!isTrain && vehicle.vehicle_id)
         ? `Fordon #${String(vehicle.vehicle_id).split(":").pop()}<br/>`
         : "";
     const hasRoute = vehicle.route_id && state.routeData[vehicle.route_id];
@@ -311,6 +315,7 @@ export function showVehiclePopup(vehicle, marker) {
                 <span class="popup-veh-badge" style="background:${badgeBg};color:${badgeFg}">${lineName}</span>
             </div>
             <div class="popup-title" data-color="${color}">${title}</div>
+            ${operatorLabel ? `<div class="popup-operator">${operatorLabel}</div>` : ""}
             <div class="popup-details">
                 ${delayHtml}
                 ${nextStop ? `${nextStopLabel}: <strong>${nextStop}</strong>${platformChip}<br/>` : ""}

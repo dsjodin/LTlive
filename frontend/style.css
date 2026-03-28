@@ -645,7 +645,9 @@ body.panel-open #map {
     line-height: 1.5;
     margin: 10px 14px;
 }
-.popup-title { font-size: 15px; font-weight: 700; margin-bottom: 8px; }
+.popup-title { font-size: 15px; font-weight: 700; margin-bottom: 4px; }
+.popup-route { font-size: 13px; font-weight: 400; }
+.popup-operator { font-size: 13px; color: #aaa; margin-bottom: 6px; }
 .popup-details {
     color: #b0b0b5;
     font-size: 13px;

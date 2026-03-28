@@ -11,6 +11,7 @@ import time
 
 import config
 from store import _data, _lock
+from stores.train_store import train_store
 
 
 def _tv_operator_style(op: str, prod: str) -> tuple[str, str]:
@@ -43,17 +44,35 @@ def _tv_trains_from_positions() -> list:
     with _lock:
         tv_positions = list(_data.get("tv_positions", []))
         tv_announcements = dict(_data.get("tv_announcements", {}))
+        tv_stations = dict(_data.get("tv_stations", {}))
 
-    # Build train_number → {operator, product} from announcement data (preferred source)
+    # Build train_number → {operator, product, dest_sig, origin_sig} from announcements.
+    # Prefer departures (forward destination) over arrivals.
     ann_info: dict[str, dict] = {}
     for bucket in tv_announcements.values():
-        for entry in bucket.get("departures", []) + bucket.get("arrivals", []):
+        for entry in bucket.get("departures", []):
             tn = entry.get("train_number", "")
             if tn and tn not in ann_info:
                 ann_info[tn] = {
                     "operator": entry.get("operator", ""),
                     "product": entry.get("product", ""),
+                    "dest_sig": entry.get("dest_sig", ""),
+                    "origin_sig": entry.get("origin_sig", ""),
                 }
+        for entry in bucket.get("arrivals", []):
+            tn = entry.get("train_number", "")
+            if tn and tn not in ann_info:
+                ann_info[tn] = {
+                    "operator": entry.get("operator", ""),
+                    "product": entry.get("product", ""),
+                    "dest_sig": entry.get("dest_sig", ""),
+                    "origin_sig": entry.get("origin_sig", ""),
+                }
+
+    # Persist operator info so it survives announcement expiry
+    for tn, info in ann_info.items():
+        if info["operator"] or info["product"]:
+            train_store.operator_cache[tn] = info
 
     center_lat = config.TV_POSITION_CENTER_LAT
     center_lon = config.TV_POSITION_CENTER_LON
@@ -87,15 +106,18 @@ def _tv_trains_from_positions() -> list:
         if dist_m > radius_m:
             continue
 
-        # Resolve operator: announcement data first, then InformationOwner from position
-        if tn in ann_info:
-            op = ann_info[tn]["operator"]
-            prod = ann_info[tn]["product"]
-        else:
-            op = pos.get("operator", "")
-            prod = ""
+        # Resolve operator & route info: announcement data first, then cache, then fallback
+        info = ann_info.get(tn) or train_store.operator_cache.get(tn) or {}
+        op = info.get("operator", pos.get("operator", ""))
+        prod = info.get("product", "")
+        dest_sig = info.get("dest_sig", "")
+        origin_sig = info.get("origin_sig", "")
 
         color, long_name = _tv_operator_style(op, prod)
+
+        dest_name = tv_stations.get(dest_sig, {}).get("name", "") if dest_sig else ""
+        origin_name = tv_stations.get(origin_sig, {}).get("name", "") if origin_sig else ""
+        headsign = f"{origin_name} \u2013 {dest_name}" if origin_name and dest_name else dest_name
 
         result.append({
             "id": f"tv_{tn}",
@@ -117,7 +139,8 @@ def _tv_trains_from_positions() -> list:
             "route_long_name": long_name,
             "route_color": color,
             "route_text_color": "FFFFFF",
-            "trip_headsign": "",
+            "trip_headsign": headsign,
+            "product": prod,
             "next_stop_name": "",
             "next_stop_platform": "",
         })
@@ -205,10 +228,29 @@ def _annotate_oxyfi_from_announcements(trains: list) -> list:
             assigned[idx] = tn
             used_keys.add(ann_key)
 
-    return [
-        ({**v, "tv_service_number": assigned[i]} if i in assigned else v)
-        for i, v in enumerate(trains)
-    ]
+    # Resolve destination info for assigned trains from operator cache
+    with _lock:
+        tv_stations = dict(_data.get("tv_stations", {}))
+
+    enriched = []
+    for i, v in enumerate(trains):
+        if i in assigned:
+            tn = assigned[i]
+            extra: dict = {"tv_service_number": tn}
+            cached = train_store.operator_cache.get(tn, {})
+            if cached.get("product"):
+                extra["product"] = cached["product"]
+            dest_sig = cached.get("dest_sig", "")
+            origin_sig = cached.get("origin_sig", "")
+            if dest_sig:
+                dest_name = tv_stations.get(dest_sig, {}).get("name", "")
+                origin_name = tv_stations.get(origin_sig, {}).get("name", "") if origin_sig else ""
+                if dest_name:
+                    extra["trip_headsign"] = f"{origin_name} \u2013 {dest_name}" if origin_name else dest_name
+            enriched.append({**v, **extra})
+        else:
+            enriched.append(v)
+    return enriched
 
 
 def _merge_trains(oxyfi_trains: list, tv_trains: list) -> list:
@@ -221,6 +263,16 @@ def _merge_trains(oxyfi_trains: list, tv_trains: list) -> list:
     as the same physical train: keep Oxyfi's GPS position, add TV's service number as
     `tv_service_number` so the diag can display both IDs, and suppress the TV duplicate.
     """
+    # Fields to copy from TV train when the Oxyfi train is missing them
+    _enrich_keys = ("trip_headsign", "product", "route_long_name", "route_color", "route_text_color")
+
+    def _merge(oxyfi, tv):
+        merged = {**oxyfi, "tv_service_number": tv["label"]}
+        for k in _enrich_keys:
+            if tv.get(k) and not oxyfi.get(k):
+                merged[k] = tv[k]
+        return merged
+
     matched_tv_ids: set = set()
     result: list = []
 
@@ -230,7 +282,7 @@ def _merge_trains(oxyfi_trains: list, tv_trains: list) -> list:
         tv_exact = next((t for t in tv_trains if t.get("label", "") == o_label), None)
         if tv_exact:
             matched_tv_ids.add(tv_exact["vehicle_id"])
-            result.append({**oxyfi_train, "tv_service_number": tv_exact["label"]})
+            result.append(_merge(oxyfi_train, tv_exact))
             continue
 
         # Pass 2: position + bearing proximity.
@@ -264,7 +316,7 @@ def _merge_trains(oxyfi_trains: list, tv_trains: list) -> list:
 
         if best_tv:
             matched_tv_ids.add(best_tv["vehicle_id"])
-            result.append({**oxyfi_train, "tv_service_number": best_tv["label"]})
+            result.append(_merge(oxyfi_train, best_tv))
         else:
             result.append(oxyfi_train)
 
