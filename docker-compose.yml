@@ -32,10 +32,14 @@ services:
       - MAP_DEFAULT_ZOOM=${MAP_DEFAULT_ZOOM:-13}
       - ENABLE_DEBUG_ENDPOINTS=${ENABLE_DEBUG_ENDPOINTS:-false}
       - TRAFFIC_ENABLED=${TRAFFIC_ENABLED:-true}
+      - SITE_NAME=${SITE_NAME:-}
+      - SITE_CONFIG_FILE=${SITE_CONFIG_FILE:-/app/data/config/site-config.json}
+      - ADMIN_API_KEY=${ADMIN_API_KEY:-}
     volumes:
       - gtfs-data:/app/data/gtfs
       - stats-data:/app/data/stats
       - traffic-data:/app/data/traffic
+      - config-data:/app/data/config
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/api/health')"]
       interval: 30s
@@ -68,8 +72,10 @@ volumes:
   gtfs-data:
   stats-data:
   traffic-data:
+  config-data:
 
 networks:
+  default:
   proxy:
     name: proxy
     external: true
