@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LTlive – Admin</title>
+    <link rel="stylesheet" href="admin.css" />
+</head>
+<body>
+
+<div id="topbar">
+    <h1>LTlive <span>Admin</span></h1>
+    <div class="sep"></div>
+    <a href="/">Karta</a>
+    <a href="/diag.html">Diagnostik</a>
+</div>
+
+<div id="auth-bar">
+    <label for="api-key-input">API-nyckel:</label>
+    <input type="text" id="api-key-input" placeholder="Ange ADMIN_API_KEY" autocomplete="off" />
+    <button class="btn btn-primary btn-sm" id="login-btn">Logga in</button>
+    <span id="auth-status"></span>
+</div>
+
+<div id="toast"></div>
+
+<div id="page" class="locked">
+
+    <!-- Site identity -->
+    <div class="section">
+        <div class="section-header" data-section="identity">
+            <span class="arrow">&#9660;</span>
+            <h2>Plats &amp; identitet</h2>
+        </div>
+        <div class="section-body">
+            <div class="field">
+                <label for="site-name">Sajtnamn</label>
+                <input type="text" id="site-name" placeholder="t.ex. Örebro, Västerås" />
+            </div>
+            <div class="field">
+                <label for="operator">GTFS-operatör</label>
+                <input type="text" id="operator" placeholder="t.ex. orebro, vastmanland" />
+                <span class="hint">Samtrafiken-ID</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Map settings -->
+    <div class="section">
+        <div class="section-header" data-section="map">
+            <span class="arrow">&#9660;</span>
+            <h2>Kartkonfiguration</h2>
+        </div>
+        <div class="section-body">
+            <div class="field">
+                <label for="map-lat">Centrum lat</label>
+                <input type="number" id="map-lat" step="0.0001" />
+            </div>
+            <div class="field">
+                <label for="map-lon">Centrum lon</label>
+                <input type="number" id="map-lon" step="0.0001" />
+            </div>
+            <div class="field">
+                <label for="map-zoom">Standardzoom</label>
+                <input type="number" id="map-zoom" min="1" max="18" />
+            </div>
+            <div class="field">
+                <label for="tv-lat">TV-centrum lat</label>
+                <input type="number" id="tv-lat" step="0.0001" />
+            </div>
+            <div class="field">
+                <label for="tv-lon">TV-centrum lon</label>
+                <input type="number" id="tv-lon" step="0.0001" />
+            </div>
+            <div class="field">
+                <label for="tv-radius">TV-radie (km)</label>
+                <input type="number" id="tv-radius" min="1" />
+            </div>
+        </div>
+    </div>
+
+    <!-- Lines -->
+    <div class="section">
+        <div class="section-header" data-section="lines">
+            <span class="arrow">&#9660;</span>
+            <h2>Linjer</h2>
+        </div>
+        <div class="section-body">
+            <div class="field">
+                <label>Stadstrafiken</label>
+                <div class="tag-input-wrap" id="lines-stads" data-key="stadstrafiken"></div>
+            </div>
+            <div class="field">
+                <label>Länsbuss</label>
+                <div class="tag-input-wrap" id="lines-lans" data-key="lansbuss"></div>
+            </div>
+            <div class="field">
+                <label>Tåg-ID</label>
+                <div class="tag-input-wrap" id="lines-tag" data-key="tag_i_bergslagen"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Line colors -->
+    <div class="section">
+        <div class="section-header" data-section="colors">
+            <span class="arrow">&#9660;</span>
+            <h2>Linjefärger</h2>
+        </div>
+        <div class="section-body">
+            <div id="colors-list"></div>
+            <button class="add-btn" id="add-color">+ Lägg till färg</button>
+        </div>
+    </div>
+
+    <!-- Station presets -->
+    <div class="section">
+        <div class="section-header" data-section="stations">
+            <span class="arrow">&#9660;</span>
+            <h2>Stationspresets (tågtavla)</h2>
+        </div>
+        <div class="section-body">
+            <div id="presets-list"></div>
+            <button class="add-btn" id="add-preset">+ Lägg till station</button>
+        </div>
+    </div>
+
+    <!-- Trafikverket -->
+    <div class="section">
+        <div class="section-header" data-section="trafikverket">
+            <span class="arrow">&#9660;</span>
+            <h2>Trafikverket</h2>
+        </div>
+        <div class="section-body">
+            <p style="font-size:13px;color:var(--text2);margin-bottom:12px;">
+                Stationsmappning: GTFS stop_id → Trafikverkets platssignatur
+            </p>
+            <table class="kv-table" id="tv-stations-table">
+                <thead><tr><th>stop_id</th><th>Platssignatur</th><th></th></tr></thead>
+                <tbody></tbody>
+            </table>
+            <button class="add-btn" id="add-tv-station">+ Lägg till mappning</button>
+
+            <div class="field" style="margin-top:16px;">
+                <label for="tv-operators">Operatörsfilter</label>
+                <input type="text" id="tv-operators" placeholder="Kommaseparerat, t.ex. Arriva Sverige AB" />
+            </div>
+            <div class="field">
+                <label for="tv-lookahead">Lookahead (min)</label>
+                <input type="number" id="tv-lookahead" min="1" />
+            </div>
+            <div class="field">
+                <label for="tv-poll">Pollintervall (sek)</label>
+                <input type="number" id="tv-poll" min="10" />
+            </div>
+        </div>
+    </div>
+
+    <!-- Features -->
+    <div class="section">
+        <div class="section-header" data-section="features">
+            <span class="arrow">&#9660;</span>
+            <h2>Funktioner</h2>
+        </div>
+        <div class="section-body">
+            <div class="toggle-field">
+                <input type="checkbox" id="feat-oxyfi" />
+                <label for="feat-oxyfi">Oxyfi (TiB-tåg via WebSocket)</label>
+            </div>
+            <div class="toggle-field">
+                <input type="checkbox" id="feat-stads" />
+                <label for="feat-stads">Stadstrafiken-sida</label>
+            </div>
+            <div class="toggle-field">
+                <input type="checkbox" id="feat-drift" />
+                <label for="feat-drift">Driftsplats-overlay</label>
+            </div>
+            <div class="toggle-field">
+                <input type="checkbox" id="feat-traffic" />
+                <label for="feat-traffic">Trafikanalys</label>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+<div id="bottom-bar">
+    <button class="btn btn-primary" id="save-btn" disabled>Spara konfiguration</button>
+    <button class="btn btn-ghost" id="reload-gtfs-btn" disabled>Ladda om GTFS-data</button>
+    <div class="sep"></div>
+    <span id="save-status" style="font-size:13px;color:var(--text2);"></span>
+</div>
+
+<script type="module" src="admin.js"></script>
+</body>
+</html>

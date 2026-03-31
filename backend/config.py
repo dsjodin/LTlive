@@ -109,6 +109,10 @@ TRAFFIC_BASELINE_FILE = os.environ.get("TRAFFIC_BASELINE_FILE", "/app/data/traff
 
 ENABLE_DEBUG_ENDPOINTS = os.environ.get("ENABLE_DEBUG_ENDPOINTS", "false").lower() == "true"
 
+# Admin interface — persistent JSON-based site configuration
+SITE_CONFIG_FILE = os.environ.get("SITE_CONFIG_FILE", "/app/data/config/site-config.json")
+ADMIN_API_KEY = os.environ.get("ADMIN_API_KEY", "")
+
 # Oxyfi Realtidspositionering — train positions via WebSocket
 # Register at trafiklab.se and add the "Oxyfi-Realtidspositionering" API to your project.
 OXYFI_API_KEY = os.environ.get("OXYFI_API_KEY", "")

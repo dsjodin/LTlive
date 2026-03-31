@@ -8,8 +8,10 @@ load_dotenv()
 from flask import Flask
 from flask_cors import CORS
 
+import config
 import analytics as _analytics
 import stats as _stats
+from stores.site_config_store import site_config
 from tasks.scheduler import start_background_tasks
 
 # ---------------------------------------------------------------------------
@@ -34,6 +36,7 @@ from api.vehicles import bp as _vehicles_bp
 from api.weather import weather_bp as _weather_bp
 from api.traffic import bp as _traffic_bp
 from api.analytics_api import bp as _analytics_bp
+from api.admin import bp as _admin_bp
 
 app.register_blueprint(_debug_bp)
 app.register_blueprint(_departures_bp)
@@ -44,11 +47,13 @@ app.register_blueprint(_vehicles_bp)
 app.register_blueprint(_weather_bp)
 app.register_blueprint(_traffic_bp)
 app.register_blueprint(_analytics_bp)
+app.register_blueprint(_admin_bp)
 
 # ---------------------------------------------------------------------------
 # Startup
 # ---------------------------------------------------------------------------
 
+site_config.init(config.SITE_CONFIG_FILE)
 _stats.init_db()
 _analytics.init_db()
 start_background_tasks()

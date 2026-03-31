@@ -1,17 +1,16 @@
 /**
- * LTlive - Linjekonfiguration
+ * LTlive — Linjekonfiguration
  *
- * Lägg till eller ta bort linjenummer för att styra vilka linjer som
- * visas på kartan (bussar, linjesträckningar och hållplatser).
+ * Dessa värden är defaults som används tills /api/status svarar med
+ * den centraliserade konfigurationen från admin-interfacet.
  *
- * Lämna en grupp tom ([]) för att inte visa några linjer ur den gruppen.
+ * Redigera via /admin.html istället för att ändra här.
  */
 
-const LINE_CONFIG = {
-    // Stadstrafiken Örebro
-    stadstrafiken: ["1", "2", "3", "4", "5", "6", "7"],
+/* eslint-disable no-unused-vars */
 
-    // Länstrafiken Örebro - Länsbuss
+let LINE_CONFIG = {
+    stadstrafiken: ["1", "2", "3", "4", "5", "6", "7"],
     lansbuss: [
         "200", "230",
         "300", "308", "314", "324", "351",
@@ -21,8 +20,6 @@ const LINE_CONFIG = {
         "700", "701", "710",
         "800", "807", "819", "820", "840",
     ],
-
-    // Tåg i Bergslagen — filtreras på vehicleId-prefix (sifferdelen före .trains.se)
     tag_i_bergslagen: [
         "3190", "3223", "3231", "3234", "3235",
         "9005", "9006", "9007", "9008", "9009",
@@ -33,29 +30,48 @@ const LINE_CONFIG = {
     ],
 };
 
-// Flat Set of all allowed route_short_name values — used for fast lookup
-const ALLOWED_LINE_NUMBERS = new Set([
+let ALLOWED_LINE_NUMBERS = new Set([
     ...LINE_CONFIG.stadstrafiken,
     ...LINE_CONFIG.lansbuss,
 ]);
 
-// Allowed train vehicleId prefixes (numeric part before .trains.se)
-const ALLOWED_TRAIN_IDS = new Set(LINE_CONFIG.tag_i_bergslagen);
+let ALLOWED_TRAIN_IDS = new Set(LINE_CONFIG.tag_i_bergslagen);
+
+let LINE_COLORS_CUSTOM = {
+    "1": { bg: "5B2D8E", text: "FFFFFF" },
+    "2": { bg: "2E8B3A", text: "FFFFFF" },
+    "3": { bg: "E87722", text: "FFFFFF" },
+    "4": { bg: "1A7A7A", text: "FFFFFF" },
+    "5": { bg: "1565C0", text: "FFFFFF" },
+    "6": { bg: "F5C800", text: "1C1C1E" },
+    "7": { bg: "D4607A", text: "FFFFFF" },
+    lansbuss: { bg: "7B5C3E", text: "FFFFFF" },
+};
 
 /**
- * Custom colors per line (overrides GTFS colors).
- * Keys are route_short_name, values are { bg, text } hex strings (without #).
- * Use "lansbuss" as a fallback for all Länsbuss routes not listed individually.
+ * Apply server-side config from /api/status to override the defaults above.
+ * Called by app.js after fetching the status endpoint.
  */
-const LINE_COLORS_CUSTOM = {
-    // Stadstrafiken
-    "1": { bg: "5B2D8E", text: "FFFFFF" }, // Mörklila
-    "2": { bg: "2E8B3A", text: "FFFFFF" }, // Grön
-    "3": { bg: "E87722", text: "FFFFFF" }, // Orange
-    "4": { bg: "1A7A7A", text: "FFFFFF" }, // Petrol
-    "5": { bg: "1565C0", text: "FFFFFF" }, // Blå
-    "6": { bg: "F5C800", text: "1C1C1E" }, // Gul (mörk text för läsbarhet)
-    "7": { bg: "D4607A", text: "FFFFFF" }, // Rosa
-    // Länsbuss fallback — används för alla länsbusslinjer
-    lansbuss: { bg: "7B5C3E", text: "FFFFFF" }, // Brun
-};
+function applyServerConfig(status) {
+    if (status.lines) {
+        const l = status.lines;
+        LINE_CONFIG = {
+            stadstrafiken: l.stadstrafiken || LINE_CONFIG.stadstrafiken,
+            lansbuss: l.lansbuss || LINE_CONFIG.lansbuss,
+            tag_i_bergslagen: l.tag_i_bergslagen || LINE_CONFIG.tag_i_bergslagen,
+        };
+        // Only override Sets if the server provided non-empty arrays
+        const stads = LINE_CONFIG.stadstrafiken;
+        const lans = LINE_CONFIG.lansbuss;
+        if (stads.length || lans.length) {
+            ALLOWED_LINE_NUMBERS = new Set([...stads, ...lans]);
+        }
+        const trains = LINE_CONFIG.tag_i_bergslagen;
+        if (trains.length) {
+            ALLOWED_TRAIN_IDS = new Set(trains);
+        }
+    }
+    if (status.line_colors && Object.keys(status.line_colors).length > 0) {
+        LINE_COLORS_CUSTOM = status.line_colors;
+    }
+}
