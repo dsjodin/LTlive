@@ -122,6 +122,18 @@ def _env_fallbacks() -> dict:
     }
 
 
+def _prune_empty(d: dict) -> None:
+    """Remove keys whose value is an empty list or empty dict, recursively."""
+    for key in list(d.keys()):
+        val = d[key]
+        if isinstance(val, dict):
+            _prune_empty(val)
+            if not val:
+                del d[key]
+        elif isinstance(val, list) and not val:
+            del d[key]
+
+
 class SiteConfigStore:
     def __init__(self):
         self._lock = threading.Lock()
@@ -142,6 +154,9 @@ class SiteConfigStore:
                     disk = json.load(f)
             except (json.JSONDecodeError, OSError):
                 pass
+        # Drop empty lists/dicts saved by older versions so they
+        # don't override the populated _DEFAULTS.
+        _prune_empty(disk)
         with self._lock:
             self._config = _deep_merge(base, disk)
 
