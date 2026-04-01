@@ -382,6 +382,188 @@ def _run_traffic_checks():
 
 
 # ---------------------------------------------------------------------------
+# Category: Trafikverket API
+# ---------------------------------------------------------------------------
+
+_TV_URL = "https://api.trafikinfo.trafikverket.se/v2/data.json"
+
+
+def _run_trafikverket_api_checks():
+    checks = []
+
+    if not config.TRAFIKVERKET_API_KEY:
+        checks.append(_check(
+            "tv_api_skipped", "Trafikverket API",
+            "warn", "API-nyckel saknas -- test hoppas over",
+        ))
+        return {"namn": "Trafikverket API", "kontroller": checks}
+
+    # Test 1: TrainStation query (lightweight, always works if key is valid)
+    station_xml = f"""<REQUEST>
+  <LOGIN authenticationkey="{config.TRAFIKVERKET_API_KEY}" />
+  <QUERY objecttype="TrainStation" schemaversion="1.0"
+         namespace="rail.infrastructure" limit="5">
+    <FILTER><EQ name="Advertised" value="true" /></FILTER>
+    <INCLUDE>LocationSignature</INCLUDE>
+    <INCLUDE>AdvertisedLocationName</INCLUDE>
+  </QUERY>
+</REQUEST>"""
+
+    try:
+        r = requests.post(
+            _TV_URL,
+            data=station_xml.encode("utf-8"),
+            headers={"Content-Type": "application/xml"},
+            timeout=10,
+        )
+        if r.status_code == 401:
+            checks.append(_check(
+                "tv_api_auth", "Autentisering",
+                "fail", "HTTP 401 -- ogiltig API-nyckel",
+                detaljer={"url": _TV_URL, "svar": _sanitize(r.text[:300])},
+            ))
+            return {"namn": "Trafikverket API", "kontroller": checks}
+
+        if r.status_code != 200:
+            checks.append(_check(
+                "tv_api_station", "TrainStation-forfragan",
+                "fail", f"HTTP {r.status_code}",
+                detaljer={"url": _TV_URL, "svar": _sanitize(r.text[:300])},
+            ))
+            return {"namn": "Trafikverket API", "kontroller": checks}
+
+        data = r.json()
+        stations = data.get("RESPONSE", {}).get("RESULT", [{}])[0].get("TrainStation", [])
+        checks.append(_check(
+            "tv_api_station", "TrainStation-forfragan",
+            "ok", f"HTTP 200, {len(stations)} stationer i svar",
+        ))
+    except requests.Timeout:
+        checks.append(_check(
+            "tv_api_station", "TrainStation-forfragan",
+            "fail", "Timeout (10s)",
+            detaljer={"url": _TV_URL},
+        ))
+        return {"namn": "Trafikverket API", "kontroller": checks}
+    except Exception as e:
+        checks.append(_check(
+            "tv_api_station", "TrainStation-forfragan",
+            "fail", _sanitize(e)[:200],
+            detaljer={"url": _TV_URL},
+        ))
+        return {"namn": "Trafikverket API", "kontroller": checks}
+
+    # Test 2: TrainAnnouncement query (only if stations are mapped)
+    mapped_stations = config.TRAFIKVERKET_STATIONS
+    if mapped_stations:
+        first_sig = next(iter(mapped_stations.values()))
+        ann_xml = f"""<REQUEST>
+  <LOGIN authenticationkey="{config.TRAFIKVERKET_API_KEY}" />
+  <QUERY objecttype="TrainAnnouncement" schemaversion="1.9" limit="5">
+    <FILTER>
+      <EQ name="LocationSignature" value="{first_sig}" />
+      <EQ name="Advertised" value="true" />
+      <EQ name="ActivityType" value="Avgang" />
+    </FILTER>
+    <INCLUDE>AdvertisedTrainIdent</INCLUDE>
+    <INCLUDE>AdvertisedTimeAtLocation</INCLUDE>
+  </QUERY>
+</REQUEST>"""
+        try:
+            r = requests.post(
+                _TV_URL,
+                data=ann_xml.encode("utf-8"),
+                headers={"Content-Type": "application/xml"},
+                timeout=10,
+            )
+            if r.status_code == 200:
+                ann_data = r.json()
+                anns = ann_data.get("RESPONSE", {}).get("RESULT", [{}])[0].get("TrainAnnouncement", [])
+                if anns:
+                    checks.append(_check(
+                        "tv_api_announcement", "TrainAnnouncement-forfragan",
+                        "ok", f"{len(anns)} annonseringar for {first_sig}",
+                    ))
+                else:
+                    checks.append(_check(
+                        "tv_api_announcement", "TrainAnnouncement-forfragan",
+                        "warn", f"Inga annonseringar for {first_sig} just nu",
+                    ))
+            else:
+                checks.append(_check(
+                    "tv_api_announcement", "TrainAnnouncement-forfragan",
+                    "fail", f"HTTP {r.status_code}",
+                    detaljer={"station": first_sig, "svar": _sanitize(r.text[:300])},
+                ))
+        except requests.Timeout:
+            checks.append(_check(
+                "tv_api_announcement", "TrainAnnouncement-forfragan",
+                "fail", "Timeout (10s)",
+            ))
+        except Exception as e:
+            checks.append(_check(
+                "tv_api_announcement", "TrainAnnouncement-forfragan",
+                "fail", _sanitize(e)[:200],
+            ))
+    else:
+        checks.append(_check(
+            "tv_api_announcement", "TrainAnnouncement-forfragan",
+            "warn", "Inga TRAFIKVERKET_STATIONS mappade -- kan ej testa",
+        ))
+
+    # Test 3: TrainPosition SSE URL request
+    pos_xml = f"""<REQUEST>
+  <LOGIN authenticationkey="{config.TRAFIKVERKET_API_KEY}" />
+  <QUERY objecttype="TrainPosition" schemaversion="1.1"
+         namespace="jarntag.trafikinfo" sseurl="true" limit="0">
+    <FILTER><WITHIN name="Position.WGS84" shape="center"
+      value="{config.TV_POSITION_CENTER_LON} {config.TV_POSITION_CENTER_LAT}"
+      radius="{int(config.TV_POSITION_RADIUS_KM * 1000)}m" /></FILTER>
+  </QUERY>
+</REQUEST>"""
+    try:
+        r = requests.post(
+            _TV_URL,
+            data=pos_xml.encode("utf-8"),
+            headers={"Content-Type": "application/xml"},
+            timeout=10,
+        )
+        if r.status_code == 200:
+            pos_data = r.json()
+            info = pos_data.get("RESPONSE", {}).get("RESULT", [{}])[0].get("INFO", {})
+            sse_url = info.get("SSEURL", "")
+            if sse_url:
+                checks.append(_check(
+                    "tv_api_position", "TrainPosition SSE-URL",
+                    "ok", "SSE-URL mottagen",
+                    detaljer={"sse_url": sse_url[:120]},
+                ))
+            else:
+                checks.append(_check(
+                    "tv_api_position", "TrainPosition SSE-URL",
+                    "warn", "Svar saknar SSE-URL",
+                ))
+        else:
+            checks.append(_check(
+                "tv_api_position", "TrainPosition SSE-URL",
+                "fail", f"HTTP {r.status_code}",
+                detaljer={"svar": _sanitize(r.text[:300])},
+            ))
+    except requests.Timeout:
+        checks.append(_check(
+            "tv_api_position", "TrainPosition SSE-URL",
+            "fail", "Timeout (10s)",
+        ))
+    except Exception as e:
+        checks.append(_check(
+            "tv_api_position", "TrainPosition SSE-URL",
+            "fail", _sanitize(e)[:200],
+        ))
+
+    return {"namn": "Trafikverket API", "kontroller": checks}
+
+
+# ---------------------------------------------------------------------------
 # Category: SMHI (vader)
 # ---------------------------------------------------------------------------
 
@@ -469,6 +651,7 @@ def _run_all(base_url=None):
         kategorier.append(_run_api_checks(base_url))
 
     kategorier.append(_run_train_checks())
+    kategorier.append(_run_trafikverket_api_checks())
     kategorier.append(_run_traffic_checks())
     kategorier.append(_run_smhi_checks())
 
