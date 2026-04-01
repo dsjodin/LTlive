@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LTlive -- Systemtest</title>
+  <link rel="stylesheet" href="test.css" />
+</head>
+<body>
+<div id="topbar">
+  <h1>LTlive <span>Systemtest</span></h1>
+  <a href="/" id="main-link">&larr; Kartan</a>
+  <a href="/diag.html" class="nav-link">Diagnostik</a>
+  <div class="sep"></div>
+  <span id="clock"></span>
+  <label id="auto-toggle">
+    <input type="checkbox" id="auto-refresh"> auto 30s
+  </label>
+  <button id="refresh-btn">&#10227; Kor test</button>
+</div>
+
+<div id="page">
+  <div id="loading"><span class="spin">&#10227;</span> Kor tester...</div>
+</div>
+
+<script src="config.js"></script>
+<script type="module" src="test.js"></script>
+</body>
+</html>
