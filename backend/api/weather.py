@@ -13,7 +13,7 @@ CACHE_TTL = 600  # 10 minutes
 
 SMHI_URL = (
     "https://opendata-download-metfcst.smhi.se"
-    "/api/category/pmp3g/version/2/geotype/point"
+    "/api/category/snow1g/version/1/geotype/point"
     f"/lon/{config.MAP_CENTER_LON}/lat/{config.MAP_CENTER_LAT}/data.json"
 )
 
@@ -22,13 +22,13 @@ def _fetch_smhi():
     r = requests.get(SMHI_URL, timeout=10)
     r.raise_for_status()
     ts_entry = r.json()['timeSeries'][0]
-    params = {p['name']: p['values'][0] for p in ts_entry['parameters']}
+    data = ts_entry['data']
     return {
-        'temp': params.get('t'),
-        'wind': params.get('ws'),
-        'symbol': params.get('Wsymb2'),
-        'precip': params.get('pcat'),
-        'valid_time': ts_entry['validTime'],
+        'temp': data.get('air_temperature'),
+        'wind': data.get('wind_speed'),
+        'symbol': data.get('symbol_code'),
+        'precip': data.get('predominant_precipitation_type_at_surface'),
+        'valid_time': ts_entry['time'],
     }
 
 

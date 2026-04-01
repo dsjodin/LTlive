@@ -569,12 +569,12 @@ def _run_trafikverket_api_checks():
 def _run_smhi_checks():
     checks = []
 
-    # SMHI krav: max 6 decimaler pa koordinater
+    # SNOW1gv1 (ersatter avvecklade PMP3gv2 sedan 2026-03-31)
     lon = round(config.MAP_CENTER_LON, 6)
     lat = round(config.MAP_CENTER_LAT, 6)
     smhi_url = (
         "https://opendata-download-metfcst.smhi.se"
-        "/api/category/pmp3g/version/2/geotype/point"
+        "/api/category/snow1g/version/1/geotype/point"
         f"/lon/{lon}/lat/{lat}/data.json"
     )
 
@@ -583,7 +583,7 @@ def _run_smhi_checks():
         if r.status_code != 200:
             body = r.text[:300] if r.text else "(tomt svar)"
             checks.append(_check(
-                "smhi_api", "SMHI API-anrop",
+                "smhi_api", "SMHI API-anrop (SNOW1gv1)",
                 "warn", f"HTTP {r.status_code}",
                 detaljer={"url": smhi_url, "svar": body},
             ))
@@ -593,22 +593,22 @@ def _run_smhi_checks():
         ts_list = data.get("timeSeries", [])
         if not ts_list:
             checks.append(_check(
-                "smhi_api", "SMHI API-anrop",
+                "smhi_api", "SMHI API-anrop (SNOW1gv1)",
                 "warn", "Svar saknar timeSeries",
             ))
             return {"namn": "SMHI (vader)", "kontroller": checks}
 
         checks.append(_check(
-            "smhi_api", "SMHI API-anrop",
+            "smhi_api", "SMHI API-anrop (SNOW1gv1)",
             "ok", f"HTTP 200, {len(ts_list)} tidpunkter",
         ))
 
-        # Parse first entry
+        # SNOW1gv1 format: entry.data is a flat dict, entry.time is the timestamp
         entry = ts_list[0]
-        params = {p["name"]: p["values"][0] for p in entry.get("parameters", [])}
-        temp = params.get("t")
-        wind = params.get("ws")
-        valid = entry.get("validTime", "--")
+        entry_data = entry.get("data", {})
+        temp = entry_data.get("air_temperature")
+        wind = entry_data.get("wind_speed")
+        valid = entry.get("time", "--")
 
         if temp is not None:
             checks.append(_check(
