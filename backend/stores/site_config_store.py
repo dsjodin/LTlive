@@ -51,6 +51,7 @@ _DEFAULTS: dict = {
         "stadstrafiken_page": True,
         "driftsplats_overlay": True,
         "traffic_inference": True,
+        "realtime_disabled": False,
     },
 }
 

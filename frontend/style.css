@@ -1187,6 +1187,36 @@ body.panel-open #map {
 .light-mode #delays-panel { background: rgba(242,242,247,0.97); }
 .light-mode #delays-table tr:hover td { background: rgba(0,0,0,0.04); }
 
+/* ===== Realtime disabled overlay ===== */
+#realtime-disabled-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: 1200;
+    background: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+    align-items: center;
+    justify-content: center;
+    pointer-events: all;
+}
+#realtime-disabled-overlay.active { display: flex; }
+
+#realtime-disabled-msg {
+    font-size: clamp(1.5rem, 5vw, 3rem);
+    font-weight: 800;
+    color: #fff;
+    text-align: center;
+    padding: 2rem 3rem;
+    border: 3px solid rgba(255, 255, 255, 0.3);
+    border-radius: 16px;
+    background: rgba(180, 40, 40, 0.6);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    max-width: 90vw;
+    user-select: none;
+}
+
 /* ===== Stop panel (mobile bottom sheet for hållplats-avgångar) ===== */
 #stop-panel {
     position: fixed;

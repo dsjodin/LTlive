@@ -94,6 +94,7 @@ function populateForm() {
     $("#feat-stads").checked = c.features?.stadstrafiken_page ?? true;
     $("#feat-drift").checked = c.features?.driftsplats_overlay ?? true;
     $("#feat-traffic").checked = c.features?.traffic_inference ?? true;
+    $("#feat-realtime-off").checked = c.features?.realtime_disabled ?? false;
 }
 
 // ── Tag input (lines) ───────────────────────────────────────────────
@@ -283,6 +284,7 @@ function collectConfig() {
             stadstrafiken_page: $("#feat-stads").checked,
             driftsplats_overlay: $("#feat-drift").checked,
             traffic_inference: $("#feat-traffic").checked,
+            realtime_disabled: $("#feat-realtime-off").checked,
         },
     };
 }

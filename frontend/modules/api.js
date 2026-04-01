@@ -138,7 +138,7 @@ export async function fetchWeather() {
  * @param {(data: object) => void}      [onTraffic]      Traffic inference GeoJSON event.
  * @returns {EventSource}
  */
-export function connectSSE(onVehicles, onAlerts, onError, onOpen, onVehiclesDelta, onTraffic) {
+export function connectSSE(onVehicles, onAlerts, onError, onOpen, onVehiclesDelta, onTraffic, onConfig) {
     const source = new EventSource(`${API_BASE}/stream`);
     source.addEventListener("vehicles", (e) => {
         try { onVehicles(JSON.parse(e.data)); }
@@ -158,6 +158,12 @@ export function connectSSE(onVehicles, onAlerts, onError, onOpen, onVehiclesDelt
         source.addEventListener("traffic", (e) => {
             try { onTraffic(JSON.parse(e.data)); }
             catch (err) { console.error("SSE traffic parse error:", err); }
+        });
+    }
+    if (onConfig) {
+        source.addEventListener("config", (e) => {
+            try { onConfig(JSON.parse(e.data)); }
+            catch (err) { console.error("SSE config parse error:", err); }
         });
     }
     if (onError) source.onerror = onError;
