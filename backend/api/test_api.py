@@ -512,13 +512,12 @@ def _run_trafikverket_api_checks():
         ))
 
     # Test 3: TrainPosition SSE URL request
+    # Must match production format exactly (trafikverket.py line 274-279):
+    # namespace="järnväg.trafikinfo", no FILTER, sseurl="true"
     pos_xml = f"""<REQUEST>
   <LOGIN authenticationkey="{config.TRAFIKVERKET_API_KEY}" />
-  <QUERY objecttype="TrainPosition" schemaversion="1.1"
-         namespace="jarntag.trafikinfo" sseurl="true" limit="0">
-    <FILTER><WITHIN name="Position.WGS84" shape="center"
-      value="{config.TV_POSITION_CENTER_LON} {config.TV_POSITION_CENTER_LAT}"
-      radius="{int(config.TV_POSITION_RADIUS_KM * 1000)}m" /></FILTER>
+  <QUERY objecttype="TrainPosition" namespace="j\u00e4rnv\u00e4g.trafikinfo"
+         schemaversion="1.1" sseurl="true" limit="0">
   </QUERY>
 </REQUEST>"""
     try:
