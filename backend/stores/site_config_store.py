@@ -34,11 +34,35 @@ _DEFAULTS: dict = {
         "tv_position_radius_km": 150.0,
     },
     "lines": {
-        "stadstrafiken": [],
-        "lansbuss": [],
-        "tag_i_bergslagen": [],
+        "stadstrafiken": ["1", "2", "3", "4", "5", "6", "7"],
+        "lansbuss": [
+            "200", "230",
+            "300", "308", "314", "324", "351",
+            "400", "401", "403", "406", "420", "430", "431", "490",
+            "500", "502", "506", "520", "590", "593",
+            "600", "620", "630",
+            "700", "701", "710",
+            "800", "807", "819", "820", "840",
+        ],
+        "tag_i_bergslagen": [
+            "3190", "3223", "3231", "3234", "3235",
+            "9005", "9006", "9007", "9008", "9009",
+            "9011", "9012", "9013", "9014", "9015",
+            "9018", "9019", "9020", "9021", "9022",
+            "9023", "9024", "9025", "9037", "9039",
+            "9056", "9057", "9068",
+        ],
     },
-    "line_colors": {},
+    "line_colors": {
+        "1": {"bg": "5B2D8E", "text": "FFFFFF"},
+        "2": {"bg": "2E8B3A", "text": "FFFFFF"},
+        "3": {"bg": "E87722", "text": "FFFFFF"},
+        "4": {"bg": "1A7A7A", "text": "FFFFFF"},
+        "5": {"bg": "1565C0", "text": "FFFFFF"},
+        "6": {"bg": "F5C800", "text": "1C1C1E"},
+        "7": {"bg": "D4607A", "text": "FFFFFF"},
+        "lansbuss": {"bg": "7B5C3E", "text": "FFFFFF"},
+    },
     "station_presets": [],
     "trafikverket": {
         "stations": {},
@@ -82,12 +106,6 @@ def _env_fallbacks() -> dict:
             "tv_position_center_lon": _env.TV_POSITION_CENTER_LON,
             "tv_position_radius_km": _env.TV_POSITION_RADIUS_KM,
         },
-        "lines": {
-            "stadstrafiken": [],
-            "lansbuss": [],
-            "tag_i_bergslagen": [],
-        },
-        "line_colors": {},
         "station_presets": [],
         "trafikverket": {
             "stations": tv_stations,
@@ -102,6 +120,18 @@ def _env_fallbacks() -> dict:
             "traffic_inference": _env.TRAFFIC_ENABLED,
         },
     }
+
+
+def _prune_empty(d: dict) -> None:
+    """Remove keys whose value is an empty list or empty dict, recursively."""
+    for key in list(d.keys()):
+        val = d[key]
+        if isinstance(val, dict):
+            _prune_empty(val)
+            if not val:
+                del d[key]
+        elif isinstance(val, list) and not val:
+            del d[key]
 
 
 class SiteConfigStore:
@@ -124,6 +154,9 @@ class SiteConfigStore:
                     disk = json.load(f)
             except (json.JSONDecodeError, OSError):
                 pass
+        # Drop empty lists/dicts saved by older versions so they
+        # don't override the populated _DEFAULTS.
+        _prune_empty(disk)
         with self._lock:
             self._config = _deep_merge(base, disk)
 
