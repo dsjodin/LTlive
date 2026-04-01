@@ -34,6 +34,21 @@ def _is_night():
     return time.localtime().tm_hour < 5
 
 
+def _sanitize(msg):
+    """Strip API keys from error messages to avoid exposing secrets."""
+    s = str(msg)
+    for key in (
+        config.TRAFIKLAB_GTFS_RT_KEY,
+        config.TRAFIKLAB_GTFS_STATIC_KEY,
+        config.TRAFIKVERKET_API_KEY,
+        config.OXYFI_API_KEY,
+        config.ADMIN_API_KEY,
+    ):
+        if key:
+            s = s.replace(key, "***")
+    return s
+
+
 # ---------------------------------------------------------------------------
 # Category: Konfiguration
 # ---------------------------------------------------------------------------
@@ -93,7 +108,7 @@ def _run_gtfs_checks():
     else:
         msg = "GTFS ej laddad"
         if error:
-            msg += ": " + str(error)[:200]
+            msg += ": " + _sanitize(error)[:200]
         checks.append(_check("gtfs_loaded", "GTFS laddad", "fail", msg))
 
     checks.append(_check(
@@ -171,7 +186,7 @@ def _run_realtime_checks():
     if last_error:
         checks.append(_check(
             "rt_no_error", "RT-fel",
-            "fail", str(last_error)[:200],
+            "fail", _sanitize(last_error)[:200],
         ))
     else:
         checks.append(_check(
@@ -234,7 +249,7 @@ def _run_api_checks(base_url):
         except requests.Timeout:
             checks.append(_check(ep_id, namn, "fail", "Timeout (3s)"))
         except Exception as e:
-            checks.append(_check(ep_id, namn, "fail", str(e)[:200]))
+            checks.append(_check(ep_id, namn, "fail", _sanitize(e)[:200]))
 
     # SSE stream test
     try:
@@ -252,7 +267,7 @@ def _run_api_checks(base_url):
     except requests.Timeout:
         checks.append(_check("api_stream_sse", "SSE-strom", "warn", "Timeout -- ingen event inom 5s"))
     except Exception as e:
-        checks.append(_check("api_stream_sse", "SSE-strom", "fail", str(e)[:200]))
+        checks.append(_check("api_stream_sse", "SSE-strom", "fail", _sanitize(e)[:200]))
 
     return {"namn": "API-endpoints", "kontroller": checks}
 
@@ -298,12 +313,12 @@ def _run_train_checks():
     elif ann_count > 0 and last_error:
         checks.append(_check(
             "tv_announcements", "Annonseringar",
-            "warn", f"{ann_count} stationer, men senaste fel: {str(last_error)[:100]}",
+            "warn", f"{ann_count} stationer, men senaste fel: {_sanitize(last_error)[:100]}",
         ))
     else:
         msg = "Inga annonseringar laddade"
         if last_error:
-            msg += ": " + str(last_error)[:100]
+            msg += ": " + _sanitize(last_error)[:100]
         checks.append(_check("tv_announcements", "Annonseringar", "fail", msg))
 
     # SSE position stream
@@ -362,6 +377,74 @@ def _run_traffic_checks():
 
 
 # ---------------------------------------------------------------------------
+# Category: SMHI (vader)
+# ---------------------------------------------------------------------------
+
+def _run_smhi_checks():
+    checks = []
+
+    smhi_url = (
+        "https://opendata-download-metfcst.smhi.se"
+        "/api/category/pmp3g/version/2/geotype/point"
+        f"/lon/{config.MAP_CENTER_LON}/lat/{config.MAP_CENTER_LAT}/data.json"
+    )
+
+    try:
+        r = requests.get(smhi_url, timeout=5)
+        if r.status_code != 200:
+            checks.append(_check(
+                "smhi_api", "SMHI API-anrop",
+                "warn", f"HTTP {r.status_code}",
+            ))
+            return {"namn": "SMHI (vader)", "kontroller": checks}
+
+        data = r.json()
+        ts_list = data.get("timeSeries", [])
+        if not ts_list:
+            checks.append(_check(
+                "smhi_api", "SMHI API-anrop",
+                "warn", "Svar saknar timeSeries",
+            ))
+            return {"namn": "SMHI (vader)", "kontroller": checks}
+
+        checks.append(_check(
+            "smhi_api", "SMHI API-anrop",
+            "ok", f"HTTP 200, {len(ts_list)} tidpunkter",
+        ))
+
+        # Parse first entry
+        entry = ts_list[0]
+        params = {p["name"]: p["values"][0] for p in entry.get("parameters", [])}
+        temp = params.get("t")
+        wind = params.get("ws")
+        valid = entry.get("validTime", "--")
+
+        if temp is not None:
+            checks.append(_check(
+                "smhi_temp", "Temperatur",
+                "ok", f"{temp} C (giltig: {valid})",
+            ))
+        else:
+            checks.append(_check(
+                "smhi_temp", "Temperatur",
+                "warn", "Temperatur saknas i svar",
+            ))
+
+        if wind is not None:
+            checks.append(_check(
+                "smhi_wind", "Vind",
+                "ok", f"{wind} m/s",
+            ))
+
+    except requests.Timeout:
+        checks.append(_check("smhi_api", "SMHI API-anrop", "warn", "Timeout (5s)"))
+    except Exception as e:
+        checks.append(_check("smhi_api", "SMHI API-anrop", "warn", _sanitize(e)[:200]))
+
+    return {"namn": "SMHI (vader)", "kontroller": checks}
+
+
+# ---------------------------------------------------------------------------
 # Run all
 # ---------------------------------------------------------------------------
 
@@ -377,6 +460,7 @@ def _run_all(base_url=None):
 
     kategorier.append(_run_train_checks())
     kategorier.append(_run_traffic_checks())
+    kategorier.append(_run_smhi_checks())
 
     counts = {"ok": 0, "warn": 0, "fail": 0}
     for kat in kategorier:

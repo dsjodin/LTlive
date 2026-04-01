@@ -45,7 +45,7 @@ function render(data) {
       <span class="label">Fel</span>
     </div>
     <div class="summary-pill">
-      <span class="count" style="color:#fff">${s.totalt}</span>
+      <span class="count count-total">${s.totalt}</span>
       <span class="label">Totalt</span>
     </div>
   `;

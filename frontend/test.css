@@ -97,6 +97,7 @@ a:hover { text-decoration: underline; }
 .summary-pill.warn { border-color: #7a5a20; }
 .summary-pill.fail .count { color: #f05050; }
 .summary-pill.fail { border-color: #7a2020; }
+.count-total { color: #fff; }
 
 /* -- Category card -------------------------------------------- */
 .card {
