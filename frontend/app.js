@@ -182,6 +182,18 @@ async function init() {
         if (cfg.map_default_zoom) state.MAP_ZOOM = cfg.map_default_zoom;
         if (cfg.nearby_radius_meters) state.nearbyRadius = cfg.nearby_radius_meters;
         if (cfg.frontend_poll_interval_ms) state.POLL_INTERVAL = cfg.frontend_poll_interval_ms;
+
+        // Apply server-side line config + colors (from admin interface)
+        if (typeof applyServerConfig === "function") applyServerConfig(cfg);
+
+        // Dynamic site name
+        if (cfg.site_name) {
+            state.siteName = cfg.site_name;
+            document.title = `LTlive - Bussar och tåg i ${cfg.site_name}`;
+            const brandSub = document.getElementById("brand-sub");
+            if (brandSub) brandSub.textContent = cfg.site_name;
+        }
+        if (cfg.features) state.features = cfg.features;
     } catch (_) { /* use built-in defaults */ }
 
     initMap();
@@ -197,7 +209,7 @@ async function init() {
     });
 
     const urlParams = new URLSearchParams(location.search);
-    if (urlParams.has("debug")) {
+    if (urlParams.has("debug") || state.features.driftsplats_overlay) {
         addDriftsplatsOverlay();
     }
 

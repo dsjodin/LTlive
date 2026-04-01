@@ -1,11 +1,10 @@
-import { fetchVehicles, fetchStations, fetchDepartures, fetchArrivals, fetchStationMessages } from "./modules/api.js";
+import { fetchVehicles, fetchStations, fetchDepartures, fetchArrivals, fetchStationMessages, fetchStatus } from "./modules/api.js";
 import { updateClock } from "./modules/utils.js";
 
 const REFRESH_INTERVAL = 30000; // 30 s
 
-// Known stations: ordered list of fallback search terms tried in sequence.
-// First term that finds a match wins.
-const PRESET_STATIONS = {
+// Hardcoded fallback — overridden by /api/status station_presets from admin config.
+let PRESET_STATIONS = {
     "orebro-c": {
         label: "Örebro Resecentrum",
         terms: ["örebro resecentrum", "örebro c", "örebro centralstation", "örebro central"],
@@ -53,10 +52,39 @@ document.getElementById("fs-btn").addEventListener("click", toggleFullscreen);
 document.getElementById("tab-dep").addEventListener("click", () => setMode("dep"));
 document.getElementById("tab-arr").addEventListener("click", () => setMode("arr"));
 
-// ── Station buttons (event listeners) ─────────────────
-document.querySelectorAll(".station-btn[data-station]").forEach(btn => {
-    btn.addEventListener("click", () => selectStation(btn.dataset.station));
-});
+// ── Station buttons — rendered dynamically from admin config ────
+function renderStationButtons() {
+    const bar = document.getElementById("station-bar");
+    // Remove existing preset buttons (keep search wrap)
+    bar.querySelectorAll(".station-btn").forEach(b => b.remove());
+    const searchWrap = document.getElementById("station-search-wrap");
+    const keys = Object.keys(PRESET_STATIONS);
+    keys.forEach(key => {
+        const btn = document.createElement("button");
+        btn.className = "station-btn";
+        btn.dataset.station = key;
+        btn.textContent = PRESET_STATIONS[key].label;
+        btn.addEventListener("click", () => selectStation(key));
+        bar.insertBefore(btn, searchWrap);
+    });
+}
+
+// Load presets from /api/status (admin config) and render buttons
+(async function loadPresets() {
+    try {
+        const status = await fetchStatus();
+        if (status.station_presets && status.station_presets.length > 0) {
+            PRESET_STATIONS = {};
+            for (const p of status.station_presets) {
+                PRESET_STATIONS[p.id] = {
+                    label: p.label,
+                    terms: p.search_terms || [p.label.toLowerCase()],
+                };
+            }
+        }
+    } catch (_) { /* use hardcoded fallback */ }
+    renderStationButtons();
+})();
 
 // ── Live TiB train positions ───────────────────────────
 async function fetchLiveTrains() {
@@ -575,8 +603,9 @@ const params = new URLSearchParams(location.search);
 if (params.get("stop_id")) {
     loadStation(params.get("stop_id"), params.get("stop_name") || params.get("stop_id"));
 } else {
-    // Default: try to load Örebro C
-    selectStation("orebro-c");
+    // Default: load the first configured preset station
+    const firstKey = Object.keys(PRESET_STATIONS)[0];
+    if (firstKey) selectStation(firstKey);
 }
 
 // ── Resize ────────────────────────────────────────────

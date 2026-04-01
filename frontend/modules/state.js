@@ -10,10 +10,12 @@ const state = {
     // Leaflet map instance (set by mapCore.init)
     map: null,
 
-    // Configuration (overridden by /api/status)
+    // Configuration (overridden by /api/status at startup)
     POLL_INTERVAL: 5000,
-    MAP_CENTER: [59.2753, 15.2134],
+    MAP_CENTER: [59.2753, 15.2134],  // default; replaced by /api/status
     MAP_ZOOM: 13,
+    siteName: "",
+    features: {},
     nearbyRadius: 400,
 
     // Dark mode

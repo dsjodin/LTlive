@@ -1,7 +1,8 @@
 /**
- * trainAnnounce.js — Overlay banner for train arrivals/departures at Örebro C.
+ * trainAnnounce.js — Overlay banner for train arrivals/departures at the main station.
  *
- * Polls /api/departures and /api/arrivals for train events at the main station.
+ * Polls /api/departures and /api/arrivals for train events at the configured
+ * primary station (from admin config station_presets, first entry).
  * When a train is ≤ 2 minutes away, shows an animated banner under the topbar
  * for 30 seconds.
  *
@@ -10,7 +11,7 @@
  *   Departure: "Tåg NNN mot XXX via YYY, ZZZ avgår strax från spår PP"
  */
 
-import { fetchDepartures, fetchArrivals, fetchStations } from "./api.js";
+import { fetchDepartures, fetchArrivals, fetchStations, fetchStatus } from "./api.js";
 
 const BANNER_DURATION_MS = 30_000;
 const POLL_INTERVAL_MS   = 15_000;
@@ -25,10 +26,24 @@ let _bannerQueue   = [];
 let _bannerVisible = false;
 let _bannerTimeout = null;
 
-// --- Find Örebro C stop_id ---
+// --- Find primary station stop_id (from admin config or fallback) ---
 
 async function resolveStation() {
-    const terms = ["örebro resecentrum", "örebro c", "örebro centralstation"];
+    // Try to get search terms from admin config (first station preset)
+    let terms = [];
+    try {
+        const status = await fetchStatus();
+        if (status.station_presets && status.station_presets.length > 0) {
+            const first = status.station_presets[0];
+            terms = first.search_terms || [first.label.toLowerCase()];
+        }
+    } catch (_) {}
+
+    // Fallback if no admin config
+    if (!terms.length) {
+        terms = ["örebro resecentrum", "örebro c", "örebro centralstation"];
+    }
+
     try {
         const data = await fetchStations();
         const stops = data.stations || data.stops || [];
@@ -42,7 +57,7 @@ async function resolveStation() {
                 return;
             }
         }
-        console.warn("TrainAnnounce: could not find Örebro C station");
+        console.warn("TrainAnnounce: could not resolve primary station");
     } catch (e) {
         console.warn("TrainAnnounce: station resolve failed:", e);
     }

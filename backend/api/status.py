@@ -9,6 +9,7 @@ import config
 import gtfs_loader
 import stats as _stats
 from stores.gtfs_store import gtfs_store
+from stores.site_config_store import site_config
 from stores.vehicle_store import vehicle_store
 from store import _data, _lock
 
@@ -35,15 +36,25 @@ def status():
         gtfs_error   = gtfs_store.error
         routes_count = len(gtfs_store.routes)
         gtfs_loaded  = gtfs_store.loaded
+
+    cfg = site_config.frontend()
+
     return jsonify({
         "gtfs_loaded":             gtfs_loaded,
         "gtfs_error":              bool(gtfs_error),
         "routes_count":            routes_count,
         "nearby_radius_meters":    config.NEARBY_RADIUS_METERS,
         "frontend_poll_interval_ms": config.FRONTEND_POLL_INTERVAL_MS,
-        "map_center_lat":          config.MAP_CENTER_LAT,
-        "map_center_lon":          config.MAP_CENTER_LON,
-        "map_default_zoom":        config.MAP_DEFAULT_ZOOM,
+        "map_center_lat":          cfg["map"]["center_lat"],
+        "map_center_lon":          cfg["map"]["center_lon"],
+        "map_default_zoom":        cfg["map"]["default_zoom"],
+        # Site config fields
+        "site_name":               cfg["site_name"],
+        "operator":                cfg["operator"],
+        "lines":                   cfg["lines"],
+        "line_colors":             cfg["line_colors"],
+        "station_presets":         cfg["station_presets"],
+        "features":                cfg["features"],
     })
 
 
