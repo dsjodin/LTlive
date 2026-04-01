@@ -6,6 +6,7 @@ from flask import Blueprint, jsonify, request
 
 import config
 from stores.site_config_store import site_config
+from tasks.sse_tasks import push_sse
 
 bp = Blueprint("admin", __name__)
 
@@ -43,6 +44,7 @@ def put_config():
     if not data or not isinstance(data, dict):
         return jsonify({"error": "Request body must be a JSON object"}), 400
     site_config.save(data)
+    push_sse("config", site_config.frontend())
     return jsonify({"ok": True, "config": site_config.get()})
 
 
@@ -54,6 +56,7 @@ def patch_config():
     if not data or not isinstance(data, dict):
         return jsonify({"error": "Request body must be a JSON object"}), 400
     updated = site_config.patch(data)
+    push_sse("config", site_config.frontend())
     return jsonify({"ok": True, "config": updated})
 
 

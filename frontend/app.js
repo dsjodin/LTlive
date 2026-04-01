@@ -170,6 +170,11 @@ function initControls() {
     });
 }
 
+function toggleRealtimeOverlay() {
+    const el = document.getElementById("realtime-disabled-overlay");
+    if (el) el.classList.toggle("active", !!state.features.realtime_disabled);
+}
+
 // --- Init ---
 
 async function init() {
@@ -194,6 +199,7 @@ async function init() {
             if (brandSub) brandSub.textContent = cfg.site_name;
         }
         if (cfg.features) state.features = cfg.features;
+        toggleRealtimeOverlay();
     } catch (_) { /* use built-in defaults */ }
 
     initMap();
@@ -258,7 +264,10 @@ async function init() {
     await pollVehicles();
     await pollAlerts();
 
-    initSSE(pollVehicles);
+    initSSE(pollVehicles, (cfg) => {
+        if (cfg.features) state.features = cfg.features;
+        toggleRealtimeOverlay();
+    });
     setInterval(pollAlerts, 30000);
     setInterval(pollStopDepartures, 60000);
 

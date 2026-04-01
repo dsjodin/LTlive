@@ -30,7 +30,7 @@ export function setSseStatus(sseState) {
 
 // --- SSE connection ---
 
-export function initSSE(pollVehiclesFn) {
+export function initSSE(pollVehiclesFn, onConfigFn) {
     if (state.sseSource) {
         state.sseSource.close();
         state.sseSource = null;
@@ -81,5 +81,7 @@ export function initSSE(pollVehiclesFn) {
         (data) => {
             if (state.showTraffic) renderTrafficLayer(data);
         },
+        // onConfig
+        onConfigFn,
     );
 }
