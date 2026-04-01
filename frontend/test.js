@@ -106,6 +106,19 @@ function buildCategory(kat) {
       <span class="check-namn">${esc(check.namn)}</span>
       <span class="check-msg ${msgClass}">${esc(check.meddelande)}</span>
     `;
+    if (check.detaljer) {
+      const toggle = document.createElement('span');
+      toggle.className = 'detail-toggle';
+      toggle.textContent = 'detaljer';
+      const detail = document.createElement('div');
+      detail.className = 'check-detail hidden';
+      detail.textContent = JSON.stringify(check.detaljer, null, 2);
+      toggle.addEventListener('click', () => {
+        detail.classList.toggle('hidden');
+      });
+      row.appendChild(toggle);
+      row.appendChild(detail);
+    }
     body.appendChild(row);
   }
 

@@ -141,6 +141,7 @@ a:hover { text-decoration: underline; }
 .check-row {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 10px;
   padding: 8px 14px;
   border-bottom: 1px solid #1e2130;
@@ -171,6 +172,34 @@ a:hover { text-decoration: underline; }
 }
 .check-msg.fail { color: #f07070; }
 .check-msg.warn { color: #f0c060; }
+
+/* -- Detail toggle -------------------------------------------- */
+.detail-toggle {
+  color: #7eb8f7;
+  font-size: 11px;
+  cursor: pointer;
+  margin-left: auto;
+  flex-shrink: 0;
+  padding: 2px 8px;
+  border: 1px solid #2a3a50;
+  border-radius: 4px;
+  background: #1c2a40;
+}
+.detail-toggle:hover { background: #2a3a50; }
+.check-detail {
+  width: 100%;
+  margin-top: 6px;
+  padding: 8px 10px;
+  background: #13151d;
+  border: 1px solid #2a2d3d;
+  border-radius: 4px;
+  font-family: monospace;
+  font-size: 11px;
+  color: #aab;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.check-detail.hidden { display: none; }
 
 /* -- Timestamp ------------------------------------------------ */
 .timestamp {

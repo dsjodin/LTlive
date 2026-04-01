@@ -237,19 +237,24 @@ def _run_api_checks(base_url):
         try:
             r = requests.get(url, timeout=3)
             if r.status_code != 200:
-                # Weather is external, downgrade to warn
                 status = "warn" if ep_id == "api_weather" else "fail"
-                checks.append(_check(ep_id, namn, status, f"HTTP {r.status_code}"))
+                body = _sanitize(r.text[:300]) if r.text else "(tomt svar)"
+                checks.append(_check(ep_id, namn, status, f"HTTP {r.status_code}",
+                                     detaljer={"url": path, "svar": body}))
                 continue
             data = r.json()
             if validate and not validate(data):
-                checks.append(_check(ep_id, namn, "warn", "Svar saknar forvantade falt"))
+                keys = list(data.keys())[:10] if isinstance(data, dict) else []
+                checks.append(_check(ep_id, namn, "warn", "Svar saknar forvantade falt",
+                                     detaljer={"url": path, "nycklar": keys}))
             else:
                 checks.append(_check(ep_id, namn, "ok", f"HTTP 200"))
         except requests.Timeout:
-            checks.append(_check(ep_id, namn, "fail", "Timeout (3s)"))
+            checks.append(_check(ep_id, namn, "fail", "Timeout (3s)",
+                                 detaljer={"url": path}))
         except Exception as e:
-            checks.append(_check(ep_id, namn, "fail", _sanitize(e)[:200]))
+            checks.append(_check(ep_id, namn, "fail", _sanitize(e)[:200],
+                                 detaljer={"url": path}))
 
     # SSE stream test
     try:
@@ -383,18 +388,23 @@ def _run_traffic_checks():
 def _run_smhi_checks():
     checks = []
 
+    # SMHI krav: max 6 decimaler pa koordinater
+    lon = round(config.MAP_CENTER_LON, 6)
+    lat = round(config.MAP_CENTER_LAT, 6)
     smhi_url = (
         "https://opendata-download-metfcst.smhi.se"
         "/api/category/pmp3g/version/2/geotype/point"
-        f"/lon/{config.MAP_CENTER_LON}/lat/{config.MAP_CENTER_LAT}/data.json"
+        f"/lon/{lon}/lat/{lat}/data.json"
     )
 
     try:
         r = requests.get(smhi_url, timeout=5)
         if r.status_code != 200:
+            body = r.text[:300] if r.text else "(tomt svar)"
             checks.append(_check(
                 "smhi_api", "SMHI API-anrop",
                 "warn", f"HTTP {r.status_code}",
+                detaljer={"url": smhi_url, "svar": body},
             ))
             return {"namn": "SMHI (vader)", "kontroller": checks}
 
