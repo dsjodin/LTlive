@@ -133,8 +133,8 @@ export function loadTrainRoutes() {
             const layerGroup = L.layerGroup();
             Object.values(data.shapes).forEach(coords => {
                 state.trainShapeCoords.push(coords);
-                L.polyline(coords, { color: "#7A3A00", weight: 6, opacity: 0.6 }).addTo(layerGroup);
-                L.polyline(coords, { color: "#E87722", weight: 3, opacity: 0.9 }).addTo(layerGroup);
+                L.polyline(coords, { color: "#7A3A00", weight: 6, opacity: 0.6, lineCap: "round", lineJoin: "round", smoothFactor: 0.5 }).addTo(layerGroup);
+                L.polyline(coords, { color: "#E87722", weight: 3, opacity: 0.9, lineCap: "round", lineJoin: "round", smoothFactor: 0.5 }).addTo(layerGroup);
             });
             state.trainRailLayer = layerGroup;
             layerGroup.addTo(state.map);
@@ -161,7 +161,7 @@ export function loadRouteShapes(routeId) {
             const layerGroup = L.layerGroup();
 
             Object.values(data.shapes).forEach((coords) => {
-                L.polyline(coords, { color, weight: 3, opacity: 0.7 }).addTo(layerGroup);
+                L.polyline(coords, { color, weight: 3, opacity: 0.7, lineCap: "round", lineJoin: "round", smoothFactor: 0.5 }).addTo(layerGroup);
             });
 
             state.routeLayers[routeId] = layerGroup;
@@ -202,7 +202,7 @@ export async function toggleRouteShapes(visible) {
             const color = getRouteColor(route);
             const layerGroup = L.layerGroup();
             shapeCoordsList.forEach((coords) => {
-                L.polyline(coords, { color, weight: 3, opacity: 0.7 }).addTo(layerGroup);
+                L.polyline(coords, { color, weight: 3, opacity: 0.7, lineCap: "round", lineJoin: "round", smoothFactor: 0.5 }).addTo(layerGroup);
             });
             state.routeLayers[routeId] = layerGroup;
             if (state.showRoutes) layerGroup.addTo(state.map);

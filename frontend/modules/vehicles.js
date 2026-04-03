@@ -7,6 +7,12 @@
 import state from "./state.js";
 import { getRouteColor, getRouteTextColor, getLineStyle } from "./colors.js";
 
+// --- Tab visibility: skip animation after returning from background ---
+let tabJustResumed = false;
+document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) tabJustResumed = true;
+});
+
 // --- Delay helpers ---
 
 function getDelayBorderColor(vehicle) {
@@ -289,13 +295,18 @@ export function updateVehicles(vehicles, { onDashboardUpdate } = {}) {
             const cur = state.vehicleMarkers[id].getLatLng();
             const dist = haversineDistance(cur.lat, cur.lng, v.lat, v.lon);
             if (dist > 1) {
-                state.vehicleAnim[id] = {
-                    fromLat: cur.lat, fromLon: cur.lng,
-                    toLat: v.lat, toLon: v.lon,
-                    startTime: performance.now(),
-                    duration: Math.min(state.POLL_INTERVAL * 0.95, 4000),
-                };
-                startAnimLoop();
+                if (tabJustResumed) {
+                    state.vehicleMarkers[id].setLatLng([v.lat, v.lon]);
+                    delete state.vehicleAnim[id];
+                } else {
+                    state.vehicleAnim[id] = {
+                        fromLat: cur.lat, fromLon: cur.lng,
+                        toLat: v.lat, toLon: v.lon,
+                        startTime: performance.now(),
+                        duration: Math.min(state.POLL_INTERVAL * 0.95, 4000),
+                    };
+                    startAnimLoop();
+                }
             }
 
             // Update trail
@@ -349,6 +360,8 @@ export function updateVehicles(vehicles, { onDashboardUpdate } = {}) {
         delete state.vehicleTrailPoints[id];
         if (state.vehicleTrails[id]) { map.removeLayer(state.vehicleTrails[id]); delete state.vehicleTrails[id]; }
     });
+
+    tabJustResumed = false;
 
     document.getElementById("vehicle-count").textContent = vehicles.length;
     document.getElementById("last-update").textContent = new Date().toLocaleTimeString("sv-SE");
