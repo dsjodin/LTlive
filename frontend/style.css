@@ -240,8 +240,12 @@ body {
     transition: bottom 0.3s ease, right 0.3s ease;
 }
 
+.tiles-light {
+    filter: grayscale(1) brightness(1.08) contrast(0.75);
+}
+
 .tiles-dark {
-    filter: invert(1) hue-rotate(180deg) brightness(0.9) contrast(0.9) saturate(0.4);
+    filter: invert(1) hue-rotate(180deg) grayscale(1) brightness(0.8) contrast(0.85);
 }
 
 /* ===== GPS button ===== */
