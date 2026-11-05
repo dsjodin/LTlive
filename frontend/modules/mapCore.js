@@ -26,7 +26,7 @@ export function setTileLayer(isDark) {
     if (state.tileLayer) state.map.removeLayer(state.tileLayer);
     state.tileLayer = L.tileLayer(TILE_URL, {
         attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> | Data: <a href="https://trafiklab.se">Trafiklab</a>',
-        className: isDark ? "tiles-dark" : "",
+        className: isDark ? "tiles-dark" : "tiles-light",
         maxZoom: 19,
     });
     state.tileLayer.addTo(state.map);
