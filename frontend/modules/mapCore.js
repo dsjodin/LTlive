@@ -6,10 +6,8 @@
 
 import state from "./state.js";
 
-const TILES = {
-    dark: "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
-    light: "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png",
-};
+// CARTO basemaps now require an API key; use OSM and darken via CSS in dark mode.
+const TILE_URL = "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
 
 export function initMap() {
     state.map = L.map("map", {
@@ -26,9 +24,9 @@ export function initMap() {
 
 export function setTileLayer(isDark) {
     if (state.tileLayer) state.map.removeLayer(state.tileLayer);
-    state.tileLayer = L.tileLayer(isDark ? TILES.dark : TILES.light, {
-        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/">CARTO</a> | Data: <a href="https://trafiklab.se">Trafiklab</a>',
-        subdomains: "abcd",
+    state.tileLayer = L.tileLayer(TILE_URL, {
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> | Data: <a href="https://trafiklab.se">Trafiklab</a>',
+        className: isDark ? "tiles-dark" : "",
         maxZoom: 19,
     });
     state.tileLayer.addTo(state.map);

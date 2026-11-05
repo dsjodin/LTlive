@@ -97,7 +97,7 @@ graph TB
 | `X-Frame-Options` | `SAMEORIGIN` |
 | `Referrer-Policy` | `strict-origin-when-cross-origin` |
 | `Permissions-Policy` | `geolocation=*` |
-| `Content-Security-Policy` | `default-src 'self'; script-src 'self' unpkg.com; style-src 'self' unpkg.com; img-src 'self' data: *.basemaps.cartocdn.com tile.openstreetmap.org; connect-src 'self'; frame-ancestors 'none'` |
+| `Content-Security-Policy` | `default-src 'self'; script-src 'self' unpkg.com; style-src 'self' unpkg.com; img-src 'self' data: tile.openstreetmap.org; connect-src 'self'; frame-ancestors 'none'` |
 
 ### SSE-proxy-konfiguration
 
