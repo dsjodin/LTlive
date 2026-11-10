@@ -86,29 +86,53 @@ export function invertMatrix(m) {
   return [a, b, c, d, -(a * m[4] + c * m[5]), -(b * m[4] + d * m[5])];
 }
 
-/**
- * Matrix mapping src points to dst points from pairs [[sx, sy], [dx, dy]].
- * 2 pairs: similarity (scale, rotation, move). 3 or more: least-squares affine.
- */
-export function ghostMatrix(pairs) {
-  if (pairs.length >= 3) {
-    const c = affineCoeffs(pairs.map(p => p[0]), pairs.map(p => p[1]));
-    if (c) return [c[0][0], c[1][0], c[0][1], c[1][1], c[0][2], c[1][2]];
-  }
+/** Least-squares similarity (scale, rotation, move, no skew) for pairs [[sx, sy], [dx, dy]]; null if < 2 distinct points. */
+export function similarityMatrix(pairs) {
   if (pairs.length < 2) return null;
-  const [[z1, w1], [z2, w2]] = pairs.slice(-2);
-  const dzx = z2[0] - z1[0], dzy = z2[1] - z1[1], dwx = w2[0] - w1[0], dwy = w2[1] - w1[1];
-  const den = dzx * dzx + dzy * dzy;
+  const n = pairs.length;
+  const zx = pairs.reduce((a, p) => a + p[0][0], 0) / n, zy = pairs.reduce((a, p) => a + p[0][1], 0) / n;
+  const wx = pairs.reduce((a, p) => a + p[1][0], 0) / n, wy = pairs.reduce((a, p) => a + p[1][1], 0) / n;
+  let nr = 0, ni = 0, den = 0;
+  for (const [[sx, sy], [dx, dy]] of pairs) {
+    const ax = sx - zx, ay = sy - zy, bx = dx - wx, by = dy - wy;
+    nr += bx * ax + by * ay;
+    ni += by * ax - bx * ay;
+    den += ax * ax + ay * ay;
+  }
   if (den < 1e-9) return null;
-  // a = (w2 - w1) / (z2 - z1) as complex numbers
-  const ar = (dwx * dzx + dwy * dzy) / den, ai = (dwy * dzx - dwx * dzy) / den;
-  const br = w1[0] - (ar * z1[0] - ai * z1[1]), bi = w1[1] - (ai * z1[0] + ar * z1[1]);
-  return [ar, ai, -ai, ar, br, bi];
+  const ar = nr / den, ai = ni / den;
+  return [ar, ai, -ai, ar, wx - (ar * zx - ai * zy), wy - (ai * zx + ar * zy)];
+}
+
+/**
+ * Rubber-sheet warp from control pairs [[sx, sy], [dx, dy]]: a similarity fit of all pairs plus a
+ * local correction (inverse distance weighted residuals), so every control point lands exactly
+ * on its target and the map around it follows. More points only make it fit better.
+ */
+export function makeWarp(pairs) {
+  if (!pairs.length) return (p) => p;
+  const m = similarityMatrix(pairs)
+    || [1, 0, 0, 1, pairs[0][1][0] - pairs[0][0][0], pairs[0][1][1] - pairs[0][0][1]];
+  const res = pairs.map(([src, dst]) => {
+    const [x, y] = applyMatrix(m, src);
+    return [src, dst[0] - x, dst[1] - y];
+  });
+  return ([x, y]) => {
+    const [bx, by] = applyMatrix(m, [x, y]);
+    let sw = 0, rx = 0, ry = 0;
+    for (const [[sx, sy], ex, ey] of res) {
+      const d2 = (x - sx) ** 2 + (y - sy) ** 2;
+      if (d2 < 1e-6) return [bx + ex, by + ey];
+      const w = 1 / d2;
+      sw += w; rx += w * ex; ry += w * ey;
+    }
+    return [bx + rx / sw, by + ry / sw];
+  };
 }
 
 /**
  * Move stops onto the nearest background circle (each circle used once, closest pairs first,
- * within maxDist). Other stops and all bends follow an affine fit of the moved ones.
+ * within maxDist). Other stops and all bends follow a warp of the moved ones.
  * Returns the number of stops placed on a circle.
  */
 export function snapNodesToCircles(model, maxDist) {
@@ -129,7 +153,7 @@ export function snapNodesToCircles(model, maxDist) {
   }
 
   const ids = Object.keys(match);
-  const move = fitAffine(ids.map(id => [model.nodes[id].x, model.nodes[id].y]), ids.map(id => match[id]));
+  const move = makeWarp(ids.map(id => [[model.nodes[id].x, model.nodes[id].y], match[id]]));
   for (const [id, n] of Object.entries(model.nodes)) {
     const [x, y] = match[id] || move([n.x, n.y]);
     n.x = Math.round(x); n.y = Math.round(y);
@@ -138,11 +162,11 @@ export function snapNodesToCircles(model, maxDist) {
   return ids.length;
 }
 
-/** Apply matrix m to every stop and bend of the map. */
-export function transformMap(model, m) {
+/** Move every stop and bend of the map with fn([x, y]) -> [x, y]. */
+export function transformMap(model, fn) {
   for (const n of Object.values(model.nodes)) {
-    const [x, y] = applyMatrix(m, [n.x, n.y]);
+    const [x, y] = fn([n.x, n.y]);
     n.x = Math.round(x); n.y = Math.round(y);
   }
-  for (const e of model.edges) e.bends = (e.bends || []).map(b => applyMatrix(m, b).map(Math.round));
+  for (const e of model.edges) e.bends = (e.bends || []).map(b => fn(b).map(Math.round));
 }

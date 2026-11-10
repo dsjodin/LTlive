@@ -5,7 +5,7 @@
 
 import { el, NS, renderMap, edgePoints, lineSort, modelBounds, terminalLines } from "./modules/schematicRender.js";
 import { attachPanZoom } from "./modules/svgPanZoom.js";
-import { fitAffine, ghostMatrix, invertMatrix, transformMap, snapNodesToCircles, SVG_STOP_CIRCLES } from "./modules/ltKartaSeed.js";
+import { fitAffine, makeWarp, applyMatrix, invertMatrix, transformMap, snapNodesToCircles, SVG_STOP_CIRCLES } from "./modules/ltKartaSeed.js";
 
 const GRID = 10;
 const $ = (id) => document.getElementById(id);
@@ -18,7 +18,7 @@ const history = [];
 const groups = { edges: $("g-edges"), nodes: $("g-nodes"), labels: $("g-labels") };
 const overlay = $("g-overlay");
 const svg = $("svg");
-const pz = attachPanZoom(svg, $("g-pan"), { maxScale: 20 });
+const pz = attachPanZoom(svg, $("g-pan"), { maxScale: 20, onChange: () => { if (model && pz) renderOverlay(); } });
 
 // --- Helpers -------------------------------------------------------------------
 
@@ -121,6 +121,21 @@ function highlightPair(id) {
     el("rect", { x: b.x - 4, y: b.y - 3, width: b.width + 8, height: b.height + 6, rx: 4, fill: "#1f6feb", "fill-opacity": 0.12, stroke: "#1f6feb", "stroke-width": 2 }, g);
 }
 
+// Every bend point is shown and can be dragged directly (about 12 px on screen)
+function drawBendHandles() {
+    const h = Math.max(6, 6 / pz.view.s);
+    model.edges.forEach((edge, ei) => {
+        const active = sel && sel.type === "edge" && sel.id === ei;
+        (edge.bends || []).forEach((b, i) => {
+            el("rect", {
+                x: b[0] - h, y: b[1] - h, width: 2 * h, height: 2 * h, rx: h / 3,
+                fill: active ? "#1f6feb" : "#ffffff", stroke: "#1f6feb", "stroke-width": h / 3,
+                class: "bend", "data-bend": i, "data-bend-edge": ei,
+            }, overlay);
+        });
+    });
+}
+
 function renderOverlay() {
     overlay.replaceChildren();
     // Thin connector from every label that has been moved away from its stop
@@ -132,7 +147,7 @@ function renderOverlay() {
     }
     if (calib) renderCalibOverlay();
     if (hoverId && (!sel || sel.id !== hoverId)) highlightPair(hoverId);
-    if (!sel) return;
+    if (!sel) { drawBendHandles(); return; }
     if (sel.type === "node" && model.nodes[sel.id]) highlightPair(sel.id);
     if (sel.type === "edge" && model.edges[sel.id]) {
         const edge = model.edges[sel.id];
@@ -141,10 +156,8 @@ function renderOverlay() {
             points: pts.map(p => p.join(",")).join(" "), fill: "none", stroke: "#1f6feb",
             "stroke-width": 26, "stroke-opacity": 0.25, "stroke-linejoin": "round", "data-edge": sel.id,
         }, overlay);
-        (edge.bends || []).forEach((b, i) => {
-            el("rect", { x: b[0] - 8, y: b[1] - 8, width: 16, height: 16, fill: "#1f6feb", stroke: "#fff", "stroke-width": 2, class: "bend", "data-bend": i }, overlay);
-        });
     }
+    drawBendHandles();
 }
 
 // --- Side panel ----------------------------------------------------------------
@@ -283,9 +296,9 @@ function renderSide() {
         row.append(
             button("Vänd ordning", () => edit(() => edge.lines.reverse())),
             button("Räta upp 45", () => edit(() => { edge.bends = []; straighten(edge); })),
-            button("Ta bort knäck", () => edit(() => { edge.bends = []; })),
+            button("Ta bort böjpunkter", () => edit(() => { edge.bends = []; })),
         );
-        box.append(row, div("kv", `Knäck: ${(edge.bends || []).length}. Dubbelklicka på sträckan för att lägga till.`));
+        box.append(row, div("kv", `Böjpunkter: ${(edge.bends || []).length}. Dubbelklicka på linjen för att lägga till, på en punkt för att ta bort.`));
     } else {
         box.className = "muted";
         box.textContent = "Klicka på en hållplats eller en linjesträcka.";
@@ -390,21 +403,29 @@ groups.labels.addEventListener("pointerdown", (e) => {
     startDrag(e, (dx, dy) => { n.label.dx = Math.round(ox + dx); n.label.dy = Math.round(oy + dy); });
 });
 
+// Handles are redrawn on select, so the browser's dblclick never reaches them: detect it here
+let lastBendDown = { key: "", t: 0 };
 overlay.addEventListener("pointerdown", (e) => {
-    if (e.target.dataset.bend == null || e.button !== 0) return;
-    const edge = model.edges[sel.id], i = Number(e.target.dataset.bend);
+    if (e.target.dataset.bend == null || e.button !== 0 || calib) return;
+    const ei = Number(e.target.dataset.bendEdge), i = Number(e.target.dataset.bend);
+    const edge = model.edges[ei];
+    const key = ei + ":" + i, now = performance.now();
+    if (lastBendDown.key === key && now - lastBendDown.t < 400) {
+        e.stopPropagation();
+        lastBendDown = { key: "", t: 0 };
+        sel = { type: "edge", id: ei };
+        edit(() => edge.bends.splice(i, 1));
+        return;
+    }
+    lastBendDown = { key, t: now };
     const [ox, oy] = edge.bends[i];
+    select({ type: "edge", id: ei });
     startDrag(e, (dx, dy) => { edge.bends[i] = [snap(ox + dx), snap(oy + dy)]; });
 });
 
-overlay.addEventListener("dblclick", (e) => {
-    e.stopPropagation();
-    const edge = model.edges[sel && sel.id];
-    if (!edge) return;
-    if (e.target.dataset.bend != null) {
-        edit(() => edge.bends.splice(Number(e.target.dataset.bend), 1));
-        return;
-    }
+// Double-click a line to add a bend point there; double-click a bend point to remove it
+function addBendAt(ei, e) {
+    const edge = model.edges[ei];
     const [mx, my] = pz.toModel(e.clientX, e.clientY);
     const pts = edgePoints(model, edge);
     let bestI = 0, bestD = Infinity;
@@ -415,8 +436,22 @@ overlay.addEventListener("dblclick", (e) => {
         const d = Math.hypot(mx - ax - t * abx, my - ay - t * aby);
         if (d < bestD) { bestD = d; bestI = i; }
     }
+    sel = { type: "edge", id: ei };
     edit(() => { edge.bends = edge.bends || []; edge.bends.splice(bestI, 0, [snap(mx), snap(my)]); });
-});
+}
+
+for (const g of [groups.edges, overlay]) {
+    g.addEventListener("dblclick", (e) => {
+        if (calib) return;
+        const d = e.target.dataset;
+        if (d.bend != null) {
+            e.stopPropagation();   // removal is handled on pointerdown
+        } else if (d.edge != null) {
+            e.stopPropagation();
+            addBendAt(Number(d.edge), e);
+        }
+    });
+}
 
 groups.edges.addEventListener("click", (e) => {
     const idx = e.target.dataset.edge;
@@ -586,14 +621,26 @@ function showGhost() {
     $("ghost").setAttribute("display", "inline");
 }
 
-// Move, scale and turn the whole map so the control-point stops land on their background spots.
-// The background (lt_karta.svg) itself never moves.
+// Warp the map so the control-point stops land on their background spots. Always computed from
+// the positions when calibration started (calib.base), so adding or removing points never
+// compounds. The background (lt_karta.svg) itself never moves.
+function captureBase() {
+    calib.base = {
+        nodes: Object.fromEntries(Object.entries(model.nodes).map(([id, n]) => [id, [n.x, n.y]])),
+        bends: model.edges.map(e => (e.bends || []).map(b => [...b])),
+    };
+}
+
 function applyCalibration() {
-    const pairs = model.ghost.points.filter(p => model.nodes[p.node])
-        .map(p => [[model.nodes[p.node].x, model.nodes[p.node].y], [p.gx, p.gy]]);
-    let m = ghostMatrix(pairs);
-    if (!m && pairs.length === 1) m = [1, 0, 0, 1, pairs[0][1][0] - pairs[0][0][0], pairs[0][1][1] - pairs[0][0][1]];
-    if (m) transformMap(model, m);
+    const base = calib.base;
+    const pairs = model.ghost.points.filter(p => base.nodes[p.node]).map(p => [base.nodes[p.node], [p.gx, p.gy]]);
+    const warp = makeWarp(pairs);
+    for (const [id, n] of Object.entries(model.nodes)) {
+        if (!base.nodes[id]) continue;
+        const [x, y] = warp(base.nodes[id]);
+        n.x = Math.round(x); n.y = Math.round(y);
+    }
+    model.edges.forEach((e, i) => { if (base.bends[i]) e.bends = base.bends[i].map(b => warp(b).map(Math.round)); });
 }
 
 function calibStatus() {
@@ -634,6 +681,7 @@ function renderCalib() {
         li.append(name, button("Ta bort", () => {
             snapshot();
             model.ghost.points.splice(i, 1);
+            applyCalibration();
             setDirty();
             render();
             renderCalib();
@@ -645,6 +693,7 @@ function renderCalib() {
 
 function startCalib() {
     calib = { pendingNode: null };
+    captureBase();
     showGhost();
     select(null);
     renderCalib();
@@ -735,9 +784,12 @@ $("btn-calib-done").addEventListener("click", endCalib);
 $("btn-calib-clear").addEventListener("click", () => {
     if (!model.ghost) return;
     snapshot();
+    // Back to the positions from before this calibration
+    model.ghost.points = [];
+    if (calib) applyCalibration();
     delete model.ghost;
     setDirty();
-    renderOverlay();
+    render();
     renderCalib();
 });
 $("btn-snap-circles").addEventListener("click", snapToCircles);
@@ -771,7 +823,8 @@ $("file-json").addEventListener("change", (e) => { if (e.target.files[0]) import
     delete model.saved;
     // Older saves moved the background instead of the map: move the map instead, keep the look
     if (model.ghost && model.ghost.matrix) {
-        transformMap(model, invertMatrix(model.ghost.matrix));
+        const inv = invertMatrix(model.ghost.matrix);
+        transformMap(model, (p) => applyMatrix(inv, p));
         delete model.ghost.matrix;
         dirty = true;
     }
