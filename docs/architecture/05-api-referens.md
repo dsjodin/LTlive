@@ -270,6 +270,18 @@ Bulk-hämtning av shapes för flera linjer.
 |-------|-----|-------------|
 | `route_ids` | string | Kommaseparerade route_id:n (max 2000 tecken) |
 
+### `GET /api/schematic`
+
+Linjekartans modell för `stadstrafiken.html` och `schematic-editor.html`: `lines`, `nodes` (x/y, namn, `stop_ids`, lat/lon, etikett), `edges` (a, b, `lines`, `bends`) och `patterns`. Finns ingen sparad modell genereras en startlayout ur GTFS. `saved` anger vilket.
+
+### `GET /api/admin/schematic/generate` (LAN + admin-nyckel)
+
+Nygenererad modell ur GTFS. Parameter `lines` (kommaseparerade linjenummer), standard `lines.stadstrafiken`.
+
+### `PUT /api/admin/schematic` (LAN + admin-nyckel)
+
+Sparar modellen (max 2 MB) till `SCHEMATIC_FILE` (standard `/app/data/config/schematic.json`).
+
 ---
 
 ## Linjeinformation
