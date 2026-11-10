@@ -1,7 +1,8 @@
 /**
- * ltKartaSeed.js - align the hand-drawn lt_karta.svg (viewBox 0 0 2481 3508) with the editor map.
- * The user calibrates the background with control points (stop on the map + same stop in the
- * background); stops can then be moved onto the background's stop circles.
+ * ltKartaSeed.js - align the editor map with the hand-drawn lt_karta.svg (viewBox 0 0 2481 3508).
+ * The background never moves: the user picks control points (stop on the map + same stop in the
+ * background) and the map is transformed onto the background; stops can then be moved onto
+ * the background's stop circles.
  */
 
 export const SVG_STOP_CIRCLES = [
@@ -86,7 +87,7 @@ export function invertMatrix(m) {
 }
 
 /**
- * Matrix mapping background points to map points from pairs [[gx, gy], [x, y]].
+ * Matrix mapping src points to dst points from pairs [[sx, sy], [dx, dy]].
  * 2 pairs: similarity (scale, rotation, move). 3 or more: least-squares affine.
  */
 export function ghostMatrix(pairs) {
@@ -105,18 +106,13 @@ export function ghostMatrix(pairs) {
   return [ar, ai, -ai, ar, br, bi];
 }
 
-/** Background circles in map coordinates. */
-export function circlesInMap(m) {
-  return SVG_STOP_CIRCLES.map(c => applyMatrix(m, c));
-}
-
 /**
  * Move stops onto the nearest background circle (each circle used once, closest pairs first,
- * within maxDist map units). Other stops and all bends follow an affine fit of the moved ones.
+ * within maxDist). Other stops and all bends follow an affine fit of the moved ones.
  * Returns the number of stops placed on a circle.
  */
-export function snapNodesToCircles(model, m, maxDist) {
-  const circles = circlesInMap(m);
+export function snapNodesToCircles(model, maxDist) {
+  const circles = SVG_STOP_CIRCLES;
   const cands = [];
   for (const [id, n] of Object.entries(model.nodes)) {
     circles.forEach((c, ci) => {
@@ -140,4 +136,13 @@ export function snapNodesToCircles(model, m, maxDist) {
   }
   for (const e of model.edges) e.bends = (e.bends || []).map(b => move(b).map(Math.round));
   return ids.length;
+}
+
+/** Apply matrix m to every stop and bend of the map. */
+export function transformMap(model, m) {
+  for (const n of Object.values(model.nodes)) {
+    const [x, y] = applyMatrix(m, [n.x, n.y]);
+    n.x = Math.round(x); n.y = Math.round(y);
+  }
+  for (const e of model.edges) e.bends = (e.bends || []).map(b => applyMatrix(m, b).map(Math.round));
 }

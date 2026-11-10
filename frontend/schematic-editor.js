@@ -5,7 +5,7 @@
 
 import { el, NS, renderMap, edgePoints, lineSort, modelBounds, terminalLines } from "./modules/schematicRender.js";
 import { attachPanZoom } from "./modules/svgPanZoom.js";
-import { fitAffine, ghostMatrix, applyMatrix, invertMatrix, circlesInMap, snapNodesToCircles, SVG_STOP_CIRCLES, IDENTITY } from "./modules/ltKartaSeed.js";
+import { fitAffine, ghostMatrix, invertMatrix, transformMap, snapNodesToCircles, SVG_STOP_CIRCLES } from "./modules/ltKartaSeed.js";
 
 const GRID = 10;
 const $ = (id) => document.getElementById(id);
@@ -95,7 +95,6 @@ function render() {
     requestAnimationFrame(() => {
         rafPending = false;
         mapEls = renderMap(model, groups);
-        $("ghost").setAttribute("transform", `matrix(${ghostM().join(" ")})`);
         renderOverlay();
     });
 }
@@ -349,7 +348,7 @@ groups.nodes.addEventListener("pointerdown", (e) => {
     if (calib) { e.stopPropagation(); return; }   // calibration picks stops on click, no drag
     const n = model.nodes[id], ox = n.x, oy = n.y;
     // With the background shown, stops snap to its circles (12 px on screen)
-    const circles = ghostVisible() ? circlesInMap(ghostM()) : [];
+    const circles = ghostVisible() ? SVG_STOP_CIRCLES : [];
     select({ type: "node", id });
     startDrag(e, (dx, dy) => {
         let x = ox + dx, y = oy + dy, best = 12 / pz.view.s, hit = null;
@@ -578,10 +577,6 @@ function renderCheck(added, newEdges) {
 
 // --- Background calibration -----------------------------------------------------
 
-function ghostM() {
-    return (model.ghost && model.ghost.matrix) || IDENTITY;
-}
-
 function ghostVisible() {
     return $("chk-ghost").checked;
 }
@@ -591,19 +586,14 @@ function showGhost() {
     $("ghost").setAttribute("display", "inline");
 }
 
-function recomputeGhost() {
-    const pts = model.ghost.points.filter(p => model.nodes[p.node]);
-    const pairs = pts.map(p => [[p.gx, p.gy], [model.nodes[p.node].x, model.nodes[p.node].y]]);
-    const m = ghostMatrix(pairs);
-    if (m) { model.ghost.matrix = m; return; }
-    if (pairs.length === 1) {
-        // One point: only move the background so the point lands on its stop
-        const cur = ghostM().slice();
-        const [x, y] = applyMatrix(cur, pairs[0][0]);
-        cur[4] += pairs[0][1][0] - x;
-        cur[5] += pairs[0][1][1] - y;
-        model.ghost.matrix = cur;
-    }
+// Move, scale and turn the whole map so the control-point stops land on their background spots.
+// The background (lt_karta.svg) itself never moves.
+function applyCalibration() {
+    const pairs = model.ghost.points.filter(p => model.nodes[p.node])
+        .map(p => [[model.nodes[p.node].x, model.nodes[p.node].y], [p.gx, p.gy]]);
+    let m = ghostMatrix(pairs);
+    if (!m && pairs.length === 1) m = [1, 0, 0, 1, pairs[0][1][0] - pairs[0][0][0], pairs[0][1][1] - pairs[0][0][1]];
+    if (m) transformMap(model, m);
 }
 
 function calibStatus() {
@@ -614,11 +604,10 @@ function calibStatus() {
 }
 
 function renderCalibOverlay() {
-    const m = ghostM();
     for (const p of (model.ghost && model.ghost.points) || []) {
         const n = model.nodes[p.node];
         if (!n) continue;
-        const [gx, gy] = applyMatrix(m, [p.gx, p.gy]);
+        const gx = p.gx, gy = p.gy;
         el("line", { x1: n.x, y1: n.y, x2: gx, y2: gy, stroke: "#d29922", "stroke-width": 3, "pointer-events": "none" }, overlay);
         el("circle", { cx: n.x, cy: n.y, r: 22, fill: "none", stroke: "#d29922", "stroke-width": 4, "pointer-events": "none" }, overlay);
         el("circle", { cx: gx, cy: gy, r: 14, fill: "none", stroke: "#2ea043", "stroke-width": 4, "pointer-events": "none" }, overlay);
@@ -634,19 +623,17 @@ function renderCalib() {
     const ul = $("calib-points");
     ul.replaceChildren();
     if (!calib) return;
-    const m = ghostM();
     const pts = (model.ghost && model.ghost.points) || [];
     pts.forEach((p, i) => {
         const n = model.nodes[p.node];
         if (!n) return;
-        const [gx, gy] = applyMatrix(m, [p.gx, p.gy]);
+        const gx = p.gx, gy = p.gy;
         const li = document.createElement("li");
         const name = document.createElement("span");
         name.textContent = `${n.name} (fel ${Math.round(Math.hypot(gx - n.x, gy - n.y))})`;
         li.append(name, button("Ta bort", () => {
             snapshot();
             model.ghost.points.splice(i, 1);
-            recomputeGhost();
             setDirty();
             render();
             renderCalib();
@@ -685,17 +672,17 @@ svg.addEventListener("click", (e) => {
     }
     if (!calib.pendingNode) { calibStatus(); return; }
     const [mx, my] = pz.toModel(e.clientX, e.clientY);
-    let [gx, gy] = applyMatrix(invertMatrix(ghostM()), [mx, my]);
+    let gx = mx, gy = my;
     let best = 25;
     for (const c of SVG_STOP_CIRCLES) {
         const d = Math.hypot(c[0] - gx, c[1] - gy);
         if (d < best) { best = d; [gx, gy] = c; }
     }
     snapshot();
-    model.ghost = model.ghost || { matrix: IDENTITY.slice(), points: [] };
+    model.ghost = model.ghost || { points: [] };
     model.ghost.points = model.ghost.points.filter(p => p.node !== calib.pendingNode);
     model.ghost.points.push({ node: calib.pendingNode, gx, gy });
-    recomputeGhost();
+    applyCalibration();
     calib.pendingNode = null;
     setDirty();
     render();
@@ -704,15 +691,9 @@ svg.addEventListener("click", (e) => {
 }, true);
 
 function snapToCircles() {
-    if (!model.ghost || model.ghost.points.length < 2) {
-        status("Kalibrera bakgrunden först (minst 2 punkter)", "error");
-        return;
-    }
-    if (!confirm("Flytta hållplatserna till närmaste cirkel i bakgrunden? (Kan ångras)")) return;
+    if (!confirm("Flytta hållplatserna till närmaste cirkel i bakgrunden? Kalibrera först om kartan inte ligger ungefär rätt. (Kan ångras)")) return;
     snapshot();
-    const m = ghostM();
-    const scale = Math.sqrt(Math.abs(m[0] * m[3] - m[1] * m[2]));
-    const n = snapNodesToCircles(model, m, 40 * scale);
+    const n = snapNodesToCircles(model, 40);
     showGhost();
     setDirty();
     render();
@@ -756,7 +737,7 @@ $("btn-calib-clear").addEventListener("click", () => {
     snapshot();
     delete model.ghost;
     setDirty();
-    render();
+    renderOverlay();
     renderCalib();
 });
 $("btn-snap-circles").addEventListener("click", snapToCircles);
@@ -788,6 +769,12 @@ $("file-json").addEventListener("change", (e) => { if (e.target.files[0]) import
     }
     const saved = model.saved;
     delete model.saved;
+    // Older saves moved the background instead of the map: move the map instead, keep the look
+    if (model.ghost && model.ghost.matrix) {
+        transformMap(model, invertMatrix(model.ghost.matrix));
+        delete model.ghost.matrix;
+        dirty = true;
+    }
     $("paper").setAttribute("width", model.width);
     $("paper").setAttribute("height", model.height);
     const b = modelBounds(model, 200);

@@ -13,7 +13,7 @@
     <button id="btn-undo" title="Ctrl+Z">Ångra</button>
     <span class="sep"></span>
     <button id="btn-merge" title="Lägg till nya hållplatser och linjer från GTFS utan att flytta befintliga">Hämta nytt från GTFS</button>
-    <button id="btn-calib" title="Peka ut några hållplatser i kartan och samma hållplats i lt_karta.svg">Kalibrera bakgrund</button>
+    <button id="btn-calib" title="Peka ut några hållplatser i kartan och samma hållplats i lt_karta.svg, så anpassas kartan till bakgrunden">Kalibrera mot bakgrund</button>
     <button id="btn-snap-circles" title="Flytta hållplatserna till närmaste cirkel i den kalibrerade bakgrunden">Flytta till bakgrundens cirklar</button>
     <button id="btn-straighten" title="Lägg till knäck så att alla raka kanter går i 0/45/90 grader">Räta upp alla</button>
     <span class="sep"></span>
@@ -44,8 +44,8 @@
   <aside id="side">
     <div id="status"></div>
     <section id="calib-panel" hidden>
-      <h2>Kalibrera bakgrund</h2>
-      <p class="muted">Klicka en hållplats i kartan och sedan samma hållplats i bakgrunden. Upprepa för 3-4 hållplatser långt ifrån varandra. Dra för att panorera.</p>
+      <h2>Kalibrera mot bakgrund</h2>
+      <p class="muted">Klicka en hållplats i kartan och sedan samma hållplats i bakgrunden. Kartan flyttas, skalas och vrids så att den passar bakgrunden, som ligger still. Upprepa för 3-4 hållplatser långt ifrån varandra. Dra för att panorera.</p>
       <ul id="calib-points" class="list"></ul>
       <div class="row">
         <button id="btn-calib-done" class="primary">Klar</button>
