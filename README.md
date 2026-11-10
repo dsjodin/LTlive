@@ -75,6 +75,8 @@ Linjekartan är en datamodell (`schematic.json` på volymen `config-data`), inte
 1. Öppna `/schematic-editor.html` från LAN. Finns ingen sparad modell genereras en startlayout ur GTFS (linjerna i `lines.stadstrafiken` i adminkonfigurationen).
 2. **Importera lt_karta.svg** flyttar hållplatserna till positionerna i den handritade kartan.
 3. Dra hållplatser (Shift låser till 0/45/90 grader), dra namn, klicka på en sträcka för att ändra linjeordning och lägga till knäck. **Räta upp alla** gör sneda sträckor till 45-graders knäck.
+   Hållplatsnamn kan roteras (R / Shift+R), få annan storlek (+ / -), justeras vänster/mitten/höger och delas på flera rader. Namn som flyttats bort från sin hållplats visas med en streckad kopplingslinje i editorn, och hovring markerar namn och hållplats tillsammans. "Ledlinje på kartan" ritar en tunn linje även på den färdiga kartan.
+   Linjeikoner (linjenummer i en rundad fyrkant) visas automatiskt där en linje slutar. De kan dras till en annan plats eller väljas med kryssrutor per hållplats.
 4. **Spara** (frågar efter `ADMIN_API_KEY`). Den levande kartan använder modellen direkt.
 5. Efter tidtabellsbyte: **Hämta nytt från GTFS** lägger till nya hållplatser och sträckor utan att flytta befintliga och listar sådant som inte längre finns.
 
