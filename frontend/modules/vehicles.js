@@ -182,20 +182,23 @@ function _bearingBetween(lat1, lon1, lat2, lon2) {
     return ((Math.atan2(y, x) * 180 / Math.PI) + 360) % 360;
 }
 
+// Bearing of the nearest train shape segment, or null if none within 30 m
+// (shapes only cover a few lines; a far-away segment gives a wrong angle).
 export function snapBearingToTrack(lat, lon) {
+    const mLat = 110540, mLon = 111320 * Math.cos(lat * Math.PI / 180);
     let bestDist = Infinity, bestBearing = null;
     for (const coords of state.trainShapeCoords) {
         for (let i = 0; i < coords.length - 1; i++) {
             const [aLat, aLon] = coords[i];
             const [bLat, bLon] = coords[i + 1];
-            const d = _distToSegment(lat, lon, aLat, aLon, bLat, bLon);
+            const d = _distToSegment(lon * mLon, lat * mLat, aLon * mLon, aLat * mLat, bLon * mLon, bLat * mLat);
             if (d < bestDist) {
                 bestDist = d;
                 bestBearing = _bearingBetween(aLat, aLon, bLat, bLon);
             }
         }
     }
-    return bestBearing;
+    return bestDist <= 30 ? bestBearing : null;
 }
 
 // --- Animation ---
@@ -286,11 +289,11 @@ export function updateVehicles(vehicles, { onDashboardUpdate } = {}) {
             if (moving) {
                 state.vehicleLastBearing[id] = v.bearing;
             } else {
-                if (state.trainShapeCoords.length > 0) {
-                    v.bearing = snapBearingToTrack(v.lat, v.lon);
-                } else {
-                    v.bearing = state.vehicleLastBearing[id] ?? null;
-                }
+                // Stationary: last heading while moving, else a nearby track
+                // shape, else the source's own bearing
+                v.bearing = state.vehicleLastBearing[id]
+                    ?? snapBearingToTrack(v.lat, v.lon)
+                    ?? v.bearing;
             }
         }
 
