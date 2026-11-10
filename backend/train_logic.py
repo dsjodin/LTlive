@@ -10,6 +10,7 @@ import math
 import time
 
 import config
+import track_bearing
 from store import _data, _lock
 from stores.train_store import train_store
 
@@ -178,6 +179,8 @@ def _annotate_oxyfi_from_announcements(trains: list) -> list:
 
     now = int(time.time())
     WINDOW = 1200  # ±20 min — covers trains currently between stops
+    MAX_STATION_DIST_M = 2000  # only guess for trains at/near a configured station
+    taken = {v.get("tv_service_number") for v in trains} | {v.get("label") for v in trains}
 
     # Phase 1: collect all (time_diff, oxyfi_index, train_number, sched_time) candidates
     candidates = []
@@ -202,7 +205,7 @@ def _annotate_oxyfi_from_announcements(trains: list) -> list:
                 best_dist = dist
                 nearest_loc_sig = loc_sig
 
-        if not nearest_loc_sig:
+        if not nearest_loc_sig or best_dist > MAX_STATION_DIST_M:
             continue
 
         ann_bucket = tv_ann.get(nearest_loc_sig, {})
@@ -210,6 +213,8 @@ def _annotate_oxyfi_from_announcements(trains: list) -> list:
             op = (entry.get("operator") or "").lower()
             pr = (entry.get("product") or "").lower()
             if not ("arriva" in op or "bergslagen" in pr or "tib" in pr):
+                continue
+            if entry.get("train_number") in taken:
                 continue
             rt = entry.get("realtime_time") or entry.get("scheduled_time")
             if rt is None:
@@ -274,6 +279,9 @@ def _merge_trains(oxyfi_trains: list, tv_trains: list) -> list:
 
     def _merge(oxyfi, tv):
         merged = {**oxyfi, "tv_service_number": tv["label"], "tv_matched": True}
+        # Oxyfi sends no GPS course when standing still; TV always has a bearing
+        if merged.get("bearing") is None and tv.get("bearing") is not None:
+            merged["bearing"] = tv["bearing"]
         for k in _enrich_keys:
             if tv.get(k) and not oxyfi.get(k):
                 merged[k] = tv[k]
@@ -335,3 +343,15 @@ def _merge_trains(oxyfi_trains: list, tv_trains: list) -> list:
     # Add TV trains not matched to any Oxyfi vehicle
     result += [t for t in tv_trains if t["vehicle_id"] not in matched_tv_ids]
     return result
+
+
+def _fill_track_bearings(trains: list) -> list:
+    """Give trains without a bearing (stationary Oxyfi GPS) the direction of
+    the nearest track from Trafikverket BanInfo. Non-blocking: uncached
+    positions get their bearing on a later tick."""
+    for t in trains:
+        if t.get("bearing") is None and t.get("lat") and t.get("lon"):
+            b = track_bearing.get(t["lat"], t["lon"])
+            if b is not None:
+                t["bearing"] = b
+    return trains

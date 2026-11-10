@@ -19,6 +19,7 @@ from stores.vehicle_store import vehicle_store
 from enrichment import enrich_vehicles
 from train_logic import (
     _annotate_oxyfi_from_announcements,
+    _fill_track_bearings,
     _merge_trains,
     _tv_trains_from_positions,
 )
@@ -163,6 +164,7 @@ def push_vehicle_update() -> None:
         tv_trains    = _tv_trains_from_positions()
         trains       = _merge_trains(oxyfi_trains, tv_trains)
         trains       = _annotate_oxyfi_from_announcements(trains)
+        trains       = _fill_track_bearings(trains)
     except Exception as exc:
         print(f"[sse] train source error (buses will still push): {exc}")
 

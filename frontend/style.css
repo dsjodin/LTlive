@@ -1924,3 +1924,27 @@ body.stop-open #map { bottom: calc(52vh + var(--ticker-h)); }
         padding: 16px 20px;
     }
 }
+
+/* ===== Track layer legend (colours from Trafikverket BanInfo) ===== */
+.rail-legend {
+    background: var(--bg);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 6px 10px;
+    font-size: 12px;
+    line-height: 1.7;
+    box-shadow: 0 1px 4px rgba(0,0,0,.3);
+}
+.rail-legend-swatch {
+    display: inline-block;
+    width: 18px;
+    height: 4px;
+    margin-right: 8px;
+    vertical-align: middle;
+    border-radius: 2px;
+}
+.rail-legend-normal    { background: #899533; }
+.rail-legend-avvikande { background: #d52b1e; }
+.rail-legend-sido      { background: #0073b0; }
+.rail-legend-plattform { background: #fecb00; height: 6px; }
