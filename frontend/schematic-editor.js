@@ -3,7 +3,7 @@
  * Loads /api/schematic, saves with PUT /api/admin/schematic (admin key, LAN only).
  */
 
-import { el, NS, renderMap, edgePoints, lineSort, modelBounds } from "./modules/schematicRender.js";
+import { el, NS, renderMap, edgePoints, lineSort, modelBounds, terminalLines } from "./modules/schematicRender.js";
 import { attachPanZoom } from "./modules/svgPanZoom.js";
 import { seedFromLtKarta, fitAffine } from "./modules/ltKartaSeed.js";
 
@@ -93,18 +93,45 @@ function render() {
     rafPending = true;
     requestAnimationFrame(() => {
         rafPending = false;
-        renderMap(model, groups);
+        mapEls = renderMap(model, groups);
         renderOverlay();
     });
 }
 
+let mapEls = null;
+let hoverId = null;
+const LEADER_MIN = 30;   // labels further than this from their stop get a connector in the editor
+
+// Anchor point of a label (where its text starts) in model coordinates
+function labelAnchor(n) {
+    const lab = n.label || { dx: 14, dy: 6 };
+    return [n.x + lab.dx, n.y + lab.dy - (lab.size || model.label_size || 17) / 3];
+}
+
+function highlightPair(id) {
+    const n = model.nodes[id], t = mapEls && mapEls.labelEls[id];
+    if (!n || !t) return;
+    const [ax, ay] = labelAnchor(n);
+    el("line", { x1: n.x, y1: n.y, x2: ax, y2: ay, stroke: "#1f6feb", "stroke-width": 2.5, "pointer-events": "none" }, overlay);
+    el("circle", { cx: n.x, cy: n.y, r: 26, fill: "none", stroke: "#1f6feb", "stroke-width": 4, "stroke-dasharray": "6 4", "pointer-events": "none" }, overlay);
+    const b = t.getBBox();
+    const g = el("g", { "pointer-events": "none" }, overlay);
+    if (t.getAttribute("transform")) g.setAttribute("transform", t.getAttribute("transform"));
+    el("rect", { x: b.x - 4, y: b.y - 3, width: b.width + 8, height: b.height + 6, rx: 4, fill: "#1f6feb", "fill-opacity": 0.12, stroke: "#1f6feb", "stroke-width": 2 }, g);
+}
+
 function renderOverlay() {
     overlay.replaceChildren();
-    if (!sel) return;
-    if (sel.type === "node" && model.nodes[sel.id]) {
-        const n = model.nodes[sel.id];
-        el("circle", { cx: n.x, cy: n.y, r: 30, fill: "none", stroke: "#1f6feb", "stroke-width": 4, "stroke-dasharray": "6 4", "pointer-events": "none" }, overlay);
+    // Thin connector from every label that has been moved away from its stop
+    for (const n of Object.values(model.nodes)) {
+        const lab = n.label;
+        if (!lab || Math.hypot(lab.dx, lab.dy) < LEADER_MIN) continue;
+        const [ax, ay] = labelAnchor(n);
+        el("line", { x1: n.x, y1: n.y, x2: ax, y2: ay, stroke: "#1f6feb", "stroke-width": 1.5, "stroke-opacity": 0.6, "stroke-dasharray": "5 4", "pointer-events": "none" }, overlay);
     }
+    if (hoverId && (!sel || sel.id !== hoverId)) highlightPair(hoverId);
+    if (!sel) return;
+    if (sel.type === "node" && model.nodes[sel.id]) highlightPair(sel.id);
     if (sel.type === "edge" && model.edges[sel.id]) {
         const edge = model.edges[sel.id];
         const pts = edgePoints(model, edge);
@@ -133,6 +160,17 @@ function button(text, fn, cls = "") {
     if (cls) b.className = cls;
     b.addEventListener("click", fn);
     return b;
+}
+
+function numberInput(value, min, max, step, apply) {
+    const inp = document.createElement("input");
+    inp.type = "number";
+    Object.assign(inp, { value, min, max, step });
+    inp.addEventListener("change", () => {
+        const v = Number(inp.value);
+        if (Number.isFinite(v)) edit(() => apply(Math.max(min, Math.min(max, v))));
+    });
+    return inp;
 }
 
 function badge(line) {
@@ -166,24 +204,68 @@ function renderSide() {
     box.className = "";
     if (sel && sel.type === "node" && model.nodes[sel.id]) {
         const n = model.nodes[sel.id];
-        const row = div("row");
-        const name = document.createElement("input");
-        name.type = "text";
+        const lab = () => (n.label ||= { dx: 14, dy: 6, anchor: "start" });
+        const cur = n.label || {};
+        const name = document.createElement("textarea");
+        name.rows = 2;
         name.value = n.name;
-        name.addEventListener("change", () => edit(() => { n.name = name.value; }));
-        row.append(name);
-        box.append(row);
-        const lab = div("row");
-        lab.append(div("muted", "Etikett:"));
-        for (const [k, preset] of Object.entries(LABEL_PRESETS)) lab.append(button(k, () => edit(() => { n.label = { ...preset }; }), "small"));
-        box.append(lab);
-        box.append(div("kv", `id: ${sel.id}`), div("kv", `stop_ids: ${n.stop_ids.join(", ")}`),
-            div("kv", `lat/lon: ${n.lat}, ${n.lon}`), div("kv", `x/y: ${n.x}, ${n.y}`));
-        const lines = div("row");
+        name.title = "Enter ger ny rad";
+        name.addEventListener("change", () => edit(() => { n.name = name.value.replace(/\s+$/, ""); }));
+        box.append(name);
+
+        const pos = div("row");
+        pos.append(div("muted", "Placering:"));
+        for (const [k, preset] of Object.entries(LABEL_PRESETS)) pos.append(button(k, () => edit(() => { n.label = { ...lab(), ...preset }; }), "small"));
+        const just = div("row");
+        just.append(div("muted", "Justering:"));
+        for (const [k, anchor] of [["Vänster", "start"], ["Mitten", "middle"], ["Höger", "end"]]) {
+            just.append(button(k, () => edit(() => { lab().anchor = anchor; }), "small" + ((cur.anchor || "start") === anchor ? " active" : "")));
+        }
+        const rot = div("row");
+        rot.append(div("muted", "Rotation:"));
+        for (const d of [-90, -45, 0, 45, 90]) rot.append(button(String(d), () => edit(() => { lab().rotate = d; }), "small" + ((cur.rotate || 0) === d ? " active" : "")));
+        rot.append(numberInput(cur.rotate || 0, -180, 180, 5, (v) => { lab().rotate = v; }));
+        const size = div("row");
+        size.append(div("muted", "Storlek:"), numberInput(cur.size || model.label_size || 17, 8, 60, 1, (v) => { lab().size = v; }));
+        if (cur.size) size.append(button("Standard", () => edit(() => { delete lab().size; }), "small"));
+        const leader = document.createElement("label");
+        leader.className = "check";
+        const lcb = document.createElement("input");
+        lcb.type = "checkbox";
+        lcb.checked = !!cur.leader;
+        lcb.addEventListener("change", () => edit(() => { if (lcb.checked) lab().leader = true; else delete lab().leader; }));
+        leader.append(lcb, "Ledlinje på kartan");
+        const lrow = div("row");
+        lrow.append(leader);
+        box.append(pos, just, rot, size, lrow);
+
         const ls = new Set();
         model.edges.forEach(e => { if (e.a === sel.id || e.b === sel.id) e.lines.forEach(l => ls.add(l)); });
-        [...ls].sort(lineSort).forEach(l => lines.append(badge(l)));
-        box.append(lines);
+        const term = terminalLines(model)[sel.id] || [];
+        const icons = div("row");
+        icons.append(div("muted", "Linjeikoner:"));
+        for (const l of [...ls].sort(lineSort)) {
+            const lbl = document.createElement("label");
+            lbl.className = "check";
+            const cb = document.createElement("input");
+            cb.type = "checkbox";
+            cb.checked = term.includes(l);
+            cb.addEventListener("change", () => edit(() => {
+                const set = new Set(term);
+                if (cb.checked) set.add(l); else set.delete(l);
+                n.terminals = [...set];
+            }));
+            lbl.append(cb, badge(l));
+            icons.append(lbl);
+        }
+        box.append(icons);
+        const iconBtns = div("row");
+        if (Array.isArray(n.terminals)) iconBtns.append(button("Automatiska ikoner", () => edit(() => { delete n.terminals; }), "small"));
+        if (n.badge) iconBtns.append(button("Auto-placera ikoner", () => edit(() => { delete n.badge; }), "small"));
+        if (iconBtns.childElementCount) box.append(iconBtns);
+
+        box.append(div("kv", `id: ${sel.id}`), div("kv", `stop_ids: ${n.stop_ids.join(", ")}`),
+            div("kv", `lat/lon: ${n.lat}, ${n.lon}`), div("kv", `x/y: ${n.x}, ${n.y}`));
     } else if (sel && sel.type === "edge" && model.edges[sel.id]) {
         const edge = model.edges[sel.id];
         box.append(div("", `${model.nodes[edge.a].name} - ${model.nodes[edge.b].name}`));
@@ -209,6 +291,9 @@ function renderSide() {
 
     const lc = $("lines-content");
     lc.replaceChildren();
+    const ns = div("row");
+    ns.append(div("muted", "Namnstorlek (standard):"), numberInput(model.label_size || 17, 8, 60, 1, (v) => { model.label_size = v; }));
+    lc.append(ns);
     for (const l of Object.keys(model.lines).sort(lineSort)) {
         const row = div("row");
         const inp = document.createElement("input");
@@ -263,6 +348,25 @@ groups.nodes.addEventListener("pointerdown", (e) => {
     startDrag(e, (dx, dy) => { n.x = snap(ox + dx); n.y = snap(oy + dy); });
 });
 
+// Hovering a stop or its name highlights both
+for (const g of [groups.nodes, groups.labels]) {
+    g.addEventListener("pointerover", (e) => {
+        const id = e.target.dataset.node || e.target.dataset.label || e.target.dataset.badge;
+        if (id && id !== hoverId) { hoverId = id; renderOverlay(); }
+    });
+    g.addEventListener("pointerout", () => { if (hoverId) { hoverId = null; renderOverlay(); } });
+}
+
+groups.nodes.addEventListener("pointerdown", (e) => {
+    const id = e.target.dataset.badge;
+    if (!id || e.button !== 0) return;
+    const n = model.nodes[id];
+    const b = groups.nodes.querySelector(`g[data-badge="${CSS.escape(id)}"]`).getBBox();
+    const ox = b.x + b.width / 2 - n.x, oy = b.y + b.height / 2 - n.y;
+    select({ type: "node", id });
+    startDrag(e, (dx, dy) => { n.badge = { dx: Math.round(ox + dx), dy: Math.round(oy + dy) }; });
+});
+
 groups.labels.addEventListener("pointerdown", (e) => {
     const id = e.target.dataset.label;
     if (!id || e.button !== 0) return;
@@ -312,9 +416,23 @@ for (const g of [groups.nodes, groups.labels, overlay]) g.addEventListener("clic
 svg.addEventListener("click", () => { if (sel) select(null); });
 
 window.addEventListener("keydown", (e) => {
-    if (e.target.tagName === "INPUT") return;
+    if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA") return;
     if ((e.ctrlKey || e.metaKey) && e.key === "z") { e.preventDefault(); undo(); return; }
     if (e.key === "Escape") { select(null); return; }
+    if (sel && sel.type === "node" && !e.ctrlKey && !e.metaKey) {
+        const n = model.nodes[sel.id];
+        const lab = () => (n.label ||= { dx: 14, dy: 6, anchor: "start" });
+        if (e.key === "r" || e.key === "R") {
+            const r = (lab().rotate || 0) + (e.shiftKey ? -45 : 45);
+            edit(() => { lab().rotate = ((r + 180) % 360 + 360) % 360 - 180; });
+            return;
+        }
+        if (e.key === "+" || e.key === "=" || e.key === "-") {
+            const size = (lab().size || model.label_size || 17) + (e.key === "-" ? -1 : 1);
+            edit(() => { lab().size = Math.max(8, Math.min(60, size)); });
+            return;
+        }
+    }
     const dirs = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
     if (dirs[e.key] && sel && sel.type === "node") {
         e.preventDefault();

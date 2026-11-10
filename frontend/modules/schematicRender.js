@@ -142,6 +142,7 @@ export function nodeWidths(model) {
 /**
  * Draw the network into the groups {edges, nodes, labels}.
  * opts.hiddenLines: Set of line names drawn faded.
+ * opts.interactive: false makes the terminal line badges ignore clicks.
  * Returns {edgeEls: [[pathEl, line], ...] per edge index, nodeEls: {id: el}, labelEls: {id: el}}.
  */
 export function renderMap(model, groups, opts = {}) {
@@ -166,20 +167,119 @@ export function renderMap(model, groups, opts = {}) {
     });
 
     const widths = nodeWidths(model);
+    const radius = (id) => ((widths[id] || 1) - 1) * LINE_SPACING / 2 + LINE_WIDTH / 2 + 3;
     for (const [id, n] of Object.entries(model.nodes)) {
-        const r = (widths[id] - 1) * LINE_SPACING / 2 + LINE_WIDTH / 2 + 3;
         nodeEls[id] = el("circle", {
-            cx: n.x, cy: n.y, r, fill: "#ffffff", stroke: "#1c1c1e", "stroke-width": 3, "data-node": id,
+            cx: n.x, cy: n.y, r: radius(id), fill: "#ffffff", stroke: "#1c1c1e", "stroke-width": 3, "data-node": id,
         }, groups.nodes);
-        const lab = n.label || { dx: 14, dy: 6, anchor: "start" };
-        const t = el("text", {
-            x: n.x + lab.dx, y: n.y + lab.dy, "text-anchor": lab.anchor,
-            "font-size": 17, "font-weight": 600, "font-family": "Helvetica, Arial, sans-serif",
-            fill: "#1c1c1e", stroke: "#ffffff", "stroke-width": 4, "stroke-linejoin": "round",
-            "paint-order": "stroke", "data-label": id,
-        }, groups.labels);
-        t.textContent = n.name;
-        labelEls[id] = t;
+        labelEls[id] = drawLabel(model, id, n, groups.labels);
+    }
+
+    for (const [id, lines] of Object.entries(terminalLines(model))) {
+        drawBadges(model, id, lines, radius(id), groups.nodes, hidden, opts.interactive !== false);
     }
     return { edgeEls, nodeEls, labelEls };
+}
+
+function drawLabel(model, id, n, parent) {
+    const lab = n.label || { dx: 14, dy: 6, anchor: "start" };
+    const x = n.x + lab.dx, y = n.y + lab.dy;
+    const attrs = {
+        x, y, "text-anchor": lab.anchor || "start",
+        "font-size": lab.size || model.label_size || 17, "font-weight": 600, "font-family": "Helvetica, Arial, sans-serif",
+        fill: "#1c1c1e", stroke: "#ffffff", "stroke-width": 4, "stroke-linejoin": "round",
+        "paint-order": "stroke", "data-label": id,
+    };
+    if (lab.rotate) attrs.transform = `rotate(${lab.rotate} ${x} ${y})`;
+    if (lab.leader) {
+        // Thin line from the stop to a label placed away from it
+        const ty = y - (lab.size || model.label_size || 17) / 3;
+        const len = Math.hypot(x - n.x, ty - n.y) || 1;
+        el("line", {
+            x1: n.x + (x - n.x) / len * 10, y1: n.y + (ty - n.y) / len * 10, x2: x, y2: ty,
+            stroke: "#1c1c1e", "stroke-width": 1.5, "pointer-events": "none",
+        }, parent);
+    }
+    const t = el("text", attrs, parent);
+    const rows = String(n.name).split("\n");
+    if (rows.length === 1) {
+        t.textContent = n.name;
+        return t;
+    }
+    // Labels placed above the stop grow upwards, all others downwards
+    rows.forEach((row, i) => {
+        const dy = i ? "1.15em" : (lab.dy < 0 ? `${-(rows.length - 1) * 1.15}em` : "0");
+        el("tspan", { x, dy, "data-label": id }, t).textContent = row;
+    });
+    return t;
+}
+
+/** {nodeId: [line, ...]} - node.terminals if set, otherwise nodes where a line has only one edge. */
+export function terminalLines(model) {
+    const degree = {};
+    for (const e of model.edges) {
+        for (const l of e.lines) {
+            for (const id of [e.a, e.b]) {
+                const k = id + "|" + l;
+                degree[k] = (degree[k] || 0) + 1;
+            }
+        }
+    }
+    const out = {};
+    for (const [k, d] of Object.entries(degree)) {
+        if (d !== 1) continue;
+        const i = k.lastIndexOf("|");
+        (out[k.slice(0, i)] ||= []).push(k.slice(i + 1));
+    }
+    for (const [id, n] of Object.entries(model.nodes)) {
+        if (Array.isArray(n.terminals)) out[id] = [...n.terminals];
+    }
+    for (const id of Object.keys(out)) {
+        out[id] = out[id].filter(l => model.lines[l]).sort(lineSort);
+        if (!out[id].length) delete out[id];
+    }
+    return out;
+}
+
+export const BADGE_R = 15;
+
+// Line-number circles at a terminal: outwards past the stop along the line, or at node.badge.
+function drawBadges(model, id, lines, nodeR, parent, hidden, interactive) {
+    const n = model.nodes[id];
+    let cx, cy, px, py;
+    if (n.badge) {
+        cx = n.x + n.badge.dx; cy = n.y + n.badge.dy; px = 1; py = 0;
+    } else {
+        let dx = 0, dy = 0;
+        for (const e of model.edges) {
+            if (e.a !== id && e.b !== id) continue;
+            if (!e.lines.some(l => lines.includes(l))) continue;
+            const pts = edgePoints(model, e);
+            const nb = e.a === id ? pts[1] : pts[pts.length - 2];
+            const len = Math.hypot(n.x - nb[0], n.y - nb[1]) || 1;
+            dx += (n.x - nb[0]) / len; dy += (n.y - nb[1]) / len;
+        }
+        const len = Math.hypot(dx, dy);
+        if (len < 1e-6) { dx = 0; dy = -1; } else { dx /= len; dy /= len; }
+        const dist = nodeR + BADGE_R + 6;
+        cx = n.x + dx * dist; cy = n.y + dy * dist; px = -dy; py = dx;
+    }
+    const g = el("g", { "data-badge": id }, parent);
+    if (!interactive) g.setAttribute("pointer-events", "none");
+    lines.forEach((l, i) => {
+        const off = (i - (lines.length - 1) / 2) * (2 * BADGE_R + 6);
+        const x = cx + px * off, y = cy + py * off;
+        const c = model.lines[l];
+        const op = hidden.has(l) ? 0.25 : 1;
+        // Rounded square (line sign) so it is not mistaken for a bus
+        const w = BADGE_R * 2 + Math.max(0, l.length - 2) * 9;
+        el("rect", {
+            x: x - w / 2, y: y - BADGE_R, width: w, height: BADGE_R * 2, rx: 7,
+            fill: c.color, stroke: "#ffffff", "stroke-width": 3, opacity: op, "data-badge": id,
+        }, g);
+        el("text", {
+            x, y, "text-anchor": "middle", "dominant-baseline": "central", "font-size": 16, "font-weight": 800,
+            "font-family": "Helvetica, Arial, sans-serif", fill: c.text || "#ffffff", opacity: op, "data-badge": id,
+        }, g).textContent = l;
+    });
 }

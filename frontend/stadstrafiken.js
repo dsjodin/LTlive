@@ -330,7 +330,7 @@ function showVehicle(id) {
 
 let groups, mapEls;
 function drawMap() {
-    mapEls = renderMap(model, groups, { hiddenLines });
+    mapEls = renderMap(model, groups, { hiddenLines, interactive: false });
     for (const [id, c] of Object.entries(mapEls.nodeEls)) {
         if (!KIOSK) c.addEventListener("click", (e) => { e.stopPropagation(); showStop(id); });
     }
