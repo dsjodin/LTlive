@@ -259,36 +259,46 @@ def _annotate_oxyfi_from_announcements(trains: list) -> list:
 def _merge_trains(oxyfi_trains: list, tv_trains: list) -> list:
     """Merge Oxyfi and TV trains.
 
-    Pass 1: exact label match (both sides have the same advertised train number).
-    Pass 2: position proximity — Oxyfi sends rolling-stock IDs (9xxx) while TV uses
-    service numbers (8xxx), so the same physical train will never match on label alone.
-    If an unmatched Oxyfi train is within 300 m of an unmatched TV train we treat them
+    Pass 1: train number match (TV label equals the Oxyfi label or one of its
+    public train numbers), run for all Oxyfi trains first.
+    Pass 2: position proximity, only for Oxyfi trains without a public train
+    number (label is a rolling-stock ID, 9xxx, never equal to TV's 8xxx).
+    If such a train is within 300 m of an unmatched TV train we treat them
     as the same physical train: keep Oxyfi's GPS position, add TV's service number as
     `tv_service_number` so the diag can display both IDs, and suppress the TV duplicate.
+    Merged trains get tv_matched=True so the map shows them even when the
+    Oxyfi vehicle ID is not in the TiB list.
     """
     # Fields to copy from TV train when the Oxyfi train is missing them
     _enrich_keys = ("trip_headsign", "product", "service", "route_long_name", "route_color", "route_text_color")
 
     def _merge(oxyfi, tv):
-        merged = {**oxyfi, "tv_service_number": tv["label"]}
+        merged = {**oxyfi, "tv_service_number": tv["label"], "tv_matched": True}
         for k in _enrich_keys:
             if tv.get(k) and not oxyfi.get(k):
                 merged[k] = tv[k]
         return merged
 
     matched_tv_ids: set = set()
-    result: list = []
+    merged_by_idx: dict = {}
 
-    for oxyfi_train in oxyfi_trains:
-        o_label = oxyfi_train.get("label", "")
-        # Pass 1: exact label
-        tv_exact = next((t for t in tv_trains if t.get("label", "") == o_label), None)
+    # Pass 1: train number match, for all Oxyfi trains before any proximity match
+    for idx, oxyfi_train in enumerate(oxyfi_trains):
+        numbers = {oxyfi_train.get("label", "")} | set(oxyfi_train.get("train_numbers") or [])
+        numbers.discard("")
+        tv_exact = next((t for t in tv_trains
+                         if t["vehicle_id"] not in matched_tv_ids and t.get("label", "") in numbers), None)
         if tv_exact:
             matched_tv_ids.add(tv_exact["vehicle_id"])
-            result.append(_merge(oxyfi_train, tv_exact))
-            continue
+            merged_by_idx[idx] = _merge(oxyfi_train, tv_exact)
 
-        # Pass 2: position + bearing proximity.
+    # Pass 2: position + bearing proximity, only for Oxyfi trains without a
+    # public train number (label is a vehicle ID). An Oxyfi train with its own
+    # number that matched nothing is a different train and must not swallow a
+    # TV train on a parallel track.
+    for idx, oxyfi_train in enumerate(oxyfi_trains):
+        if idx in merged_by_idx or oxyfi_train.get("train_numbers"):
+            continue
         o_lat, o_lon = oxyfi_train.get("lat"), oxyfi_train.get("lon")
         o_bearing = oxyfi_train.get("bearing")
         best_tv = None
@@ -316,12 +326,11 @@ def _merge_trains(oxyfi_trains: list, tv_trains: list) -> list:
                 if dist < best_dist:
                     best_dist = dist
                     best_tv = t
-
         if best_tv:
             matched_tv_ids.add(best_tv["vehicle_id"])
-            result.append(_merge(oxyfi_train, best_tv))
-        else:
-            result.append(oxyfi_train)
+            merged_by_idx[idx] = _merge(oxyfi_train, best_tv)
+
+    result: list = [merged_by_idx.get(i, o) for i, o in enumerate(oxyfi_trains)]
 
     # Add TV trains not matched to any Oxyfi vehicle
     result += [t for t in tv_trains if t["vehicle_id"] not in matched_tv_ids]

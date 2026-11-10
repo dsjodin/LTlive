@@ -236,8 +236,10 @@ export function updateVehicles(vehicles, { onDashboardUpdate } = {}) {
         currentIds.add(id);
 
         const isTvTrain = v.vehicle_type === "train" && (v.vehicle_id || "").startsWith("tv_");
+        // Trafikverket confirms the train (own or merged into Oxyfi): always shown
+        const tvConfirmed = isTvTrain || v.tv_matched === true;
         const trainIdPrefix = v.vehicle_type === "train" ? (v.vehicle_id || "").split(".")[0] : null;
-        if (isTvTrain ? false
+        if (tvConfirmed ? false
                       : v.vehicle_type === "train" ? (typeof ALLOWED_TRAIN_IDS !== "undefined" && ALLOWED_TRAIN_IDS.size > 0 && !ALLOWED_TRAIN_IDS.has(trainIdPrefix))
                                                    : (typeof ALLOWED_LINE_NUMBERS !== "undefined" && ALLOWED_LINE_NUMBERS.size > 0 && !ALLOWED_LINE_NUMBERS.has(v.route_short_name))) {
             if (state.vehicleMarkers[id]) { map.removeLayer(state.vehicleMarkers[id]); delete state.vehicleMarkers[id]; }
@@ -268,7 +270,8 @@ export function updateVehicles(vehicles, { onDashboardUpdate } = {}) {
 
         // Train activity & bearing state
         if (v.vehicle_type === "train") {
-            const hasSpeedData = v.speed != null || v._calculatedSpeed != null;
+            // TV Speed is optional; TV inactivity is handled server-side (Status.Active)
+            const hasSpeedData = tvConfirmed || v.speed != null || v._calculatedSpeed != null;
             const speed = v.speed ?? v._calculatedSpeed ?? 0;
             const moving = speed > 0.5 && v.bearing != null;
 

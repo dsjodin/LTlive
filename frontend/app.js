@@ -143,21 +143,27 @@ function initControls() {
         toggleRouteShapes(state.showRoutes);
     });
 
-    document.getElementById("toggle-rail-infra").addEventListener("change", (e) => {
-        if (!state.railInfraLayer) {
-            state.railInfraLayer = L.tileLayer.wms("https://geo-baninfo.trafikverket.se/MapService/wms.axd/BanInfo_1_5", {
-                layers: "SparUNE,Plattform,PlattformText,Sparnummer",
+    // Tracks + platforms from Trafikverket (proxied/cached via nginx /baninfo).
+    // Added/removed by zoom ourselves: Leaflet leaves stale tiles below minZoom.
+    const railInfraToggle = document.getElementById("toggle-rail-infra");
+    const syncRailInfra = () => {
+        const show = railInfraToggle.checked && state.map.getZoom() >= 14;
+        if (show && !state.railInfraLayer) {
+            state.railInfraLayer = L.tileLayer.wms("/baninfo", {
+                layers: "Spar_Huvud_och_sidospar,Plattform",
                 format: "image/png",
                 transparent: true,
                 version: "1.3.0",
-                minZoom: 14,
-                maxZoom: 19,
+                tileSize: 512,
+                updateWhenZooming: false,
                 attribution: "Järnvägsdata &copy; Trafikverket",
             });
         }
-        if (e.target.checked) state.railInfraLayer.addTo(state.map);
-        else state.map.removeLayer(state.railInfraLayer);
-    });
+        if (show) state.railInfraLayer.addTo(state.map);
+        else if (state.railInfraLayer) state.map.removeLayer(state.railInfraLayer);
+    };
+    railInfraToggle.addEventListener("change", syncRailInfra);
+    state.map.on("zoomend", syncRailInfra);
 
     document.getElementById("toggle-labels").addEventListener("change", (e) => {
         state.showLabels = e.target.checked;

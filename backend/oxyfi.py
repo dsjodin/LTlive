@@ -133,6 +133,7 @@ def parse_oxyfi_message(msg: str):
         "id": f"oxyfi_{vehicle_id}",
         "vehicle_id": vehicle_id,
         "label": label,
+        "train_numbers": public_numbers,
         "lat": lat,
         "lon": lon,
         "bearing": bearing,
