@@ -41,6 +41,9 @@ class TrainStore:
         # TrainStationMessage: platform announcements
         self.messages: dict = {}       # location_sig -> [{header, body, start, end}]
 
+        # ReplacementTraffic: (train_number, date, location_sig) -> replacement stop info
+        self.replacements: dict = {}
+
         # Cached operator info per train number (survives announcement expiry)
         self.operator_cache: dict = {}  # train_number -> {operator, product}
 

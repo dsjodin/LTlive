@@ -57,8 +57,9 @@ def departures_for_stop(stop_id):
         stop_departures = dict(vehicle_store.stop_departures)
 
     with train_store.lock:
-        tv_ann      = dict(train_store.announcements)
-        tv_stations = dict(train_store.stations)
+        tv_ann       = dict(train_store.announcements)
+        tv_stations  = dict(train_store.stations)
+        replacements = dict(train_store.replacements)
 
     target_stop = all_stops_data.get(stop_id, {})
     if target_stop.get("location_type", 0) == 1:
@@ -211,6 +212,10 @@ def departures_for_stop(stop_id):
             "preliminary":      tv_preliminary,
             "traffic_type":     tv_traffic_type,
             "via":              tv_via,
+            "composition":      (best_tv or {}).get("composition", []),
+            "service":          (best_tv or {}).get("service", []),
+            "booking":          (best_tv or {}).get("booking", []),
+            "replacement":      replacements.get((best_tv["train_number"], best_tv.get("departure_date", ""), loc_sig)) if best_tv else None,
         })
         if len(deps) >= limit:
             break
@@ -263,6 +268,10 @@ def departures_for_stop(stop_id):
                 "preliminary":      tv_dep.get("preliminary", False),
                 "traffic_type":     tv_dep.get("traffic_type", ""),
                 "via":              via_names,
+                "composition":      tv_dep.get("composition", []),
+                "service":          tv_dep.get("service", []),
+                "booking":          tv_dep.get("booking", []),
+                "replacement":      replacements.get((tv_dep["train_number"], tv_dep.get("departure_date", ""), loc_sig)),
             })
         deps.sort(key=lambda x: x["departure_time"])
 
@@ -341,17 +350,15 @@ def arrivals_for_stop(stop_id):
         if _tn:
             pos_by_train[_tn] = _p
 
-    _sta_lat       = config.TV_POSITION_CENTER_LAT
-    _sta_lon       = config.TV_POSITION_CENTER_LON
-    _cos_lat       = math.cos(math.radians(_sta_lat))
     _GPS_ARRIVED_M = 600
 
-    def _gps_at_station(train_num):
+    def _gps_at_station(train_num, sta_lat, sta_lon):
         pos = pos_by_train.get(train_num)
-        if not pos:
+        if not pos or sta_lat is None or sta_lon is None:
             return None
-        dlat   = math.radians(pos["lat"] - _sta_lat)
-        dlon   = math.radians(pos["lon"] - _sta_lon)
+        _cos_lat = math.cos(math.radians(sta_lat))
+        dlat   = math.radians(pos["lat"] - sta_lat)
+        dlon   = math.radians(pos["lon"] - sta_lon)
         dist_m = 6371000 * math.sqrt(dlat ** 2 + (_cos_lat * dlon) ** 2)
         return dist_m <= _GPS_ARRIVED_M
 
@@ -410,11 +417,11 @@ def arrivals_for_stop(stop_id):
         tv_traffic_type = tv_arr_operator = tv_arr_product = ""
         tv_rt_arr_time = tv_arr_sched_override = None
         tv_track = ""
+        best_tv = None
 
         if loc_sig and tv_ann.get(loc_sig):
             arr_time  = a.get("sched_time") or a["time"]
             tv_ops    = config.TRAFIKVERKET_OPERATORS
-            best_tv   = None
             best_diff = float("inf")
             if tv_ops:
                 for tv_arr in tv_ann[loc_sig].get("arrivals", []):
@@ -486,6 +493,10 @@ def arrivals_for_stop(stop_id):
             "other_info":       tv_other_info,
             "preliminary":      tv_preliminary,
             "traffic_type":     tv_traffic_type,
+            "via":              [tv_stations.get(v, {}).get("name", v) for v in (best_tv or {}).get("via_from_sigs", [])[:3]],
+            "composition":      (best_tv or {}).get("composition", []),
+            "service":          (best_tv or {}).get("service", []),
+            "booking":          (best_tv or {}).get("booking", []),
         })
         if len(arrs) >= limit:
             break
@@ -537,6 +548,10 @@ def arrivals_for_stop(stop_id):
                 "other_info":       tv_arr.get("other_info", []),
                 "preliminary":      tv_arr.get("preliminary", False),
                 "traffic_type":     tv_arr.get("traffic_type", ""),
+                "via":              [tv_stations.get(v, {}).get("name", v) for v in tv_arr.get("via_from_sigs", [])[:3]],
+                "composition":      tv_arr.get("composition", []),
+                "service":          tv_arr.get("service", []),
+                "booking":          tv_arr.get("booking", []),
             })
         arrs.sort(key=lambda x: x["arrival_time"])
 
@@ -549,8 +564,11 @@ def arrivals_for_stop(stop_id):
             deduped_arrs.append(entry)
     arrs = deduped_arrs[:limit]
 
+    station = tv_stations.get(loc_sig, {}) if loc_sig else {}
     for entry in arrs:
-        entry["gps_at_station"] = _gps_at_station(entry.get("trip_short_name", ""))
+        entry["gps_at_station"] = _gps_at_station(
+            entry.get("trip_short_name", ""), station.get("lat"), station.get("lon")
+        )
 
     return jsonify({"stop_id": stop_id, "arrivals": arrs, "count": len(arrs)})
 

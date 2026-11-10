@@ -58,6 +58,7 @@ def _tv_trains_from_positions() -> list:
                     "product": entry.get("product", ""),
                     "dest_sig": entry.get("dest_sig", ""),
                     "origin_sig": entry.get("origin_sig", ""),
+                    "service": entry.get("service", []),
                 }
         for entry in bucket.get("arrivals", []):
             tn = entry.get("train_number", "")
@@ -67,6 +68,7 @@ def _tv_trains_from_positions() -> list:
                     "product": entry.get("product", ""),
                     "dest_sig": entry.get("dest_sig", ""),
                     "origin_sig": entry.get("origin_sig", ""),
+                    "service": entry.get("service", []),
                 }
 
     # Persist operator info so it survives announcement expiry
@@ -141,6 +143,7 @@ def _tv_trains_from_positions() -> list:
             "route_text_color": "FFFFFF",
             "trip_headsign": headsign,
             "product": prod,
+            "service": info.get("service", []),
             "next_stop_name": "",
             "next_stop_platform": "",
         })
@@ -264,7 +267,7 @@ def _merge_trains(oxyfi_trains: list, tv_trains: list) -> list:
     `tv_service_number` so the diag can display both IDs, and suppress the TV duplicate.
     """
     # Fields to copy from TV train when the Oxyfi train is missing them
-    _enrich_keys = ("trip_headsign", "product", "route_long_name", "route_color", "route_text_color")
+    _enrich_keys = ("trip_headsign", "product", "service", "route_long_name", "route_color", "route_text_color")
 
     def _merge(oxyfi, tv):
         merged = {**oxyfi, "tv_service_number": tv["label"]}

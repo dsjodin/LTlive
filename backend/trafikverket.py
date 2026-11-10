@@ -136,6 +136,11 @@ def fetch_announcements(location_signatures: list[str], minutes_ahead: int = 120
     <INCLUDE>ToLocation</INCLUDE>
     <INCLUDE>FromLocation</INCLUDE>
     <INCLUDE>ViaToLocation</INCLUDE>
+    <INCLUDE>ViaFromLocation</INCLUDE>
+    <INCLUDE>TrainComposition</INCLUDE>
+    <INCLUDE>Service</INCLUDE>
+    <INCLUDE>Booking</INCLUDE>
+    <INCLUDE>ScheduledDepartureDateTime</INCLUDE>
     <INCLUDE>LocationSignature</INCLUDE>
     <INCLUDE>Canceled</INCLUDE>
     <INCLUDE>Deleted</INCLUDE>
@@ -185,6 +190,8 @@ def fetch_announcements(location_signatures: list[str], minutes_ahead: int = 120
         origin_sig = from_locs[0]["LocationName"] if from_locs else ""
         # Sort via locations by Order field
         via_sigs = [v["LocationName"] for v in sorted(via_locs, key=lambda v: v.get("Order", 0))]
+        via_from_locs = ann.get("ViaFromLocation", []) or []
+        via_from_sigs = [v["LocationName"] for v in sorted(via_from_locs, key=lambda v: v.get("Order", 0))]
 
         product_info = ann.get("ProductInformation", []) or []
         product = product_info[0]["Description"] if product_info else ""
@@ -213,6 +220,11 @@ def fetch_announcements(location_signatures: list[str], minutes_ahead: int = 120
             "dest_sig": dest_sig,
             "origin_sig": origin_sig,
             "via_sigs": via_sigs,
+            "via_from_sigs": via_from_sigs,
+            "departure_date": (ann.get("ScheduledDepartureDateTime") or "")[:10],
+            "composition": [c["Description"] for c in ann.get("TrainComposition", []) or [] if c.get("Description")],
+            "service": [s["Description"] for s in ann.get("Service", []) or [] if s.get("Description")],
+            "booking": [b["Description"] for b in ann.get("Booking", []) or [] if b.get("Description")],
             "canceled": ann.get("Canceled", False),
             "product": product,
             "operator": ann.get("Operator", "") or ann.get("InformationOwner", ""),
@@ -239,7 +251,7 @@ def _parse_position(pos: dict) -> dict | None:
     train = pos.get("Train", {})
     adv_num = (train.get("AdvertisedTrainNumber", "")
                or train.get("OperationalTrainNumber", ""))
-    if pos.get("Deleted"):
+    if pos.get("Deleted") or (pos.get("Status") or {}).get("Active") is False:
         return {"train_number": adv_num, "deleted": True}
     wgs = pos.get("Position", {}).get("WGS84", "")
     m = re.search(r"POINT\s*\(([0-9.]+)\s+([0-9.]+)\)", wgs)
@@ -271,10 +283,26 @@ def fetch_position_sseurl() -> tuple[list, str]:
     if not config.TRAFIKVERKET_API_KEY:
         return [], ""
 
+    # 20 km margin so trains leave the backend radius filter before they
+    # drop out of the stream and would otherwise freeze at the edge.
+    radius_m = int((config.TV_POSITION_RADIUS_KM + 20) * 1000)
     xml = f"""<REQUEST>
   <LOGIN authenticationkey="{config.TRAFIKVERKET_API_KEY}" />
   <QUERY objecttype="TrainPosition" namespace="järnväg.trafikinfo"
          schemaversion="1.1" sseurl="true" limit="2000">
+    <FILTER>
+      <WITHIN name="Position.WGS84" shape="center"
+              value="{config.TV_POSITION_CENTER_LON} {config.TV_POSITION_CENTER_LAT}"
+              radius="{radius_m}m" />
+    </FILTER>
+    <INCLUDE>Train.AdvertisedTrainNumber</INCLUDE>
+    <INCLUDE>Train.OperationalTrainNumber</INCLUDE>
+    <INCLUDE>Position.WGS84</INCLUDE>
+    <INCLUDE>TimeStamp</INCLUDE>
+    <INCLUDE>Bearing</INCLUDE>
+    <INCLUDE>Speed</INCLUDE>
+    <INCLUDE>Status.Active</INCLUDE>
+    <INCLUDE>Deleted</INCLUDE>
   </QUERY>
 </REQUEST>"""
 
@@ -342,6 +370,72 @@ def iter_position_stream(sseurl: str, last_event_id: str | None = None):
                 except (json.JSONDecodeError, KeyError, IndexError) as exc:
                     log.warning("TV SSE parse error: %s | data=%s", exc, data_str[:200])
                 event_id = None
+
+
+def fetch_replacement_traffic(location_signatures: list[str], minutes_ahead: int = 120) -> dict:
+    """Fetch ReplacementTraffic (JBS 1.0) touching the given LocationSignatures.
+
+    Returns {(train_number, "YYYY-MM-DD", location_sig): {...}} where the value
+    describes the replacement vehicle's stop at that station.
+    """
+    if not config.TRAFIKVERKET_API_KEY or not location_signatures:
+        return {}
+
+    xml = f"""<REQUEST>
+  <LOGIN authenticationkey="{config.TRAFIKVERKET_API_KEY}" />
+  <QUERY objecttype="ReplacementTraffic" namespace="JBS" schemaversion="1.0" limit="2000">
+    <FILTER>
+      <EQ name="Deleted" value="false" />
+    </FILTER>
+    <INCLUDE>Status</INCLUDE>
+    <INCLUDE>Description</INCLUDE>
+    <INCLUDE>VehicleMode</INCLUDE>
+    <INCLUDE>Toilet</INCLUDE>
+    <INCLUDE>WheelChair</INCLUDE>
+    <INCLUDE>ReplacesTrains</INCLUDE>
+    <INCLUDE>Stops</INCLUDE>
+  </QUERY>
+</REQUEST>"""
+
+    try:
+        data = _post(xml)
+        trips = data["RESPONSE"]["RESULT"][0].get("ReplacementTraffic", [])
+    except Exception as exc:
+        log.warning("ReplacementTraffic fetch failed: %s", exc)
+        return {}
+
+    wanted = set(location_signatures)
+    now = int(time.time())
+    t_min, t_max = now - 300, now + minutes_ahead * 60
+
+    result: dict = {}
+    for trip in trips:
+        replaced = (trip.get("ReplacesTrains") or {}).get("ReplacesTrain") or []
+        stops = (trip.get("Stops") or {}).get("Stop") or []
+        for stop in stops:
+            sig = stop.get("PlaceSignature", "")
+            if sig not in wanted:
+                continue
+            dep = _ts_to_unix(stop.get("ExpectedDepartureTime") or stop.get("PlannedDepartureTime") or "")
+            if dep is None or not (t_min <= dep <= t_max):
+                continue
+            info = {
+                "departure_time": dep,
+                "stop_description": stop.get("StopDescription", ""),
+                "traveller_note": stop.get("TravellerNote", ""),
+                "vehicle_mode": trip.get("VehicleMode", ""),
+                "wheelchair": trip.get("WheelChair"),
+                "toilet": trip.get("Toilet"),
+                "status": trip.get("Status", ""),
+                "description": trip.get("Description", ""),
+            }
+            for rt in replaced:
+                tn = rt.get("AdvertisedTrainIdent", "")
+                if tn:
+                    result[(tn, rt.get("ScheduledDepartureDate", "")[:10], sig)] = info
+
+    log.info("ReplacementTraffic: %d matches for configured stations", len(result))
+    return result
 
 
 _MSG_STATUS_ORDER = {"StortLage": 0, "Hog": 1, "Normal": 2, "Lag": 3}

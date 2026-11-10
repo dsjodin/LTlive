@@ -90,9 +90,7 @@ function renderStationButtons() {
 async function fetchLiveTrains() {
     try {
         const data = await fetchVehicles();
-        liveTibTrains = (data.vehicles || []).filter(v =>
-            v.source === "oxyfi" || v.route_type === 2 || (100 <= (v.route_type || 0) && (v.route_type || 0) <= 199)
-        );
+        liveTibTrains = (data.vehicles || []).filter(v => v.vehicle_type === "train");
         updateLiveStatus();
     } catch {
         liveTibTrains = [];
@@ -113,11 +111,11 @@ function updateLiveStatus() {
     el.innerHTML = `Aktiva tåg: ${labels.join(" &nbsp;·&nbsp; ")}`;
 }
 
-// Find a live train matching a trip_id or route_short_name
-function findLiveTrain(tripId, routeShortName) {
+// Find a live train matching a trip_id or train number
+function findLiveTrain(tripId, trainNo) {
     return liveTibTrains.find(v =>
         (v.trip_id && v.trip_id === tripId) ||
-        (v.route_short_name && v.route_short_name === routeShortName)
+        (trainNo && (v.label === trainNo || v.tv_service_number === trainNo))
     ) || null;
 }
 
@@ -300,10 +298,27 @@ function buildRemarkText(item) {
         parts.push(`<span class="other-info">${item.other_info.join(", ")}</span>`);
     if (item.traffic_type === "Buss")
         parts.push(`<span class="bus-tag">Buss</span>`);
+    if (item.replacement) parts.push(replacementTag(item.replacement));
     const track = item.platform;
     if (track && platformMessages[track] && platformMessages[track].length)
         parts.push(`<span class="platform-msg">${platformMessages[track].map(m => m.body).join(" · ")}</span>`);
     return parts.join(" ");
+}
+
+function replacementTag(r) {
+    const mode = r.vehicle_mode === "taxi" ? "Taxi" : "Buss";
+    const time = new Date(r.departure_time * 1000)
+        .toLocaleTimeString("sv-SE", { hour: "2-digit", minute: "2-digit" });
+    const where = r.stop_description ? ` fr. ${r.stop_description}` : "";
+    const extras = [r.wheelchair && "rullstol", r.toilet && "WC"].filter(Boolean);
+    const extraText = extras.length ? ` (${extras.join(", ")})` : "";
+    const note = r.traveller_note ? ` - ${r.traveller_note}` : "";
+    return `<span class="replacement-tag">${mode} ${time}${where}${extraText}${note}</span>`;
+}
+
+// Composition, service and booking info shown in the via row
+function extraInfo(item) {
+    return [...(item.composition || []), ...(item.service || []), ...(item.booking || [])].join(" · ");
 }
 
 // ── Signal SVG (järnvägssignal) ───────────────────────
@@ -477,7 +492,8 @@ async function loadDepartures(board) {
         const pastClass    = secs < -60 ? " row-past" : "";
         const canceledClass = d.canceled ? " row-canceled" : "";
 
-        const liveTrain = findLiveTrain(d.trip_id, d.route_short_name);
+        const trainLabel = d.trip_short_name || d.route_short_name || "?";
+        const liveTrain = findLiveTrain(d.trip_id, trainLabel);
         const liveTag   = liveTrain
             ? `<span class="live-train"><span class="live-dot"></span>Live</span>`
             : "";
@@ -485,7 +501,6 @@ async function loadDepartures(board) {
             ? `<span class="rt-dot" title="Realtidsdata"></span>`
             : "";
 
-        const trainLabel = d.trip_short_name || d.route_short_name || "?";
         const opTag = operatorTag(d.operator, d.product);
         const headsignText = d.canceled ? `<s>${d.headsign || ""}</s>` : (d.headsign || "");
         const trackChangedClass = d.track_changed ? " track-changed" : "";
@@ -499,9 +514,14 @@ async function loadDepartures(board) {
         const nytidHtml = isDelayed
             ? `<span class="newtime-col${prelimClass}">${clock}</span>`
             : `<span></span>`;
-        const viaRow = (d.via && d.via.length)
-            ? `<div class="via-row">${rtDot}via ${d.via.join(" · ")}</div>`
-            : (d.is_realtime ? `<div class="via-row">${rtDot}Realtid</div>` : "");
+        const extra  = extraInfo(d);
+        const viaParts = [];
+        if (d.via && d.via.length) viaParts.push(`via ${d.via.join(" · ")}`);
+        else if (d.is_realtime) viaParts.push("Realtid");
+        if (extra) viaParts.push(extra);
+        const viaRow = viaParts.length
+            ? `<div class="via-row">${rtDot}${viaParts.join(" &nbsp;|&nbsp; ")}</div>`
+            : "";
         const remarkText = buildRemarkText(d);
         const useSignal  = !d.canceled && secs <= 120;
         const etaInner   = useSignal ? SIGNAL_SVG : etaText;
@@ -544,7 +564,8 @@ async function loadArrivals(board) {
         const pastClass    = secs < -60 ? " row-past" : "";
         const canceledClass = a.canceled ? " row-canceled" : "";
 
-        const liveTrain = findLiveTrain(a.trip_id, a.route_short_name);
+        const trainLabel = a.trip_short_name || a.route_short_name || "?";
+        const liveTrain = findLiveTrain(a.trip_id, trainLabel);
         const liveTag   = liveTrain
             ? `<span class="live-train"><span class="live-dot"></span>Live</span>`
             : "";
@@ -554,7 +575,6 @@ async function loadArrivals(board) {
 
         const fromLabel = a.origin || "–";
         const fromDisplay = a.canceled ? `<s>${fromLabel}</s>` : fromLabel;
-        const trainLabel = a.trip_short_name || a.route_short_name || "?";
         const opTag = operatorTag(a.operator, a.product);
         const arrTrackChangedClass = a.track_changed ? " track-changed" : "";
         const arrIsDelayed = a.is_realtime && a.scheduled_time && a.arrival_time !== a.scheduled_time;
@@ -567,9 +587,14 @@ async function loadArrivals(board) {
         const arrNytidHtml = arrIsDelayed
             ? `<span class="newtime-col${arrPrelimClass}">${clock}</span>`
             : `<span></span>`;
-        const viaRow = (a.via && a.via.length)
-            ? `<div class="via-row">${rtDot}via ${a.via.join(" · ")}</div>`
-            : (a.is_realtime ? `<div class="via-row">${rtDot}Realtid</div>` : "");
+        const extra  = extraInfo(a);
+        const viaParts = [];
+        if (a.via && a.via.length) viaParts.push(`via ${a.via.join(" · ")}`);
+        else if (a.is_realtime) viaParts.push("Realtid");
+        if (extra) viaParts.push(extra);
+        const viaRow = viaParts.length
+            ? `<div class="via-row">${rtDot}${viaParts.join(" &nbsp;|&nbsp; ")}</div>`
+            : "";
         const remarkText = buildRemarkText(a);
         const useSignal  = !a.canceled && secs > 0 && secs <= 120;
         // gps_at_station: true = GPS confirms at platform, false = GPS says still far, null = no data
