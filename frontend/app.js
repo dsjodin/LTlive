@@ -159,8 +159,26 @@ function initControls() {
                 attribution: "Järnvägsdata &copy; Trafikverket",
             });
         }
-        if (show) state.railInfraLayer.addTo(state.map);
-        else if (state.railInfraLayer) state.map.removeLayer(state.railInfraLayer);
+        if (show && !state.railInfraLegend) {
+            state.railInfraLegend = L.control({ position: "topleft" });
+            state.railInfraLegend.onAdd = () => {
+                const div = L.DomUtil.create("div", "rail-legend");
+                div.innerHTML = [
+                    ["rail-legend-normal", "Normalhuvudspår"],
+                    ["rail-legend-avvikande", "Avvikande huvudspår"],
+                    ["rail-legend-sido", "Sidospår"],
+                    ["rail-legend-plattform", "Plattform"],
+                ].map(([cls, text]) => `<div><span class="rail-legend-swatch ${cls}"></span>${text}</div>`).join("");
+                return div;
+            };
+        }
+        if (show) {
+            state.railInfraLayer.addTo(state.map);
+            state.railInfraLegend.addTo(state.map);
+        } else if (state.railInfraLayer) {
+            state.map.removeLayer(state.railInfraLayer);
+            state.railInfraLegend.remove();
+        }
     };
     railInfraToggle.addEventListener("change", syncRailInfra);
     state.map.on("zoomend", syncRailInfra);
