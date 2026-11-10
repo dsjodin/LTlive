@@ -37,6 +37,7 @@ from api.weather import weather_bp as _weather_bp
 from api.traffic import bp as _traffic_bp
 from api.analytics_api import bp as _analytics_bp
 from api.admin import bp as _admin_bp
+from api.schematic import bp as _schematic_bp
 from api.test_api import bp as _test_bp
 
 app.register_blueprint(_debug_bp)
@@ -49,6 +50,7 @@ app.register_blueprint(_weather_bp)
 app.register_blueprint(_traffic_bp)
 app.register_blueprint(_analytics_bp)
 app.register_blueprint(_admin_bp)
+app.register_blueprint(_schematic_bp)
 app.register_blueprint(_test_bp)
 
 # ---------------------------------------------------------------------------

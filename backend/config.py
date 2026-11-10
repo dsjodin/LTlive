@@ -111,6 +111,8 @@ ENABLE_DEBUG_ENDPOINTS = os.environ.get("ENABLE_DEBUG_ENDPOINTS", "false").lower
 
 # Admin interface — persistent JSON-based site configuration
 SITE_CONFIG_FILE = os.environ.get("SITE_CONFIG_FILE", "/app/data/config/site-config.json")
+# Schematic network map model edited in schematic-editor.html
+SCHEMATIC_FILE = os.environ.get("SCHEMATIC_FILE", "/app/data/config/schematic.json")
 ADMIN_API_KEY = os.environ.get("ADMIN_API_KEY", "")
 
 # Oxyfi Realtidspositionering — train positions via WebSocket

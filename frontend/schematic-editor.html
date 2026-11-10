@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Linjekarta-editor - LTlive</title>
+  <link rel="stylesheet" href="schematic-editor.css">
+</head>
+<body>
+  <div id="toolbar">
+    <strong>Linjekarta-editor</strong>
+    <button id="btn-save" class="primary">Spara</button>
+    <button id="btn-undo" title="Ctrl+Z">Ångra</button>
+    <span class="sep"></span>
+    <button id="btn-merge" title="Lägg till nya hållplatser och linjer från GTFS utan att flytta befintliga">Hämta nytt från GTFS</button>
+    <button id="btn-seed" title="Flytta hållplatserna till cirklarna i lt_karta.svg">Importera lt_karta.svg</button>
+    <button id="btn-straighten" title="Lägg till knäck så att alla raka kanter går i 0/45/90 grader">Räta upp alla</button>
+    <span class="sep"></span>
+    <label><input type="checkbox" id="chk-snap" checked> Snäpp</label>
+    <label><input type="checkbox" id="chk-ghost"> lt_karta.svg i bakgrunden</label>
+    <span class="sep"></span>
+    <button id="btn-export-svg">Exportera SVG</button>
+    <button id="btn-export-json">Exportera JSON</button>
+    <button id="btn-import-json">Importera JSON</button>
+    <input type="file" id="file-json" accept=".json,application/json" hidden>
+    <a href="/stadstrafiken.html" target="_blank">Levande karta</a>
+  </div>
+
+  <div id="canvas">
+    <svg id="svg" xmlns="http://www.w3.org/2000/svg">
+      <g id="g-pan">
+        <rect id="paper" x="0" y="0" fill="#ffffff"/>
+        <image id="ghost" href="lt_karta.svg" x="0" y="0" width="2481" height="3508" opacity="0.35" display="none"/>
+        <g id="g-edges"></g>
+        <g id="g-nodes"></g>
+        <g id="g-labels"></g>
+        <g id="g-overlay"></g>
+      </g>
+    </svg>
+  </div>
+
+  <aside id="side">
+    <div id="status"></div>
+    <section id="sel-panel">
+      <h2>Markering</h2>
+      <div id="sel-content" class="muted">Klicka på en hållplats eller en linjesträcka.</div>
+    </section>
+    <section>
+      <h2>Linjer</h2>
+      <div id="lines-content"></div>
+    </section>
+    <section>
+      <h2>Kontroll</h2>
+      <div id="check-content" class="muted">Inga kontroller körda.</div>
+    </section>
+    <section class="help muted">
+      <h2>Tips</h2>
+      <p>Dra i kartan för att panorera, scrolla för att zooma.</p>
+      <p>Dra en hållplats för att flytta den. Håll Shift för att låsa riktningen till 0/45/90 grader.</p>
+      <p>Dra ett hållplatsnamn för att flytta etiketten.</p>
+      <p>Dubbelklicka på en markerad sträcka för att lägga till ett knäck. Dubbelklicka på ett knäck för att ta bort det.</p>
+      <p>Piltangenter flyttar markerad hållplats ett rutsteg (Shift = 5 steg).</p>
+    </section>
+  </aside>
+
+  <script type="module" src="schematic-editor.js"></script>
+</body>
+</html>

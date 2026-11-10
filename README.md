@@ -61,11 +61,24 @@ Live-kartan som visar bussar och tåg i Örebro län i realtid.
 ### Verktyg & sidor
 - **Avgångstavla** (`/board.html`) — tavla för enskild hållplats, öppnas från popup
 - **TiB-tavla** (`/tib-board.html`) — avgångs- och ankomsttavla för Tåg i Bergslagen (Örebro C, Örebro Södra m.fl.) med live-tågindikatorer från Oxyfi, SJ och Mälartåg; avgångna/ankomna tåg visas kvar 10 minuter med statusetikett
-- **Stadstrafiken** (`/stadstrafiken.html`) — dedikerad kartvy för stadsbusslinjerna i Örebro
+- **Stadstrafiken** (`/stadstrafiken.html`) - levande linjekarta för stadsbusslinjerna. Bussarna glider mellan hållplatserna på den schematiska kartan, kanten visar försening och klick ger avgångar eller fordonsinfo. `?kiosk=1` ger tavelläge utan meny.
+- **Linjekarta-editor** (`/schematic-editor.html`, bara LAN + `ADMIN_API_KEY`) - ritverktyg för linjekartan, se nedan
 - **Statistiksida** (`/stats.html`) — besöksstatistik per sida (30 dagar + senaste 20 besök)
 - **Schematic Tracer** (`/tracer.html`) — ritverktyg för att skapa schematiska linjekartor
 - **API-utforskare** (`/api.html`) — testa alla backend-endpoints direkt i webbläsaren
 - **Diagnostik** (`/diag.html`) — se laddningsstatus, RT-feed och fältmappning
+
+## Linjekartan (stadstrafiken)
+
+Linjekartan är en datamodell (`schematic.json` på volymen `config-data`), inte en bild. Editorn och den levande kartan läser samma modell, så hållplatserna på kartan är alltid kopplade till GTFS-hållplatserna.
+
+1. Öppna `/schematic-editor.html` från LAN. Finns ingen sparad modell genereras en startlayout ur GTFS (linjerna i `lines.stadstrafiken` i adminkonfigurationen).
+2. **Importera lt_karta.svg** flyttar hållplatserna till positionerna i den handritade kartan.
+3. Dra hållplatser (Shift låser till 0/45/90 grader), dra namn, klicka på en sträcka för att ändra linjeordning och lägga till knäck. **Räta upp alla** gör sneda sträckor till 45-graders knäck.
+4. **Spara** (frågar efter `ADMIN_API_KEY`). Den levande kartan använder modellen direkt.
+5. Efter tidtabellsbyte: **Hämta nytt från GTFS** lägger till nya hållplatser och sträckor utan att flytta befintliga och listar sådant som inte längre finns.
+
+**Exportera SVG** ger en fristående SVG för tryck eller finputs i t.ex. CorelDraw.
 
 ## Tech stack
 
