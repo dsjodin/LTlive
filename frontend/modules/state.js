@@ -74,6 +74,7 @@ const state = {
 
     // Train routes
     trainRailLayer: null,
+    railInfraLayer: null,
     trainRoutesLoaded: false,
     trainShapeCoords: [],
 

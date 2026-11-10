@@ -143,6 +143,22 @@ function initControls() {
         toggleRouteShapes(state.showRoutes);
     });
 
+    document.getElementById("toggle-rail-infra").addEventListener("change", (e) => {
+        if (!state.railInfraLayer) {
+            state.railInfraLayer = L.tileLayer.wms("https://geo-baninfo.trafikverket.se/MapService/wms.axd/BanInfo_1_5", {
+                layers: "SparUNE,Plattform,PlattformText,Sparnummer",
+                format: "image/png",
+                transparent: true,
+                version: "1.3.0",
+                minZoom: 14,
+                maxZoom: 19,
+                attribution: "Järnvägsdata &copy; Trafikverket",
+            });
+        }
+        if (e.target.checked) state.railInfraLayer.addTo(state.map);
+        else state.map.removeLayer(state.railInfraLayer);
+    });
+
     document.getElementById("toggle-labels").addEventListener("change", (e) => {
         state.showLabels = e.target.checked;
         Object.values(state.vehicleMarkers).forEach((marker) => {

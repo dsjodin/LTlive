@@ -128,7 +128,7 @@ def run_tv_position_stream() -> None:
 # ---------------------------------------------------------------------------
 
 def poll_trafikverket() -> None:
-    """Fetch TrainAnnouncement + StationMessages (positions come via SSE stream)."""
+    """Fetch TrainAnnouncement, StationMessages and ReplacementTraffic (positions come via SSE stream)."""
     loc_sigs = list(config.TRAFIKVERKET_STATIONS.values())
     if not loc_sigs:
         return
@@ -137,10 +137,14 @@ def poll_trafikverket() -> None:
             loc_sigs, minutes_ahead=config.TRAFIKVERKET_LOOKAHEAD_MINUTES
         )
         messages = tv_api.fetch_station_messages(loc_sigs)
+        replacements = tv_api.fetch_replacement_traffic(
+            loc_sigs, minutes_ahead=config.TRAFIKVERKET_LOOKAHEAD_MINUTES
+        )
         with train_store.lock:
             if announcements:
                 train_store.update_announcements(announcements)
-            train_store.messages   = messages
+            train_store.messages     = messages
+            train_store.replacements = replacements
             train_store.last_error = None
         # Announcement updates affect departure boards only.
         api_cache.invalidate_prefix("dep")

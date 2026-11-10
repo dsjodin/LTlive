@@ -320,6 +320,7 @@ export function showVehiclePopup(vehicle, marker) {
                 ${delayHtml}
                 ${nextStop ? `${nextStopLabel}: <strong>${nextStop}</strong>${platformChip}<br/>` : ""}
                 ${speed ? `Hastighet: ${speed}<br/>` : ""}
+                ${isTrain && vehicle.service && vehicle.service.length ? `Service: ${vehicle.service.join(", ")}<br/>` : ""}
                 ${vehicleIdStr}
                 Uppdaterad: ${updatedAt}
             </div>
