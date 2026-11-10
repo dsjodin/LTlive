@@ -17,6 +17,7 @@ from tasks.sse_tasks import (
 )
 from train_logic import (
     _annotate_oxyfi_from_announcements,
+    _fill_track_bearings,
     _merge_trains,
     _tv_trains_from_positions,
 )
@@ -37,6 +38,7 @@ def vehicles():
 
     trains = _merge_trains(oxyfi.get_trains(), _tv_trains_from_positions())
     trains = _annotate_oxyfi_from_announcements(trains)
+    trains = _fill_track_bearings(trains)
     enriched = enrich_vehicles(vehicle_list) + trains
     result = {"vehicles": enriched, "timestamp": ts, "count": len(enriched)}
     _cache_set("vehicles", result)
