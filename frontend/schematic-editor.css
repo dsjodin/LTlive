@@ -59,3 +59,7 @@ ul.list li { padding: 2px 0; }
   #canvas { right: 0; bottom: 40vh; }
   #side { top: auto; height: 40vh; width: 100%; border-left: none; border-top: 1px solid #30363d; }
 }
+#rng-ghost { width: 80px; flex-shrink: 0; }
+#calib-panel { border: 1px solid #1f6feb; border-radius: 6px; padding: 10px; }
+#calib-points li { display: flex; align-items: center; gap: 6px; }
+#calib-points li span { flex: 1; }

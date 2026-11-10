@@ -76,7 +76,7 @@ export function attachPanZoom(svg, g, { minScale = 0.05, maxScale = 10, onChange
     window.addEventListener("pointerup", end);
     window.addEventListener("pointercancel", end);
     // Swallow the click that ends a pan so it does not select or close anything
-    svg.addEventListener("click", (e) => { if (moved) { e.stopPropagation(); moved = false; } }, true);
+    svg.addEventListener("click", (e) => { if (moved) { e.stopImmediatePropagation(); moved = false; } }, true);
 
     svg.addEventListener("wheel", (e) => {
         e.preventDefault();

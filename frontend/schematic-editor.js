@@ -5,13 +5,14 @@
 
 import { el, NS, renderMap, edgePoints, lineSort, modelBounds, terminalLines } from "./modules/schematicRender.js";
 import { attachPanZoom } from "./modules/svgPanZoom.js";
-import { seedFromLtKarta, fitAffine } from "./modules/ltKartaSeed.js";
+import { fitAffine, ghostMatrix, applyMatrix, invertMatrix, circlesInMap, snapNodesToCircles, SVG_STOP_CIRCLES, IDENTITY } from "./modules/ltKartaSeed.js";
 
 const GRID = 10;
 const $ = (id) => document.getElementById(id);
 
 let model = null;
 let sel = null;            // {type: "node"|"edge", id}
+let calib = null;          // background calibration mode: {pendingNode}
 let dirty = false;
 const history = [];
 const groups = { edges: $("g-edges"), nodes: $("g-nodes"), labels: $("g-labels") };
@@ -94,6 +95,7 @@ function render() {
     requestAnimationFrame(() => {
         rafPending = false;
         mapEls = renderMap(model, groups);
+        $("ghost").setAttribute("transform", `matrix(${ghostM().join(" ")})`);
         renderOverlay();
     });
 }
@@ -129,6 +131,7 @@ function renderOverlay() {
         const [ax, ay] = labelAnchor(n);
         el("line", { x1: n.x, y1: n.y, x2: ax, y2: ay, stroke: "#1f6feb", "stroke-width": 1.5, "stroke-opacity": 0.6, "stroke-dasharray": "5 4", "pointer-events": "none" }, overlay);
     }
+    if (calib) renderCalibOverlay();
     if (hoverId && (!sel || sel.id !== hoverId)) highlightPair(hoverId);
     if (!sel) return;
     if (sel.type === "node" && model.nodes[sel.id]) highlightPair(sel.id);
@@ -343,9 +346,20 @@ function startDrag(e, onMove) {
 groups.nodes.addEventListener("pointerdown", (e) => {
     const id = e.target.dataset.node;
     if (!id || e.button !== 0) return;
+    if (calib) { e.stopPropagation(); return; }   // calibration picks stops on click, no drag
     const n = model.nodes[id], ox = n.x, oy = n.y;
+    // With the background shown, stops snap to its circles (12 px on screen)
+    const circles = ghostVisible() ? circlesInMap(ghostM()) : [];
     select({ type: "node", id });
-    startDrag(e, (dx, dy) => { n.x = snap(ox + dx); n.y = snap(oy + dy); });
+    startDrag(e, (dx, dy) => {
+        let x = ox + dx, y = oy + dy, best = 12 / pz.view.s, hit = null;
+        for (const c of circles) {
+            const d = Math.hypot(c[0] - x, c[1] - y);
+            if (d < best) { best = d; hit = c; }
+        }
+        n.x = hit ? Math.round(hit[0]) : snap(x);
+        n.y = hit ? Math.round(hit[1]) : snap(y);
+    });
 });
 
 // Hovering a stop or its name highlights both
@@ -359,7 +373,7 @@ for (const g of [groups.nodes, groups.labels]) {
 
 groups.nodes.addEventListener("pointerdown", (e) => {
     const id = e.target.dataset.badge;
-    if (!id || e.button !== 0) return;
+    if (!id || e.button !== 0 || calib) return;
     const n = model.nodes[id];
     const b = groups.nodes.querySelector(`g[data-badge="${CSS.escape(id)}"]`).getBBox();
     const ox = b.x + b.width / 2 - n.x, oy = b.y + b.height / 2 - n.y;
@@ -369,7 +383,7 @@ groups.nodes.addEventListener("pointerdown", (e) => {
 
 groups.labels.addEventListener("pointerdown", (e) => {
     const id = e.target.dataset.label;
-    if (!id || e.button !== 0) return;
+    if (!id || e.button !== 0 || calib) return;
     const n = model.nodes[id];
     n.label = n.label || { dx: 14, dy: 6, anchor: "start" };
     const ox = n.label.dx, oy = n.label.dy;
@@ -418,7 +432,12 @@ svg.addEventListener("click", () => { if (sel) select(null); });
 window.addEventListener("keydown", (e) => {
     if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA") return;
     if ((e.ctrlKey || e.metaKey) && e.key === "z") { e.preventDefault(); undo(); return; }
-    if (e.key === "Escape") { select(null); return; }
+    if (e.key === "Escape") {
+        if (calib && calib.pendingNode) { calib.pendingNode = null; calibStatus(); renderOverlay(); }
+        else if (calib) endCalib();
+        else select(null);
+        return;
+    }
     if (sel && sel.type === "node" && !e.ctrlKey && !e.metaKey) {
         const n = model.nodes[sel.id];
         const lab = () => (n.label ||= { dx: 14, dy: 6, anchor: "start" });
@@ -451,6 +470,7 @@ function undo() {
     setDirty();
     render();
     renderSide();
+    renderCalib();
 }
 
 async function save() {
@@ -556,32 +576,148 @@ function renderCheck(added, newEdges) {
     }
 }
 
-async function seed() {
-    if (!confirm("Flytta hållplatserna till positionerna i lt_karta.svg? (Kan ångras)")) return;
-    try {
-        status("Hämtar linjeformer...");
-        const routes = (await fetch("/api/routes/all").then(r => r.json())).routes || [];
-        const ids = routes.filter(r => model.lines[r.route_short_name]).map(r => r.route_id);
-        const bulk = await fetch("/api/shapes/bulk?route_ids=" + encodeURIComponent(ids.join(","))).then(r => r.json());
-        const lineOf = Object.fromEntries(routes.map(r => [r.route_id, r.route_short_name]));
-        const shapes = {};
-        for (const [rid, list] of Object.entries(bulk.routes || {})) {
-            for (const pts of list) {
-                const l = lineOf[rid];
-                if (!shapes[l] || pts.length > shapes[l].length) shapes[l] = pts;
-            }
-        }
-        snapshot();
-        const n = seedFromLtKarta(model, shapes);
-        $("chk-ghost").checked = true;
-        $("ghost").setAttribute("display", "inline");
-        setDirty();
-        render();
-        renderSide();
-        status(`${n} hållplatser placerade från lt_karta.svg`, "dirty");
-    } catch (e) {
-        status("Import misslyckades: " + e.message, "error");
+// --- Background calibration -----------------------------------------------------
+
+function ghostM() {
+    return (model.ghost && model.ghost.matrix) || IDENTITY;
+}
+
+function ghostVisible() {
+    return $("chk-ghost").checked;
+}
+
+function showGhost() {
+    $("chk-ghost").checked = true;
+    $("ghost").setAttribute("display", "inline");
+}
+
+function recomputeGhost() {
+    const pts = model.ghost.points.filter(p => model.nodes[p.node]);
+    const pairs = pts.map(p => [[p.gx, p.gy], [model.nodes[p.node].x, model.nodes[p.node].y]]);
+    const m = ghostMatrix(pairs);
+    if (m) { model.ghost.matrix = m; return; }
+    if (pairs.length === 1) {
+        // One point: only move the background so the point lands on its stop
+        const cur = ghostM().slice();
+        const [x, y] = applyMatrix(cur, pairs[0][0]);
+        cur[4] += pairs[0][1][0] - x;
+        cur[5] += pairs[0][1][1] - y;
+        model.ghost.matrix = cur;
     }
+}
+
+function calibStatus() {
+    if (!calib) return;
+    status(calib.pendingNode
+        ? `Klicka "${model.nodes[calib.pendingNode].name}" i bakgrunden`
+        : "Kalibrering: klicka en hållplats i kartan", "dirty");
+}
+
+function renderCalibOverlay() {
+    const m = ghostM();
+    for (const p of (model.ghost && model.ghost.points) || []) {
+        const n = model.nodes[p.node];
+        if (!n) continue;
+        const [gx, gy] = applyMatrix(m, [p.gx, p.gy]);
+        el("line", { x1: n.x, y1: n.y, x2: gx, y2: gy, stroke: "#d29922", "stroke-width": 3, "pointer-events": "none" }, overlay);
+        el("circle", { cx: n.x, cy: n.y, r: 22, fill: "none", stroke: "#d29922", "stroke-width": 4, "pointer-events": "none" }, overlay);
+        el("circle", { cx: gx, cy: gy, r: 14, fill: "none", stroke: "#2ea043", "stroke-width": 4, "pointer-events": "none" }, overlay);
+    }
+    if (calib.pendingNode && model.nodes[calib.pendingNode]) {
+        const n = model.nodes[calib.pendingNode];
+        el("circle", { cx: n.x, cy: n.y, r: 30, fill: "#d29922", "fill-opacity": 0.25, stroke: "#d29922", "stroke-width": 5, "pointer-events": "none" }, overlay);
+    }
+}
+
+function renderCalib() {
+    $("calib-panel").hidden = !calib;
+    const ul = $("calib-points");
+    ul.replaceChildren();
+    if (!calib) return;
+    const m = ghostM();
+    const pts = (model.ghost && model.ghost.points) || [];
+    pts.forEach((p, i) => {
+        const n = model.nodes[p.node];
+        if (!n) return;
+        const [gx, gy] = applyMatrix(m, [p.gx, p.gy]);
+        const li = document.createElement("li");
+        const name = document.createElement("span");
+        name.textContent = `${n.name} (fel ${Math.round(Math.hypot(gx - n.x, gy - n.y))})`;
+        li.append(name, button("Ta bort", () => {
+            snapshot();
+            model.ghost.points.splice(i, 1);
+            recomputeGhost();
+            setDirty();
+            render();
+            renderCalib();
+        }, "small"));
+        ul.append(li);
+    });
+    if (!pts.length) ul.append(div("muted", "Inga punkter än."));
+}
+
+function startCalib() {
+    calib = { pendingNode: null };
+    showGhost();
+    select(null);
+    renderCalib();
+    calibStatus();
+    renderOverlay();
+}
+
+function endCalib() {
+    calib = null;
+    renderCalib();
+    renderOverlay();
+    status(dirty ? "Osparade ändringar" : "", dirty ? "dirty" : "");
+}
+
+// Calibration clicks are handled before everything else (pans are already swallowed by svgPanZoom)
+svg.addEventListener("click", (e) => {
+    if (!calib) return;
+    e.stopPropagation();
+    const id = e.target.dataset && e.target.dataset.node;
+    if (id) {
+        calib.pendingNode = id;
+        calibStatus();
+        renderOverlay();
+        return;
+    }
+    if (!calib.pendingNode) { calibStatus(); return; }
+    const [mx, my] = pz.toModel(e.clientX, e.clientY);
+    let [gx, gy] = applyMatrix(invertMatrix(ghostM()), [mx, my]);
+    let best = 25;
+    for (const c of SVG_STOP_CIRCLES) {
+        const d = Math.hypot(c[0] - gx, c[1] - gy);
+        if (d < best) { best = d; [gx, gy] = c; }
+    }
+    snapshot();
+    model.ghost = model.ghost || { matrix: IDENTITY.slice(), points: [] };
+    model.ghost.points = model.ghost.points.filter(p => p.node !== calib.pendingNode);
+    model.ghost.points.push({ node: calib.pendingNode, gx, gy });
+    recomputeGhost();
+    calib.pendingNode = null;
+    setDirty();
+    render();
+    renderCalib();
+    calibStatus();
+}, true);
+
+function snapToCircles() {
+    if (!model.ghost || model.ghost.points.length < 2) {
+        status("Kalibrera bakgrunden först (minst 2 punkter)", "error");
+        return;
+    }
+    if (!confirm("Flytta hållplatserna till närmaste cirkel i bakgrunden? (Kan ångras)")) return;
+    snapshot();
+    const m = ghostM();
+    const scale = Math.sqrt(Math.abs(m[0] * m[3] - m[1] * m[2]));
+    const n = snapNodesToCircles(model, m, 40 * scale);
+    showGhost();
+    setDirty();
+    render();
+    renderSide();
+    status(`${n} av ${Object.keys(model.nodes).length} hållplatser flyttade till cirklar`, "dirty");
 }
 
 function exportSvg() {
@@ -613,7 +749,18 @@ function importJson(file) {
 $("btn-save").addEventListener("click", save);
 $("btn-undo").addEventListener("click", undo);
 $("btn-merge").addEventListener("click", mergeGenerated);
-$("btn-seed").addEventListener("click", seed);
+$("btn-calib").addEventListener("click", () => (calib ? endCalib() : startCalib()));
+$("btn-calib-done").addEventListener("click", endCalib);
+$("btn-calib-clear").addEventListener("click", () => {
+    if (!model.ghost) return;
+    snapshot();
+    delete model.ghost;
+    setDirty();
+    render();
+    renderCalib();
+});
+$("btn-snap-circles").addEventListener("click", snapToCircles);
+$("rng-ghost").addEventListener("input", (e) => $("ghost").setAttribute("opacity", e.target.value));
 $("btn-straighten").addEventListener("click", () => {
     snapshot();
     const n = model.edges.filter(straighten).length;

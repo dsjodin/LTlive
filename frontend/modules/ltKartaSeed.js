@@ -1,42 +1,8 @@
 /**
- * ltKartaSeed.js - import node positions from the hand-drawn lt_karta.svg.
- * The line paths and stop circles below were extracted from lt_karta.svg (viewBox 0 0 2481 3508).
- * Each circle is matched to a model node via the line path fraction -> GTFS shape -> nearest node.
- * Unmatched nodes are moved with an affine fit of the matched ones.
+ * ltKartaSeed.js - align the hand-drawn lt_karta.svg (viewBox 0 0 2481 3508) with the editor map.
+ * The user calibrates the background with control points (stop on the map + same stop in the
+ * background); stops can then be moved onto the background's stop circles.
  */
-
-export const SVG_LINE_PATHS = {
-  "1": [[1921.826,3004.525],[1921.826,2353.614],[1108.610,2353.744],[1108.610,2233.301],
-        [1112.845,2233.301],[1113.330,2147.444],[1113.330,2143.864],[1115.430,1918.669],
-        [953.467,1918.669],[956.006,1559.961],[814.795,1559.961]],
-  "2": [[1932.829,2606.315],[1932.829,2342.480],[1142.823,2343.863],[1142.563,2232.763],
-        [1124.350,2234.325],[1124.789,2115.949],[1126.693,1905.699],[760.629,1905.699],
-        [528.012,1673.110],[458.139,1673.110]],
-  "3": [[556.055,2241.227],[642.367,2326.888],[1177.425,2326.888],[1177.425,2233.100],
-        [1146.515,2233.268],[1146.515,2086.829],[1137.755,2086.829],[1137.495,1893.798],
-        [966.943,1893.538],[968.327,1549.951],[980.519,1549.951],[980.519,1293.638]],
-  "4": [[1770.719,1719.010],[1770.752,1740.039],[1587.142,1809.066],[1587.142,1892.692],
-        [1587.272,1936.296],[1588.151,1998.812],[1671.387,1998.812],[1670.606,1936.296],
-        [1547.826,1936.475],[1173.326,1937.574],[1173.326,2067.841],[1158.606,2067.841],
-        [1158.606,2233.268],[1209.039,2233.268],[1209.039,2382.568],[1103.174,2382.568],
-        [1103.565,2451.733],[1103.288,2597.233],[742.580,2595.712],[742.580,3138.721]],
-  "5": [[1105.355,864.209],[1247.087,864.209],[1247.087,1721.582],[1197.054,1815.283],
-        [1197.054,2042.841],[1344.026,2042.841],[1344.026,2086.634],[1344.319,2330.127],
-        [1344.514,2335.920],[1344.644,2461.279],[1427.930,2508.592],[1428.426,2511.921],
-        [1428.515,2745.296],[1428.564,2756.641],[1451.172,2756.672],[1548.731,2757.895],
-        [1805.436,2625.960],[1805.696,2624.187]],
-  "6": [[1949.805,2604.932],[2171.972,2603.011],[2172.167,2312.012],[1961.360,2312.012],
-        [1961.295,2195.264],[1961.295,2083.139],[1962.923,1921.873],[1149.414,1922.851],
-        [1149.414,2035.938],[1135.547,2035.938],[1135.547,2235.839],[1240.591,2234.277],
-        [1240.544,2280.762],[980.356,2282.666],[980.356,2143.970],[630.599,2143.970],
-        [587.485,2100.856],[501.294,2014.665],[458.139,1971.614]],
-  // Line 7: use main body of the route (Almby area south to Rosta area)
-  "7": [[1387.322,1300.910],[1441.634,1300.910],[1441.634,1496.021],[1386.947,1496.021],
-        [1386.947,1735.596],[1382.630,1760.674],[1366.699,1792.706],[1358.447,1847.096],
-        [1358.447,1883.919],[1362.121,2038.428],[1331.364,2053.613],[1331.096,2083.528],
-        [1330.468,2213.030],[1330.451,2295.175],[1332.349,2423.015],[1333.016,2461.165],
-        [1261.694,2521.924],[1261.694,2842.188],[1223.016,2842.352],[1222.641,2912.598]],
-};
 
 export const SVG_STOP_CIRCLES = [
   [401.2,2140.9],[436.7,1949.0],[461.7,1977.9],[462.4,1679.4],[495.9,2010.4],
@@ -79,45 +45,11 @@ export const SVG_STOP_CIRCLES = [
   [2174.1,2515.0],
 ];
 
-function cumDist(pts) {
-  const d = [0];
-  for (let i = 1; i < pts.length; i++) d.push(d[i - 1] + Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]));
-  return d;
-}
-
-function posAtFraction(pts, cum, f) {
-  const target = Math.max(0, Math.min(1, f)) * cum[cum.length - 1];
-  let i = 1;
-  while (i < pts.length - 1 && cum[i] < target) i++;
-  const seg = cum[i] - cum[i - 1];
-  const t = seg > 0 ? (target - cum[i - 1]) / seg : 0;
-  return [pts[i - 1][0] + t * (pts[i][0] - pts[i - 1][0]), pts[i - 1][1] + t * (pts[i][1] - pts[i - 1][1])];
-}
-
-function projectOnPath(x, y, pts, cum) {
-  let best = { f: 0, dist: Infinity };
-  for (let i = 0; i < pts.length - 1; i++) {
-    const [ax, ay] = pts[i], [bx, by] = pts[i + 1];
-    const abx = bx - ax, aby = by - ay, len2 = abx * abx + aby * aby;
-    const t = len2 > 0 ? Math.max(0, Math.min(1, ((x - ax) * abx + (y - ay) * aby) / len2)) : 0;
-    const d = Math.hypot(x - ax - t * abx, y - ay - t * aby);
-    if (d < best.dist) best = { f: (cum[i] + t * (cum[i + 1] - cum[i])) / cum[cum.length - 1], dist: d };
-  }
-  return best;
-}
-
-// SVG start south of end <=> GTFS shape start south of end (y grows down, lat grows up)
-function isShapeForward(svgPath, shape) {
-  const nsSvg = svgPath[0][1] > svgPath[svgPath.length - 1][1];
-  const nsGeo = shape[0][0] < shape[shape.length - 1][0];
-  return nsSvg === nsGeo;
-}
-
-/** Least-squares affine map src -> dst ([[x,y],...]); identity with fewer than 3 pairs. */
-export function fitAffine(src, dst) {
-  if (src.length < 3) return (p) => p;
+/** Least-squares affine coefficients [cx, cy] for src -> dst, or null with fewer than 3 usable pairs. */
+export function affineCoeffs(src, dst) {
+  if (src.length < 3) return null;
   const solve = (vals) => {
-    let a = [[0, 0, 0], [0, 0, 0], [0, 0, 0]], b = [0, 0, 0];
+    const a = [[0, 0, 0], [0, 0, 0], [0, 0, 0]], b = [0, 0, 0];
     src.forEach(([x, y], i) => {
       const r = [x, y, 1];
       for (let j = 0; j < 3; j++) { b[j] += r[j] * vals[i]; for (let k = 0; k < 3; k++) a[j][k] += r[j] * r[k]; }
@@ -128,46 +60,82 @@ export function fitAffine(src, dst) {
     return [0, 1, 2].map(c => det(a.map((row, j) => row.map((v, k) => (k === c ? b[j] : v)))) / d);
   };
   const cx = solve(dst.map(p => p[0])), cy = solve(dst.map(p => p[1]));
-  if (!cx || !cy) return (p) => p;
+  return cx && cy ? [cx, cy] : null;
+}
+
+/** Least-squares affine map src -> dst ([[x,y],...]); identity when it cannot be fitted. */
+export function fitAffine(src, dst) {
+  const c = affineCoeffs(src, dst);
+  if (!c) return (p) => p;
+  const [cx, cy] = c;
   return ([x, y]) => [cx[0] * x + cx[1] * y + cx[2], cy[0] * x + cy[1] * y + cy[2]];
 }
 
-/**
- * Move model nodes to the circle positions of lt_karta.svg.
- * shapesByLine: {line: [[lat, lon], ...]} (longest GTFS shape per line).
- * Returns the number of nodes placed on a circle.
- */
-export function seedFromLtKarta(model, shapesByLine) {
-  const lines = Object.keys(SVG_LINE_PATHS).filter(l => shapesByLine[l]);
-  const svgCum = {}, geoCum = {}, fwd = {};
-  for (const l of lines) {
-    svgCum[l] = cumDist(SVG_LINE_PATHS[l]);
-    geoCum[l] = cumDist(shapesByLine[l]);
-    fwd[l] = isShapeForward(SVG_LINE_PATHS[l], shapesByLine[l]);
-  }
+// SVG matrix(a b c d e f): x' = a x + c y + e, y' = b x + d y + f
+export const IDENTITY = [1, 0, 0, 1, 0, 0];
 
-  const match = {};   // node id -> {x, y, d}
-  for (const [cx, cy] of SVG_STOP_CIRCLES) {
-    let best = null;
-    for (const l of lines) {
-      const p = projectOnPath(cx, cy, SVG_LINE_PATHS[l], svgCum[l]);
-      if (!best || p.dist < best.dist) best = { ...p, line: l };
-    }
-    if (!best || best.dist > 120) continue;
-    const f = fwd[best.line] ? best.f : 1 - best.f;
-    const [lat, lon] = posAtFraction(shapesByLine[best.line], geoCum[best.line], f);
-    let node = null, nd = Infinity;
-    for (const [id, n] of Object.entries(model.nodes)) {
-      const d = (n.lat - lat) ** 2 + (n.lon - lon) ** 2;
-      if (d < nd) { nd = d; node = id; }
-    }
-    if (node && nd < 0.003 * 0.003 && (!match[node] || nd < match[node].d)) match[node] = { x: cx, y: cy, d: nd };
+export function applyMatrix(m, [x, y]) {
+  return [m[0] * x + m[2] * y + m[4], m[1] * x + m[3] * y + m[5]];
+}
+
+export function invertMatrix(m) {
+  const det = m[0] * m[3] - m[1] * m[2];
+  if (Math.abs(det) < 1e-12) return IDENTITY;
+  const a = m[3] / det, b = -m[1] / det, c = -m[2] / det, d = m[0] / det;
+  return [a, b, c, d, -(a * m[4] + c * m[5]), -(b * m[4] + d * m[5])];
+}
+
+/**
+ * Matrix mapping background points to map points from pairs [[gx, gy], [x, y]].
+ * 2 pairs: similarity (scale, rotation, move). 3 or more: least-squares affine.
+ */
+export function ghostMatrix(pairs) {
+  if (pairs.length >= 3) {
+    const c = affineCoeffs(pairs.map(p => p[0]), pairs.map(p => p[1]));
+    if (c) return [c[0][0], c[1][0], c[0][1], c[1][1], c[0][2], c[1][2]];
+  }
+  if (pairs.length < 2) return null;
+  const [[z1, w1], [z2, w2]] = pairs.slice(-2);
+  const dzx = z2[0] - z1[0], dzy = z2[1] - z1[1], dwx = w2[0] - w1[0], dwy = w2[1] - w1[1];
+  const den = dzx * dzx + dzy * dzy;
+  if (den < 1e-9) return null;
+  // a = (w2 - w1) / (z2 - z1) as complex numbers
+  const ar = (dwx * dzx + dwy * dzy) / den, ai = (dwy * dzx - dwx * dzy) / den;
+  const br = w1[0] - (ar * z1[0] - ai * z1[1]), bi = w1[1] - (ai * z1[0] + ar * z1[1]);
+  return [ar, ai, -ai, ar, br, bi];
+}
+
+/** Background circles in map coordinates. */
+export function circlesInMap(m) {
+  return SVG_STOP_CIRCLES.map(c => applyMatrix(m, c));
+}
+
+/**
+ * Move stops onto the nearest background circle (each circle used once, closest pairs first,
+ * within maxDist map units). Other stops and all bends follow an affine fit of the moved ones.
+ * Returns the number of stops placed on a circle.
+ */
+export function snapNodesToCircles(model, m, maxDist) {
+  const circles = circlesInMap(m);
+  const cands = [];
+  for (const [id, n] of Object.entries(model.nodes)) {
+    circles.forEach((c, ci) => {
+      const d = Math.hypot(c[0] - n.x, c[1] - n.y);
+      if (d <= maxDist) cands.push([d, id, ci]);
+    });
+  }
+  cands.sort((a, b) => a[0] - b[0]);
+  const match = {}, usedCircle = new Set();
+  for (const [, id, ci] of cands) {
+    if (match[id] || usedCircle.has(ci)) continue;
+    match[id] = circles[ci];
+    usedCircle.add(ci);
   }
 
   const ids = Object.keys(match);
-  const move = fitAffine(ids.map(id => [model.nodes[id].x, model.nodes[id].y]), ids.map(id => [match[id].x, match[id].y]));
+  const move = fitAffine(ids.map(id => [model.nodes[id].x, model.nodes[id].y]), ids.map(id => match[id]));
   for (const [id, n] of Object.entries(model.nodes)) {
-    const [x, y] = match[id] ? [match[id].x, match[id].y] : move([n.x, n.y]);
+    const [x, y] = match[id] || move([n.x, n.y]);
     n.x = Math.round(x); n.y = Math.round(y);
   }
   for (const e of model.edges) e.bends = (e.bends || []).map(b => move(b).map(Math.round));
