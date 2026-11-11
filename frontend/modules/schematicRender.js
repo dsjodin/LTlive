@@ -7,7 +7,7 @@
 export const NS = "http://www.w3.org/2000/svg";
 export const LINE_WIDTH = 7;
 export const LINE_SPACING = 9;
-const CORNER_R = 24;
+export const CORNER_R = 24;   // default corner radius; model.corner_radius / edge.radius override
 
 export function el(tag, attrs = {}, parent = null) {
     const e = document.createElementNS(NS, tag);
@@ -156,7 +156,7 @@ export function renderMap(model, groups, opts = {}) {
             const pts = edgeLinePoints(model, edge, line);
             const color = (model.lines[line] || {}).color || "#888";
             const p = el("path", {
-                d: roundedPath(pts), fill: "none", stroke: color,
+                d: roundedPath(pts, edge.radius ?? model.corner_radius ?? CORNER_R), fill: "none", stroke: color,
                 "stroke-width": LINE_WIDTH, "stroke-linecap": "round", "stroke-linejoin": "round",
                 "stroke-opacity": hidden.has(line) ? 0.15 : 1,
                 "data-edge": idx, "data-line": line,
