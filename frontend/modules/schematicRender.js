@@ -7,7 +7,7 @@
 export const NS = "http://www.w3.org/2000/svg";
 export const LINE_WIDTH = 7;
 export const LINE_SPACING = 9;
-const CORNER_R = 24;
+export const CORNER_R = 24;   // default corner radius; model.corner_radius / edge.radius override
 
 export function el(tag, attrs = {}, parent = null) {
     const e = document.createElementNS(NS, tag);
@@ -54,13 +54,43 @@ function offsetPolyline(pts, d) {
  * vertical), so a line keeps its side through a straight corridor.
  */
 export function edgeLinePoints(model, edge, line) {
+    const off = lineOffset(model, edge, line);
+    return off == null ? null : offsetPolyline(edgePoints(model, edge), off);
+}
+
+// Signed sideways offset of a line inside its edge (positive = left of the drawn direction a -> b)
+function lineOffset(model, edge, line) {
     const i = edge.lines.indexOf(line);
     if (i < 0) return null;
     const pts = edgePoints(model, edge);
     const dx = pts[pts.length - 1][0] - pts[0][0], dy = pts[pts.length - 1][1] - pts[0][1];
     const flip = dx < -0.01 || (Math.abs(dx) <= 0.01 && dy < 0);
     const off = (i - (edge.lines.length - 1) / 2) * LINE_SPACING;
-    return offsetPolyline(pts, flip ? -off : off);
+    return flip ? -off : off;
+}
+
+/**
+ * Corner size (tangent length) per vertex for one line, so parallel lines turn in concentric
+ * curves: the line on the inside of a turn gets a tighter curve, the outside one a wider,
+ * and the gap between them stays the same through the bend. r is the size for the edge centre.
+ */
+export function lineCorners(model, edge, line, r) {
+    const pts = edgePoints(model, edge);
+    const off = lineOffset(model, edge, line) || 0;
+    const out = pts.map(() => 0);
+    if (r <= 0) return out;
+    for (let i = 1; i < pts.length - 1; i++) {
+        const [px, py] = pts[i - 1], [vx, vy] = pts[i], [nx, ny] = pts[i + 1];
+        const l1 = Math.hypot(vx - px, vy - py), l2 = Math.hypot(nx - vx, ny - vy);
+        if (!l1 || !l2) continue;
+        const d1x = (vx - px) / l1, d1y = (vy - py) / l1, d2x = (nx - vx) / l2, d2y = (ny - vy) / l2;
+        const turn = Math.acos(Math.max(-1, Math.min(1, d1x * d2x + d1y * d2y)));
+        // +1 when the turn goes towards the side positive offsets lie on (that side is inside)
+        const side = Math.sign(d1y * d2x - d1x * d2y);
+        const t = Math.min(r, l1 / 2, l2 / 2);
+        out[i] = Math.max(0, t - side * off * Math.tan(turn / 2));
+    }
+    return out;
 }
 
 export function polyLength(pts) {
@@ -103,13 +133,14 @@ export function subPath(pts, t0, t1) {
     return out;
 }
 
-/** SVG path data with rounded corners. */
+/** SVG path data with rounded corners; r is one corner size or one per vertex. */
 export function roundedPath(pts, r = CORNER_R) {
     let d = `M${pts[0][0].toFixed(1)},${pts[0][1].toFixed(1)}`;
     for (let i = 1; i < pts.length - 1; i++) {
         const [px, py] = pts[i - 1], [vx, vy] = pts[i], [nx, ny] = pts[i + 1];
         const l1 = Math.hypot(vx - px, vy - py) || 1, l2 = Math.hypot(nx - vx, ny - vy) || 1;
-        const r1 = Math.min(r, l1 / 2), r2 = Math.min(r, l2 / 2);
+        const rv = Array.isArray(r) ? r[i] : r;
+        const r1 = Math.min(rv, l1 / 2), r2 = Math.min(rv, l2 / 2);
         const ax = vx - (vx - px) / l1 * r1, ay = vy - (vy - py) / l1 * r1;
         const bx = vx + (nx - vx) / l2 * r2, by = vy + (ny - vy) / l2 * r2;
         d += ` L${ax.toFixed(1)},${ay.toFixed(1)} Q${vx.toFixed(1)},${vy.toFixed(1)} ${bx.toFixed(1)},${by.toFixed(1)}`;
@@ -156,7 +187,8 @@ export function renderMap(model, groups, opts = {}) {
             const pts = edgeLinePoints(model, edge, line);
             const color = (model.lines[line] || {}).color || "#888";
             const p = el("path", {
-                d: roundedPath(pts), fill: "none", stroke: color,
+                d: roundedPath(pts, lineCorners(model, edge, line, edge.radius ?? model.corner_radius ?? CORNER_R)),
+                fill: "none", stroke: color,
                 "stroke-width": LINE_WIDTH, "stroke-linecap": "round", "stroke-linejoin": "round",
                 "stroke-opacity": hidden.has(line) ? 0.15 : 1,
                 "data-edge": idx, "data-line": line,

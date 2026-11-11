@@ -3,7 +3,7 @@
  * Loads /api/schematic, saves with PUT /api/admin/schematic (admin key, LAN only).
  */
 
-import { el, NS, renderMap, edgePoints, lineSort, modelBounds, terminalLines } from "./modules/schematicRender.js";
+import { el, NS, renderMap, edgePoints, lineSort, modelBounds, terminalLines, CORNER_R } from "./modules/schematicRender.js";
 import { attachPanZoom } from "./modules/svgPanZoom.js";
 import { fitAffine, makeWarp, applyMatrix, invertMatrix, transformMap, snapNodesToCircles, SVG_STOP_CIRCLES } from "./modules/ltKartaSeed.js";
 
@@ -298,7 +298,12 @@ function renderSide() {
             button("Räta upp 45", () => edit(() => { edge.bends = []; straighten(edge); })),
             button("Ta bort böjpunkter", () => edit(() => { edge.bends = []; })),
         );
-        box.append(row, div("kv", `Böjpunkter: ${(edge.bends || []).length}. Dubbelklicka på linjen för att lägga till, på en punkt för att ta bort.`));
+        const rad = div("row");
+        rad.append(div("muted", "Hörnradie:"),
+            numberInput(edge.radius ?? model.corner_radius ?? CORNER_R, 0, 200, 2, (v) => { edge.radius = v; }),
+            button("Skarp", () => edit(() => { edge.radius = 0; }), "small" + (edge.radius === 0 ? " active" : "")));
+        if (edge.radius != null) rad.append(button("Standard", () => edit(() => { delete edge.radius; }), "small"));
+        box.append(row, rad, div("kv", `Böjpunkter: ${(edge.bends || []).length}. Dubbelklicka på linjen för att lägga till, på en punkt för att ta bort.`));
     } else {
         box.className = "muted";
         box.textContent = "Klicka på en hållplats eller en linjesträcka.";
@@ -308,7 +313,9 @@ function renderSide() {
     lc.replaceChildren();
     const ns = div("row");
     ns.append(div("muted", "Namnstorlek (standard):"), numberInput(model.label_size || 17, 8, 60, 1, (v) => { model.label_size = v; }));
-    lc.append(ns);
+    const cr = div("row");
+    cr.append(div("muted", "Hörnradie (standard):"), numberInput(model.corner_radius ?? CORNER_R, 0, 200, 2, (v) => { model.corner_radius = v; }));
+    lc.append(ns, cr);
     for (const l of Object.keys(model.lines).sort(lineSort)) {
         const row = div("row");
         const inp = document.createElement("input");
